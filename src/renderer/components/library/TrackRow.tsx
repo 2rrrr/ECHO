@@ -119,7 +119,7 @@ export const TrackRow = memo(
       >
         <div className="track-cover" data-empty={!shouldShowCover} aria-hidden="true">
           {shouldShowCover ? (
-            <img alt="" decoding="async" draggable={false} loading="lazy" src={track.coverThumb!} onError={handleCoverError} />
+            <img alt="" decoding="async" draggable={false} height={96} loading="lazy" src={track.coverThumb!} width={96} onError={handleCoverError} />
           ) : (
             <Music2 size={22} />
           )}

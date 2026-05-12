@@ -153,9 +153,12 @@ describe('AlbumsPage', () => {
     expect(img.getAttribute('src')).toBe('echo-cover://album/cover-1');
     expect(img.getAttribute('loading')).toBe('lazy');
     expect(img.getAttribute('decoding')).toBe('async');
+    expect(img.getAttribute('width')).toBe('320');
+    expect(img.getAttribute('height')).toBe('320');
     expect(img.draggable).toBe(false);
 
     fireEvent.error(img);
     expect(container.querySelector('.album-cover img')).toBeNull();
+    expect(container.querySelector('.album-cover')?.getAttribute('data-empty')).toBe('true');
   });
 });

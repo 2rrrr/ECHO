@@ -32,10 +32,12 @@ describe('LibraryDiagnosticsPanel', () => {
         getTracks: 2.1,
         getAlbums: 1.4,
       },
+      averageAlbumPayloadBytes: 192,
       databasePath: 'D:\\Echo\\echo-library.sqlite',
       databaseSizeBytes: 1024,
       coverCachePath: 'D:\\Echo\\cover-cache',
       coverCacheSizeBytes: 2048,
+      coverCacheVersion: 1,
     });
 
     window.echo = {
@@ -51,5 +53,7 @@ describe('LibraryDiagnosticsPanel', () => {
     expect(scanFolder).not.toHaveBeenCalled();
     expect(screen.getAllByText('3000')).toHaveLength(2);
     expect(screen.getByText('completed')).toBeTruthy();
+    expect(screen.getByText('192 B')).toBeTruthy();
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0);
   });
 });

@@ -162,8 +162,10 @@ export const AlbumsPage = (): JSX.Element => {
                     alt=""
                     decoding="async"
                     draggable={false}
+                    height={320}
                     loading="lazy"
                     src={album.coverThumb!}
+                    width={320}
                     onError={() => handleAlbumCoverError(album)}
                   />
                 ) : (

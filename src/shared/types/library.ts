@@ -28,10 +28,12 @@ export type LibraryDiagnostics = {
     getTracks: number | null;
     getAlbums: number | null;
   };
+  averageAlbumPayloadBytes: number | null;
   databasePath: string | null;
   databaseSizeBytes: number | null;
   coverCachePath: string | null;
   coverCacheSizeBytes: number | null;
+  coverCacheVersion: number;
 };
 
 export type LibraryFolder = {
@@ -97,6 +99,7 @@ export type LibraryTrack = {
   bitDepth: number | null;
   bitrate: number | null;
   coverId: string | null;
+  // Small list thumbnail: echo-cover://thumb/* resolves to thumb.webp (96x96).
   coverThumb: string | null;
   metadataStatus?: string;
   fieldSources: Record<string, string>;
@@ -111,6 +114,7 @@ export type LibraryAlbum = {
   trackCount: number;
   duration: number;
   coverId: string | null;
+  // Album wall thumbnail: echo-cover://album/* resolves to album.webp (320x320).
   coverThumb: string | null;
 };
 

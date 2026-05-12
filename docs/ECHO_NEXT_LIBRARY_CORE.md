@@ -33,7 +33,9 @@ Library Core v0.1 fixes the old ECHO library pain points by making SQLite the so
 `CoverExtractor`
 
 - stable worker interface for cover extraction and cache file generation
-- TS v0.1 implementation: `TsCoverExtractor`
+- TS+sharp v0.2 implementation: `TsCoverExtractor`
+- `sharp` performs real resize output for `thumb.webp`, `album.webp`, and `large.webp`
+- TypeScript still owns cover priority, cache directory scheduling, and fallback behavior
 - highest-priority future native worker
 
 `FileScanner`
@@ -56,7 +58,7 @@ Core tables:
 - `albums`: persisted album-wall records with `album_key`, title, artist, year, cover, count, duration
 - `album_tracks`: persisted track order with disc/track numbers
 - `artists`: persisted artist counts
-- `covers`: `source_type`, `thumb_path`, `large_path`, `original_ref`, hash and MIME metadata
+- `covers`: `source_type`, `thumb_path`, `album_path`, `large_path`, `original_ref`, hash, cache version, and MIME metadata
 - `scan_jobs`: status, phase, discovered/parsed/skipped/cover counts, errors, timestamps
 
 Important indexes:
@@ -101,7 +103,7 @@ The incremental key is:
 
 When all three match, ECHO Next trusts SQLite metadata and cover links. This avoids the old restart behavior where the whole library was parsed again.
 
-Covers are cached on disk and deduplicated by `sourceHash`. `getTracks` and `getAlbums` return only `coverThumb` file URLs. They never return full cover binary or base64 payloads.
+Covers are cached on disk and deduplicated by `sourceHash`. `getTracks` and `getAlbums` return only `coverThumb` protocol URLs. They never return `largePath`, `originalRef`, full cover binary, or base64 payloads.
 
 Albums are persisted in `albums` and `album_tracks`, so the album wall reads cached rows after restart instead of regrouping all tracks in Renderer memory.
 
@@ -136,7 +138,7 @@ Every stored track writes `field_sources_json` for title, artist, album, albumAr
 
 ## Cover Priority
 
-Phase v0.1 priority:
+Phase v0.2 priority:
 
 1. embedded cover
 2. same-folder `cover`, `folder`, or `front` image
@@ -146,9 +148,12 @@ Network covers are intentionally excluded so local artwork cannot be overwritten
 
 Cover layers:
 
-- `thumb_path`: SongsPage and AlbumsPage
-- `large_path`: reserved for NowPlaying/detail
+- `thumb_path`: 96x96 `thumb.webp`; `LibraryTrack.coverThumb`; small list rows only
+- `album_path`: 320x320 `album.webp`; `LibraryAlbum.coverThumb`; album wall only
+- `large_path`: max 768x768 `large.webp`; reserved for NowPlaying/detail
 - `original_ref`: retained for on-demand original access
+
+List and album-wall images must use `loading="lazy"` and `decoding="async"`. Renderer code must not request `large` or `original` variants during scrolling and must not generate cover derivatives.
 
 ## Album Grouping
 
@@ -227,9 +232,9 @@ window.echo.playback.playLocalFile({
 
 `PlayerBar` owns lightweight 1s polling of `playback.getStatus()` and `audio.getStatus()` until push IPC exists. It displays current file, track id, state, position/duration, codec, `fileSampleRate`, `actualDeviceSampleRate`, `outputMode`, and `sampleRateMismatch`.
 
-`library.getDiagnostics()` returns counts, last scan counters, last paged query timings, database path/size, and cover cache path/size. It never triggers a scan and never returns track lists or full cover payloads. The diagnostics panel is dev-only in Settings > Library.
+`library.getDiagnostics()` returns counts, last scan counters, last paged query timings, approximate average album payload size, database path/size, cover cache path/size, and cover cache version. It never triggers a scan and never returns track lists or full cover payloads. The diagnostics panel is dev-only in Settings > Library.
 
-`npm run benchmark:library` generates 3000 and 10000 fake tracks, measures SQLite insertion, album grouping, first-page track/album queries, unchanged scan skip simulation, memory, and database size. It does not need real audio files.
+`npm run benchmark:library` generates 3000 and 10000 fake tracks and 3000 and 10000 fake albums with cover cache rows. It measures SQLite insertion, album grouping, first-page track/album queries, album page 10, album total count, coverThumb payload length, unchanged scan skip simulation, memory, and database size. It does not need real audio files.
 
 ## Performance Budget
 
@@ -243,3 +248,14 @@ window.echo.playback.playLocalFile({
 - scans are backgrounded and cancellable
 - metadata and cover workers have concurrency limits
 - large libraries must not hold CPU near 50% because the album wall is rendering
+
+## Native CoverWorker Decision
+
+Do not start a Go/C#/Rust `CoverWorker` just because the boundary exists. TS+sharp v0.2 remains the current implementation until benchmark or smoke data proves it is not enough.
+
+Move cover generation native only if one or more of these is measured:
+
+- generating 1000 album thumbs keeps CPU above 50% for a long stretch
+- generating 3000 or 10000 covers creates unacceptable memory peaks
+- Electron packaging or native rebuilds for `sharp` become unstable
+- cover cache hits are still slow after `thumb.webp` and `album.webp` already exist

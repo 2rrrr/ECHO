@@ -690,8 +690,31 @@ export class AudioSession extends EventEmitter {
   }
 
   private createBridgeStartCandidates(outputSettings: AudioOutputSettings): Array<AudioDeviceInfo | null> {
-    if (hasExplicitDeviceSelection(outputSettings)) {
-      return [createDeviceFromOutputSettings(outputSettings)];
+    const outputMode = normalizeOutputMode(outputSettings.outputMode);
+    const explicitDevice = createDeviceFromOutputSettings(outputSettings);
+
+    if (outputMode === 'asio' && explicitDevice) {
+      const candidates: Array<AudioDeviceInfo | null> = [explicitDevice];
+      const knownAsioDevices = this.deviceService.listDevices().filter((device) => device.outputMode === 'asio');
+      const fallbackDevice = knownAsioDevices.find((device) => device.isDefault) ?? knownAsioDevices[0] ?? null;
+
+      if (
+        fallbackDevice &&
+        fallbackDevice.name !== explicitDevice.name &&
+        fallbackDevice.index !== explicitDevice.index
+      ) {
+        candidates.push(fallbackDevice);
+      }
+
+      if (!fallbackDevice) {
+        candidates.push(null);
+      }
+
+      return candidates;
+    }
+
+    if (explicitDevice) {
+      return [explicitDevice];
     }
 
     return [null];
@@ -750,7 +773,7 @@ export class AudioSession extends EventEmitter {
           this.bridge = null;
         }
 
-        if (hasExplicitDeviceSelection(this.currentOutputSettings)) {
+        if (hasExplicitDeviceSelection(this.currentOutputSettings) && outputMode !== 'asio') {
           throw lastError;
         }
       }

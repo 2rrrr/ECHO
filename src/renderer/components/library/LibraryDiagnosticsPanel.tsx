@@ -51,10 +51,12 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
     { label: 'error count', value: String(diagnostics?.lastScan?.errorCount ?? 0) },
     { label: 'getTracks last query time', value: formatMs(diagnostics?.lastQueryMs.getTracks ?? null) },
     { label: 'getAlbums last query time', value: formatMs(diagnostics?.lastQueryMs.getAlbums ?? null) },
+    { label: 'average album payload', value: formatBytes(diagnostics?.averageAlbumPayloadBytes ?? null) },
     { label: 'database path', value: diagnostics?.databasePath ?? 'n/a' },
     { label: 'database size', value: formatBytes(diagnostics?.databaseSizeBytes ?? null) },
     { label: 'cover cache path', value: diagnostics?.coverCachePath ?? 'n/a' },
     { label: 'cover cache size', value: formatBytes(diagnostics?.coverCacheSizeBytes ?? null) },
+    { label: 'cover cache version', value: String(diagnostics?.coverCacheVersion ?? 0) },
   ];
 
   return (

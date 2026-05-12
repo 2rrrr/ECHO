@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Headphones, Radio, RefreshCw, SlidersHorizontal, Waves, X, Zap } from 'lucide-react';
+import { Check, Gauge, Headphones, Lock, Radio, RefreshCw, SlidersHorizontal, Waves, X, Zap } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../../shared/types/audio';
+import { createOutputSettings, readRememberedAudioOutput, writeRememberedAudioOutput } from './audioOutputMemory';
 
 type AudioSettingsDrawerProps = {
   isOpen: boolean;
@@ -41,11 +42,15 @@ export const AudioSettingsDrawer = ({
 }: AudioSettingsDrawerProps): JSX.Element | null => {
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputMode, setOutputMode] = useState<AudioOutputMode>(status?.outputMode ?? 'shared');
+  const [rememberOutput, setRememberOutput] = useState(() => readRememberedAudioOutput().enabled);
+  const [shouldRender, setShouldRender] = useState(isOpen);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const sharedDevices = useMemo(() => devices.filter((device) => device.outputMode === 'shared'), [devices]);
   const asioDevices = useMemo(() => devices.filter((device) => device.outputMode === 'asio'), [devices]);
+  const wasapiExclusive = outputMode === 'exclusive';
+
   const engineBadges = useMemo(() => {
     const badges: string[] = [];
     const bitrate = formatBitrate(status?.bitrate);
@@ -87,10 +92,21 @@ export const AudioSettingsDrawer = ({
   }, [onStatusChange]);
 
   useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setShouldRender(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [isOpen]);
+
+  useEffect(() => {
     if (!isOpen) {
       return;
     }
 
+    setRememberOutput(readRememberedAudioOutput().enabled);
     void refresh();
   }, [isOpen, refresh]);
 
@@ -115,6 +131,18 @@ export const AudioSettingsDrawer = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  const persistOutput = useCallback(
+    (settings: AudioOutputSettings, enabled = rememberOutput): void => {
+      writeRememberedAudioOutput({
+        enabled,
+        outputMode: settings.outputMode ?? 'shared',
+        deviceIndex: settings.deviceIndex,
+        deviceName: settings.deviceName,
+      });
+    },
+    [rememberOutput],
+  );
+
   const applyOutput = useCallback(
     async (settings: AudioOutputSettings): Promise<void> => {
       const audio = window.echo?.audio;
@@ -127,6 +155,9 @@ export const AudioSettingsDrawer = ({
       setIsBusy(true);
       setError(null);
       try {
+        if (rememberOutput) {
+          persistOutput(settings);
+        }
         const nextStatus = await audio.setOutput(settings);
         setOutputMode(nextStatus.outputMode);
         onStatusChange(nextStatus);
@@ -136,27 +167,36 @@ export const AudioSettingsDrawer = ({
         setIsBusy(false);
       }
     },
-    [onStatusChange],
+    [onStatusChange, persistOutput, rememberOutput],
   );
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
-    const settings: AudioOutputSettings = { outputMode: mode };
-
-    if (device) {
-      settings.deviceIndex = device.index;
-      settings.deviceName = device.name;
-    }
-
+    const settings = createOutputSettings(mode, device);
     setOutputMode(mode);
     void applyOutput(settings);
   };
 
-  if (!isOpen) {
+  const toggleExclusive = (enabled: boolean): void => {
+    const nextMode: AudioOutputMode = enabled ? 'exclusive' : 'shared';
+    const currentDevice = sharedDevices.find((device) => deviceMatchesStatus(device, status, outputMode)) ?? null;
+    applyDevice(nextMode, currentDevice);
+  };
+
+  const toggleRememberOutput = (enabled: boolean): void => {
+    setRememberOutput(enabled);
+    writeRememberedAudioOutput({
+      enabled,
+      outputMode: status?.outputMode ?? outputMode,
+      deviceName: status?.outputDeviceName ?? undefined,
+    });
+  };
+
+  if (!shouldRender) {
     return null;
   }
 
   return (
-    <div className="audio-drawer-root no-drag" role="presentation">
+    <div className="audio-drawer-root no-drag" role="presentation" data-open={isOpen}>
       <button className="audio-drawer-scrim" type="button" aria-label="Close audio settings" onClick={onClose} />
       <aside className="audio-drawer" aria-label="音频设置">
         <header className="audio-drawer-header">
@@ -180,28 +220,6 @@ export const AudioSettingsDrawer = ({
           <RefreshCw size={14} />
         </button>
 
-        <div className="audio-mode-tabs" aria-label="Output mode">
-          {(['shared', 'exclusive', 'asio'] as AudioOutputMode[]).map((mode) => (
-            <button
-              className={outputMode === mode ? 'active' : ''}
-              key={mode}
-              type="button"
-              onClick={() => {
-                setOutputMode(mode);
-                if (mode === 'asio') {
-                  const fallbackAsio = asioDevices.find((device) => device.isDefault) ?? asioDevices[0] ?? null;
-                  applyDevice('asio', fallbackAsio);
-                  return;
-                }
-
-                applyDevice(mode, status?.outputMode === mode ? null : sharedDevices.find((device) => device.isDefault) ?? null);
-              }}
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
-
         <section className="audio-drawer-section">
           <div className="audio-drawer-section-title">
             <Headphones size={17} />
@@ -211,11 +229,11 @@ export const AudioSettingsDrawer = ({
             className={`audio-device-pill ${!status?.outputDeviceName && outputMode !== 'asio' ? 'active' : ''}`}
             type="button"
             disabled={isBusy}
-            onClick={() => applyDevice(outputMode === 'asio' ? 'shared' : outputMode, null)}
+            onClick={() => applyDevice(wasapiExclusive ? 'exclusive' : 'shared', null)}
           >
             <Waves size={15} />
             <span>系统默认</span>
-            <em>{outputMode === 'exclusive' ? 'Exclusive' : 'Shared'}</em>
+            <em>{wasapiExclusive ? 'WASAPI' : 'Shared'}</em>
             {outputMode !== 'asio' && !status?.outputDeviceName ? <Check size={15} /> : null}
           </button>
           {sharedDevices.map((device) => {
@@ -227,7 +245,7 @@ export const AudioSettingsDrawer = ({
                 key={device.id}
                 type="button"
                 disabled={isBusy}
-                onClick={() => applyDevice(outputMode === 'asio' ? 'shared' : outputMode, device)}
+                onClick={() => applyDevice(wasapiExclusive ? 'exclusive' : 'shared', device)}
               >
                 <Radio size={15} />
                 <span>{device.name}</span>
@@ -236,6 +254,44 @@ export const AudioSettingsDrawer = ({
               </button>
             );
           })}
+        </section>
+
+        <section className="audio-drawer-section audio-drawer-options">
+          <label className="audio-toggle-row">
+            <span>
+              <Lock size={17} />
+              <strong>WASAPI 独占模式</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={wasapiExclusive}
+              onChange={(event) => toggleExclusive(event.currentTarget.checked)}
+            />
+          </label>
+          <p>关闭时使用 Windows Shared 混音；开启后用同一设备请求独占输出。</p>
+
+          <label className="audio-toggle-row">
+            <span>
+              <RefreshCw size={17} />
+              <strong>记住输出设备</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={rememberOutput}
+              onChange={(event) => toggleRememberOutput(event.currentTarget.checked)}
+            />
+          </label>
+          <p>开启后，下次启动会恢复本次选择的设备与输出模式。</p>
+
+          <div className="audio-buffer-options">
+            <div className="audio-drawer-section-title">
+              <Gauge size={17} />
+              <h3>缓冲区配置</h3>
+            </div>
+            <button type="button">低延迟<span>256 frames</span></button>
+            <button type="button" className="active">平衡<span>512 frames</span></button>
+            <button type="button">稳定<span>1024 frames</span></button>
+          </div>
         </section>
 
         <section className="audio-drawer-section">

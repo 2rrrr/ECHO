@@ -61,10 +61,13 @@ describe('TrackRow', () => {
     expect(img?.getAttribute('src')).toBe(coverThumb);
     expect(img?.getAttribute('loading')).toBe('lazy');
     expect(img?.getAttribute('decoding')).toBe('async');
+    expect(img?.getAttribute('width')).toBe('96');
+    expect(img?.getAttribute('height')).toBe('96');
     expect(img?.draggable).toBe(false);
 
     fireEvent.error(img!);
     expect(container.querySelector('.track-cover img')).toBeNull();
+    expect(container.querySelector('.track-cover')?.getAttribute('data-empty')).toBe('true');
 
     rerender(<TrackRow isPlaying={false} track={track({ coverThumb })} />);
     expect(container.querySelector('.track-cover img')).toBeNull();

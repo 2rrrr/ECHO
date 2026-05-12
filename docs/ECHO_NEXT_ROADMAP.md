@@ -20,7 +20,8 @@ Phase 0 intentionally kept scanning, playback, and SQLite out of the shell.
 - native-worker-ready `MetadataReader`, `CoverExtractor`, and `FileScanner` interfaces
 - first TS worker implementations that can later be replaced by Rust/C++ workers
 - embedded metadata reading with per-field source tracking
-- persisted cover cache files for thumb, large, and original
+- persisted cover cache files for `thumb.webp`, `album.webp`, `large.webp`, and original reference
+- TS+sharp cover v0.2: `sharp` performs real resize while TypeScript owns priority and cache scheduling
 - transaction-backed scan writes
 - album grouping by album title, album artist/folder fallback, and year
 - persisted album wall data that survives restart
@@ -31,7 +32,7 @@ Phase 0 intentionally kept scanning, playback, and SQLite out of the shell.
 - TrackRow single-track playback through `playback.playLocalFile({ filePath, trackId })`
 - PlayerBar status readout for playback and audio sample-rate fields
 - dev-only Library Diagnostics through `library.getDiagnostics()`
-- `benchmark:library` fake-data pressure script for 3000 and 10000 tracks
+- `benchmark:library` fake-data pressure script for 3000 and 10000 tracks plus 3000 and 10000 albums
 - sidebar `Import Folder` direct picker plus Settings/fallback folder import UX using `library.chooseFolder()`
 - sidebar `Import File` direct picker for the existing local audio file open path; single-file library ingestion remains deferred
 - focused tests for migration, scanning, metadata priority, cover priority, album grouping, restart persistence, pagination, and scan errors
@@ -39,7 +40,6 @@ Phase 0 intentionally kept scanning, playback, and SQLite out of the shell.
 Deferred beyond the minimal Phase 1 loop:
 
 - FTS-backed search
-- real image resizing for thumbnail variants
 - manual metadata editing
 - sidecar metadata
 - network completion
@@ -50,14 +50,15 @@ Deferred beyond the minimal Phase 1 loop:
 ## Phase 1.5: Native Worker & Performance Validation
 
 - decide whether to build a Rust `CoverWorker` from Phase 1.1 diagnostics and benchmark data
-- build a Rust `CoverWorker` if cover extraction/cache generation is the measured bottleneck
+- build a Go/C#/Rust `CoverWorker` only if TS+sharp v0.2 is proven insufficient by benchmark or smoke-test data
 - evaluate whether `MetadataWorker` should move to Rust/C++
-- pressure test 3000 and 10000 track libraries
+- pressure test 3000 and 10000 track libraries and 3000 and 10000 album-wall libraries
 - record CPU, memory, total scan time, metadata time, cover time, and album wall load time
 - confirm unchanged scans approach 100% skip rate
 - decide from measurements whether `FileScanner` needs native implementation
 - keep Renderer, IPC, SQLite schema, and paginated APIs unchanged while swapping worker implementations
 - verify `getTracks` first page stays under the 200 ms target and `getAlbums` first page stays under the 300 ms target
+- enter native cover work if generating 1000 album thumbs keeps CPU above 50%, 3000/10000 cover generation has unacceptable memory peaks, Electron `sharp` rebuilds are unstable, or cover cache hits remain slow
 
 ## Phase 2: Audio Core
 

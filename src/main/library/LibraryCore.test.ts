@@ -196,6 +196,12 @@ class FakeCoverExtractor implements CoverExtractor {
   }
 }
 
+class ThrowingCoverExtractor implements CoverExtractor {
+  async extract(): Promise<CoverResult> {
+    throw new Error('cover extractor boom');
+  }
+}
+
 class FakeFileScanner implements FileScanner {
   readonly calls: string[] = [];
 
@@ -656,13 +662,22 @@ describe('Library Core', () => {
     expect(track).toHaveProperty('coverThumb');
     expect(track.coverThumb).toContain('echo-cover://thumb/');
     expect(album.coverThumb).toContain('echo-cover://album/');
+    expect(track).not.toHaveProperty('largePath');
+    expect(track).not.toHaveProperty('originalRef');
+    expect(album).not.toHaveProperty('largePath');
+    expect(album).not.toHaveProperty('originalRef');
     expect(track).not.toHaveProperty('coverLarge');
     expect(track).not.toHaveProperty('coverOriginal');
     expect(serializedTrack).not.toContain('file://');
     expect(serializedAlbum).not.toContain('file://');
     expect(serializedTrack).not.toContain('cover-cache');
     expect(serializedAlbum).not.toContain('cover-cache');
+    expect(serializedTrack).not.toContain('largePath');
+    expect(serializedAlbum).not.toContain('largePath');
+    expect(serializedTrack).not.toContain('originalRef');
+    expect(serializedAlbum).not.toContain('originalRef');
     expect(serializedTrack).not.toContain('base64');
+    expect(serializedAlbum).not.toContain('base64');
     harness.cleanup();
   });
 
@@ -680,9 +695,16 @@ describe('Library Core', () => {
     expect(diagnostics.foldersCount).toBe(1);
     expect(diagnostics.tracksCount).toBe(1);
     expect(diagnostics.albumsCount).toBe(1);
+    expect(diagnostics.coversCount).toBe(1);
     expect(diagnostics.lastScan?.status).toBe('completed');
+    expect(diagnostics.lastScan?.coverCount).toBe(1);
+    expect(diagnostics.lastScan?.skippedCount).toBe(0);
     expect(typeof diagnostics.lastQueryMs.getTracks).toBe('number');
     expect(typeof diagnostics.lastQueryMs.getAlbums).toBe('number');
+    expect(typeof diagnostics.averageAlbumPayloadBytes).toBe('number');
+    expect(diagnostics.coverCachePath).toBe(harness.coverCacheDir);
+    expect(typeof diagnostics.coverCacheSizeBytes).toBe('number');
+    expect(diagnostics.coverCacheVersion).toBe(1);
     expect(diagnostics.databasePath).toBe(harness.databasePath);
     expect(serialized).not.toContain('"items"');
     expect(serialized).not.toContain('coverLarge');
@@ -702,7 +724,7 @@ describe('Library Core', () => {
         }),
       ),
     });
-    const filePath = writeAudioFile(harness.folder, 'Cover Priority.flac');
+    writeAudioFile(harness.folder, 'Cover Priority.flac');
     writeFileSync(join(harness.folder, 'cover.jpg'), new Uint8Array([9, 9, 9]));
     harness.addFolder();
 
@@ -718,6 +740,22 @@ describe('Library Core', () => {
     expect(typeof cover?.thumb_path).toBe('string');
     expect(track.coverThumb).toContain('echo-cover://thumb/');
     database.close();
+    harness.cleanup();
+  });
+
+  it('cover extractor failures do not prevent track metadata from being written', async () => {
+    const harness = createHarness({ coverExtractor: new ThrowingCoverExtractor() });
+    writeAudioFile(harness.folder, 'Cover Failure.flac');
+    harness.addFolder();
+
+    const status = await harness.scanFolder();
+    const tracks = harness.service.getTracks({ pageSize: 10 });
+
+    expect(status.status).toBe('completed');
+    expect(status.errors.join('\n')).toContain('cover extractor boom');
+    expect(tracks.total).toBe(1);
+    expect(tracks.items[0].title).toBe('Embedded Title');
+    expect(tracks.items[0].coverThumb).toBeNull();
     harness.cleanup();
   });
 

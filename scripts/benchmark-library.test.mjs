@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateFakeTracks, runBenchmark } from './benchmark-library.mjs';
+import { generateFakeTracks, runAlbumBenchmark, runBenchmark } from './benchmark-library.mjs';
 
 describe('benchmark-library', () => {
   it('generates fake tracks', () => {
@@ -14,6 +14,21 @@ describe('benchmark-library', () => {
 
     expect(result.tracks).toBe(25);
     expect(result.albumsCount).toBeGreaterThan(0);
+    expect(result.getAlbumsPage1ItemCount).toBeGreaterThan(0);
+    expect(result.averageCoverThumbLength).toBeGreaterThan(0);
+    expect(result.getAlbumsReturnsLargeOrOriginal).toBe(false);
     expect(result.unchangedScanSkipped).toBe(25);
+  });
+
+  it('runs a small album-wall benchmark with fake cover cache payloads', () => {
+    const result = runAlbumBenchmark(75);
+
+    expect(result.scenario).toBe('albums');
+    expect(result.tracks).toBe(75);
+    expect(result.albumsTotalCount).toBe(75);
+    expect(result.getAlbumsPage1ItemCount).toBe(60);
+    expect(result.getAlbumsPage10ItemCount).toBe(0);
+    expect(result.averageCoverThumbLength).toBeGreaterThan(0);
+    expect(result.getAlbumsReturnsLargeOrOriginal).toBe(false);
   });
 });

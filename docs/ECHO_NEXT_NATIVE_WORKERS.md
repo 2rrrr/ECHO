@@ -13,7 +13,7 @@ Stable interfaces live under `src/main/library/workers/`:
 Current implementations:
 
 - `TsMetadataReader`: `music-metadata`, embedded tags first, filename/folder fallback only for missing fields
-- `TsCoverExtractor`: embedded cover, same-folder cover/front/folder image, generated default, cached paths on disk
+- `TsCoverExtractor`: TS+sharp v0.2 cover worker; embedded cover, same-folder cover/front/folder image, generated default, cached paths on disk, and real resize output
 - `TsFileScanner`: recursive file enumeration and stat only
 
 Future implementations can be swapped in as:
@@ -39,6 +39,7 @@ Future implementations can be swapped in as:
 
 - `source`
 - `thumbPath`
+- `albumPath`
 - `largePath`
 - `originalRef`
 - `sourceHash`
@@ -58,7 +59,7 @@ These shapes are the contract a native worker must preserve. Raw parser details 
 
 Priority order for native work:
 
-1. `CoverWorker`: highest priority because image decode/resize/cache generation is the most likely CPU spike.
+1. `CoverWorker`: highest priority only if TS+sharp v0.2 fails measured cover-generation targets.
 2. `MetadataWorker`: second priority; tag parsing can become expensive on large libraries.
 3. `FileScanner`: only Rust/C++ if 3000/10000 track pressure tests show TS directory walking is a bottleneck.
 
@@ -78,7 +79,7 @@ TypeScript service layer:
 Worker layer:
 
 - reads tags
-- extracts/caches covers
+- extracts/caches covers; current TS+sharp v0.2 uses `sharp` for resize while TypeScript owns priority and cache scheduling
 - enumerates files and stat data
 
 IPC:
@@ -112,10 +113,17 @@ Targets for Phase 1 and Phase 1.5 validation:
 
 Phase 1.5 Native Worker & Performance Validation:
 
-- use Phase 1.1 `library.getDiagnostics()` and `npm run benchmark:library` results before committing to Rust worker work
-- build Rust `CoverWorker` if cover extraction/cache generation is the measured bottleneck
+- use Phase 1.1 `library.getDiagnostics()`, smoke tests, and `npm run benchmark:library` results before committing to native worker work
+- build a Go/C#/Rust `CoverWorker` only if cover extraction/cache generation is the measured bottleneck
 - evaluate Rust `MetadataWorker`
-- run 3000 and 10000 track pressure tests
+- run 3000 and 10000 track pressure tests and 3000 and 10000 album-wall pressure tests
 - record CPU, memory, total scan time, metadata time, cover time, and album wall load time
 - decide from measurements whether `FileScanner` needs Rust/C++
 - verify worker replacement does not change Renderer, IPC, SQLite schema, or list payloads
+
+Native CoverWorker decision indicators:
+
+- generating 1000 album thumbs keeps CPU above 50% for a long stretch
+- generating 3000 or 10000 covers has unacceptable memory peaks
+- Electron `sharp` packaging or native rebuilds are unstable
+- cover cache hits remain slow after `thumb.webp` and `album.webp` exist

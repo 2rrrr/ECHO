@@ -139,6 +139,25 @@ class StartupFailingBridge extends EventEmitter {
   }
 }
 
+class ConfigurableStartupFailingBridge extends EventEmitter {
+  readonly writable = null;
+  readonly stop = vi.fn();
+  startOptions: NativeOutputStartOptions | null = null;
+
+  constructor(private readonly message: string) {
+    super();
+  }
+
+  async start(options: NativeOutputStartOptions): Promise<NativeBridgeReadyResult> {
+    this.startOptions = options;
+    throw new Error(this.message);
+  }
+
+  getPositionSeconds(): number {
+    return 0;
+  }
+}
+
 const createSessionHarness = (
   probes: AudioProbeResult[],
   readySampleRates: number[] = [],
@@ -373,6 +392,60 @@ describe('Audio Core sample-rate regression guard', () => {
       asio: true,
       exclusive: false,
       deviceName: 'TEAC ASIO USB DRIVER',
+    });
+  });
+
+  it('falls back to the default ASIO device when a selected ASIO driver refuses to open', async () => {
+    const devices: AudioDeviceInfo[] = [
+      {
+        id: 'asio:0',
+        index: 0,
+        name: 'FlexASIO',
+        outputMode: 'asio',
+        sampleRate: null,
+        sharedDeviceSampleRate: 48000,
+        isDefault: true,
+      },
+      {
+        id: 'asio:2',
+        index: 2,
+        name: 'TEAC ASIO USB DRIVER',
+        outputMode: 'asio',
+        sampleRate: null,
+        sharedDeviceSampleRate: 48000,
+        isDefault: false,
+      },
+    ];
+    const decoder = new FakeDecoder(new Map([['asio.flac', probe('asio.flac', 44100)]]));
+    const failingBridge = new ConfigurableStartupFailingBridge('ASIO open failed: No device found.');
+    const fallbackBridge = new FakeBridge(44100);
+    const bridges = [failingBridge, fallbackBridge];
+    const session = new AudioSession({
+      decoder,
+      deviceService: {
+        listDevices: () => devices,
+      },
+      createBridge: () => bridges.shift() ?? new FakeBridge(44100),
+      logger: noopLogger,
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'asio.flac',
+      output: { outputMode: 'asio', deviceIndex: 2, deviceName: 'TEAC ASIO USB DRIVER' },
+    });
+
+    expect(status.outputMode).toBe('asio');
+    expect(status.outputBackend).toBe('asio');
+    expect(status.outputDeviceName).toBe('FlexASIO');
+    expect(failingBridge.startOptions).toMatchObject({
+      asio: true,
+      deviceIndex: 2,
+      deviceName: 'TEAC ASIO USB DRIVER',
+    });
+    expect(fallbackBridge.startOptions).toMatchObject({
+      asio: true,
+      deviceIndex: 0,
+      deviceName: 'FlexASIO',
     });
   });
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronUp, Gauge, MoreHorizontal, Music2, SlidersHorizontal } from 'lucide-react';
+import { Gauge, Import, Music2 } from 'lucide-react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
@@ -211,13 +211,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           <Gauge size={17} />
         </button>
         <button className="icon-button" type="button" aria-label="音频控制" title="音频控制" onClick={onOpenAudioSettings}>
-          <SlidersHorizontal size={17} />
-        </button>
-        <button className="icon-button" type="button" aria-label="更多" title="更多">
-          <MoreHorizontal size={18} />
-        </button>
-        <button className="icon-button" type="button" aria-label="展开播放器" title="展开播放器">
-          <ChevronUp size={18} />
+          <Import size={17} />
         </button>
       </div>
     </footer>

@@ -9,6 +9,13 @@ Use this checklist with real local music folders after `npm run dev` opens the E
 - 3000 tracks
 - 10000 tracks, if available
 
+Cover and album-wall pass sizes:
+
+- 100 albums
+- 1000 albums
+- 3000 albums
+- 10000 albums, if available
+
 ## Import And Scan
 
 1. Open Songs and click the folder-plus button.
@@ -43,6 +50,31 @@ Record:
 - whether any scan starts unexpectedly
 - database size from diagnostics
 - cover cache size from diagnostics
+
+## Cover And Album Wall
+
+1. Test folders with embedded covers, folder covers, no covers, and a few intentionally bad cover files.
+2. Confirm embedded covers win over same-folder `cover`, `folder`, or `front` images.
+3. Confirm folder covers are used only when embedded covers are missing.
+4. Confirm generated default covers are stable and reused.
+5. Open the album wall at 100, 1000, 3000, and 10000 albums when available.
+6. Confirm first screen load time is acceptable and record it.
+7. Scroll the album wall and confirm CPU does not stay high after images settle.
+8. Confirm list rows request only `echo-cover://thumb/*` and album cards request only `echo-cover://album/*`.
+9. Confirm no list or album-wall request uses `large`, `original`, file paths, binary data, or base64.
+10. Restart and confirm the album wall reads `albums` and `covers` rows directly instead of regrouping tracks or regenerating covers.
+11. Rescan an unchanged library and confirm cover generation is skipped.
+12. Confirm cover extraction errors are recorded but do not interrupt track metadata writes.
+
+Record:
+
+- album wall first-screen load time
+- CPU while scrolling after covers have cached
+- whether any `large` or `original` cover request appears during list or album-wall scrolling
+- restart album wall load time
+- unchanged scan skipped count and cover count
+- representative embedded/folder/default cover examples
+- cover error behavior
 
 ## Rescan
 
@@ -96,4 +128,4 @@ Run:
 npm run benchmark:library
 ```
 
-Keep the 3000 and 10000 track output with the smoke-test notes. Phase 1.5 should enter Rust CoverWorker work only if real smoke data or the benchmark shows cover work is the bottleneck.
+Keep the 3000/10000 track and 3000/10000 album output with the smoke-test notes. Phase 1.5 should enter Go/C#/Rust CoverWorker work only if real smoke data or the benchmark proves TS+sharp is not enough: sustained CPU above 50% while generating 1000 album thumbs, unacceptable memory peaks at 3000/10000 covers, unstable Electron `sharp` rebuilds, or slow cover-cache hits.

@@ -22,8 +22,12 @@ CREATE TABLE covers (
   source_hash TEXT,
   mime_type TEXT,
   thumb_path TEXT,
+  album_path TEXT,
   large_path TEXT,
   original_ref TEXT,
+  cache_version INTEGER,
+  warnings_json TEXT NOT NULL DEFAULT '[]',
+  errors_json TEXT NOT NULL DEFAULT '[]',
   cover_thumb TEXT,
   cover_large TEXT,
   cover_original TEXT,
@@ -86,12 +90,15 @@ CREATE INDEX idx_tracks_artist ON tracks(artist);
 CREATE INDEX idx_tracks_album ON tracks(album);
 CREATE INDEX idx_albums_album_key ON albums(album_key);
 CREATE INDEX idx_album_tracks_album_id ON album_tracks(album_id);
+CREATE INDEX idx_album_tracks_track_id ON album_tracks(track_id);
+CREATE INDEX idx_covers_id ON covers(id);
 `;
 
 const nowIso = () => new Date().toISOString();
 
-export const createFakeTrack = (index, folderId = 'folder-1') => {
-  const albumIndex = Math.floor(index / 10);
+export const createFakeTrack = (index, folderId = 'folder-1', options = {}) => {
+  const tracksPerAlbum = options.tracksPerAlbum ?? 10;
+  const albumIndex = Math.floor((index - 1) / tracksPerAlbum) + 1;
   const artistIndex = albumIndex % 250;
 
   return {
@@ -113,18 +120,27 @@ export const createFakeTrack = (index, folderId = 'folder-1') => {
     sampleRate: index % 4 === 0 ? 96000 : 44100,
     bitDepth: index % 3 === 0 ? 24 : 16,
     bitrate: 900000,
-    coverId: null,
+    coverId: options.withCoverCache === false ? null : `cover-${albumIndex}`,
     metadataStatus: 'ok',
     fieldSources: JSON.stringify({ title: 'embedded', artist: 'embedded', album: 'embedded' }),
   };
 };
 
-export const generateFakeTracks = (count) => Array.from({ length: count }, (_, index) => createFakeTrack(index + 1));
+export const generateFakeTracks = (count, options = {}) => Array.from({ length: count }, (_, index) => createFakeTrack(index + 1, 'folder-1', options));
 
-const insertTracks = (database, tracks) => {
+const insertTracks = (database, tracks, options = {}) => {
   const insertFolder = database.prepare(
     `INSERT INTO folders (id, path, name, status, enabled, last_scan_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insertCover = database.prepare(
+    `INSERT INTO covers (
+      id, source_type, source_hash, mime_type, thumb_path, album_path, large_path, original_ref,
+      cache_version, warnings_json, errors_json, cover_thumb, cover_large, cover_original, created_at, updated_at
+    ) VALUES (
+      @id, @sourceType, @sourceHash, @mimeType, @thumbPath, @albumPath, @largePath, @originalRef,
+      @cacheVersion, '[]', '[]', @thumbPath, @largePath, @originalRef, @createdAt, @updatedAt
+    )`,
   );
   const insertTrack = database.prepare(
     `INSERT INTO tracks (
@@ -141,6 +157,27 @@ const insertTracks = (database, tracks) => {
 
   database.transaction(() => {
     insertFolder.run('folder-1', resolve('D:/FakeLibrary'), 'FakeLibrary', 'active', 1, null, timestamp, timestamp);
+
+    if (options.withCoverCache !== false) {
+      const coverIds = new Set(tracks.map((track) => track.coverId).filter(Boolean));
+
+      for (const coverId of coverIds) {
+        const albumIndex = String(coverId).replace(/^cover-/, '');
+        insertCover.run({
+          id: coverId,
+          sourceType: 'embedded',
+          sourceHash: `hash-${albumIndex}`,
+          mimeType: 'image/webp',
+          thumbPath: resolve(`D:/FakeLibrary/.echo-cover-cache/${albumIndex}/thumb.webp`),
+          albumPath: resolve(`D:/FakeLibrary/.echo-cover-cache/${albumIndex}/album.webp`),
+          largePath: resolve(`D:/FakeLibrary/.echo-cover-cache/${albumIndex}/large.webp`),
+          originalRef: resolve(`D:/FakeLibrary/.echo-cover-cache/${albumIndex}/original.jpg`),
+          cacheVersion: 1,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+    }
 
     for (const track of tracks) {
       insertTrack.run({
@@ -238,8 +275,11 @@ export const runBenchmark = (trackCount, options = {}) => {
   database.exec(schemaSql);
 
   try {
-    const tracks = generateFakeTracks(trackCount);
-    const insert = measure(() => insertTracks(database, tracks));
+    const tracks = generateFakeTracks(trackCount, {
+      tracksPerAlbum: options.tracksPerAlbum,
+      withCoverCache: options.withCoverCache,
+    });
+    const insert = measure(() => insertTracks(database, tracks, { withCoverCache: options.withCoverCache }));
     const grouping = measure(() => refreshAlbums(database));
     const getTracksPage1 = measure(() =>
       database
@@ -255,13 +295,32 @@ export const runBenchmark = (trackCount, options = {}) => {
     const getAlbumsPage1 = measure(() =>
       database
         .prepare(
-          `SELECT id, album_key, title, album_artist, track_count, duration
+          `SELECT albums.id, albums.album_key, albums.title, albums.album_artist, albums.track_count, albums.duration,
+             covers.album_path AS coverThumb
            FROM albums
+           LEFT JOIN covers ON covers.id = albums.cover_id
            ORDER BY title COLLATE NOCASE, album_artist COLLATE NOCASE
            LIMIT 60 OFFSET 0`,
         )
         .all(),
     );
+    const getAlbumsPage10 = measure(() =>
+      database
+        .prepare(
+          `SELECT albums.id, albums.album_key, albums.title, albums.album_artist, albums.track_count, albums.duration,
+             covers.album_path AS coverThumb
+           FROM albums
+           LEFT JOIN covers ON covers.id = albums.cover_id
+           ORDER BY title COLLATE NOCASE, album_artist COLLATE NOCASE
+           LIMIT 60 OFFSET 540`,
+        )
+        .all(),
+    );
+    const albumsTotal = measure(() => database.prepare('SELECT COUNT(*) AS total FROM albums').get().total);
+    const averageCoverThumbLength = getAlbumsPage1.result.length
+      ? getAlbumsPage1.result.reduce((total, item) => total + String(item.coverThumb ?? '').length, 0) / getAlbumsPage1.result.length
+      : 0;
+    const getAlbumsPayload = JSON.stringify(getAlbumsPage1.result);
     const unchangedScanSkip = measure(() => {
       const fingerprints = new Map(tracks.map((track) => [track.path, `${track.sizeBytes}:${track.mtimeMs}`]));
       const rows = database.prepare('SELECT path, size_bytes, mtime_ms FROM tracks WHERE missing = 0').all();
@@ -271,11 +330,20 @@ export const runBenchmark = (trackCount, options = {}) => {
 
     return {
       tracks: trackCount,
+      scenario: options.scenario ?? 'tracks',
       albumsCount: grouping.result,
       insertDurationMs: insert.durationMs,
       groupingDurationMs: grouping.durationMs,
       getTracksPage1DurationMs: getTracksPage1.durationMs,
       getAlbumsPage1DurationMs: getAlbumsPage1.durationMs,
+      getAlbumsPage10DurationMs: getAlbumsPage10.durationMs,
+      albumsTotalDurationMs: albumsTotal.durationMs,
+      albumsTotalCount: Number(albumsTotal.result ?? 0),
+      getAlbumsPage1ItemCount: getAlbumsPage1.result.length,
+      getAlbumsPage10ItemCount: getAlbumsPage10.result.length,
+      averageCoverThumbLength,
+      getAlbumsPage1PayloadBytes: Buffer.byteLength(getAlbumsPayload),
+      getAlbumsReturnsLargeOrOriginal: /large|original/i.test(getAlbumsPayload),
       unchangedScanSkipDurationMs: unchangedScanSkip.durationMs,
       unchangedScanSkipped: unchangedScanSkip.result,
       memory: {
@@ -294,13 +362,28 @@ export const runBenchmark = (trackCount, options = {}) => {
   }
 };
 
+export const runAlbumBenchmark = (albumCount, options = {}) =>
+  runBenchmark(albumCount, {
+    ...options,
+    scenario: 'albums',
+    tracksPerAlbum: 1,
+    withCoverCache: true,
+  });
+
 const printResult = (result) => {
+  console.log(`scenario: ${result.scenario}`);
   console.log(`tracks: ${result.tracks}`);
   console.log(`albums count: ${result.albumsCount}`);
   console.log(`insert duration: ${result.insertDurationMs.toFixed(2)} ms`);
   console.log(`grouping duration: ${result.groupingDurationMs.toFixed(2)} ms`);
   console.log(`getTracks page1 duration: ${result.getTracksPage1DurationMs.toFixed(2)} ms`);
   console.log(`getAlbums page1 duration: ${result.getAlbumsPage1DurationMs.toFixed(2)} ms`);
+  console.log(`getAlbums page10 duration: ${result.getAlbumsPage10DurationMs.toFixed(2)} ms`);
+  console.log(`albums total count: ${result.albumsTotalCount} in ${result.albumsTotalDurationMs.toFixed(2)} ms`);
+  console.log(`payload item count page1 / page10: ${result.getAlbumsPage1ItemCount} / ${result.getAlbumsPage10ItemCount}`);
+  console.log(`average coverThumb string length: ${result.averageCoverThumbLength.toFixed(2)}`);
+  console.log(`getAlbums page1 payload bytes: ${result.getAlbumsPage1PayloadBytes}`);
+  console.log(`getAlbums returns large/original: ${result.getAlbumsReturnsLargeOrOriginal}`);
   console.log(`unchanged scan skip: ${result.unchangedScanSkipped} in ${result.unchangedScanSkipDurationMs.toFixed(2)} ms`);
   console.log(`memory rss / heapUsed: ${result.memory.rss} / ${result.memory.heapUsed}`);
   console.log(`database size: ${result.databaseSizeBytes}`);
@@ -310,5 +393,9 @@ const printResult = (result) => {
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   for (const count of [3000, 10000]) {
     printResult(runBenchmark(count));
+  }
+
+  for (const count of [3000, 10000]) {
+    printResult(runAlbumBenchmark(count));
   }
 }

@@ -48,6 +48,7 @@ Current Phase 1 list defaults:
 - songs: `pageSize = 100`
 - albums: `pageSize = 60`
 - track rows are virtualized with an estimated 70px row height
+- list and album-wall images must use lazy loading and async decoding
 
 ## Preload Rules
 
@@ -77,10 +78,10 @@ Library Core heavy work must be called through stable interfaces:
 
 `LibraryService` may compose concrete defaults, but orchestration must depend on the interfaces. IPC and Renderer must never import `TsMetadataReader`, `TsCoverExtractor`, or `TsFileScanner`.
 
-Future Rust/C++ workers must preserve the same return shapes:
+Future Go/C#/Rust workers must preserve the same return shapes:
 
 - metadata fields, field sources, warnings, errors, and status
-- cover source, thumb path, large path, original reference, warnings, and errors
+- cover source, thumb path, album path, large path, original reference, source hash, warnings, and errors
 - scanned file path, size, and mtime
 
 SQLite schema, IPC payloads, and Renderer list views must not change just because a worker implementation changes.
@@ -132,15 +133,20 @@ Network covers must never overwrite manual, embedded, or local covers.
 
 Phase 1 implements embedded cover, same-folder `cover/folder/front` images, and generated default cover only. Network cover lookup is forbidden in Phase 1.
 
-Covers must be stored as:
+Current TS+sharp v0.2 covers must be stored as:
 
-- thumb
-- large
+- `thumb.webp` at 96x96 for `LibraryTrack.coverThumb`
+- `album.webp` at 320x320 for `LibraryAlbum.coverThumb`
+- `large.webp` up to 768x768 for NowPlaying/detail
 - original
 
-List views use thumb only. Full covers load on demand.
+`sharp` performs the real resize work. TypeScript owns cover priority, cache directory scheduling, and fallback behavior.
 
-List APIs must never return `cover_large`, `cover_original`, raw binary cover data, or base64 cover payloads.
+List views use track thumbs only. Album walls use album thumbs only. Full covers load on demand outside list scrolling.
+
+List APIs must never return `cover_large`, `cover_original`, `largePath`, `originalRef`, raw binary cover data, or base64 cover payloads.
+
+Do not start a Go/C#/Rust CoverWorker until benchmark or smoke-test data proves TS+sharp is insufficient. Decision indicators are sustained CPU above 50% while generating 1000 album thumbs, unacceptable memory peaks for 3000/10000 covers, unstable Electron `sharp` packaging/rebuilds, or slow cover-cache hits after derivatives already exist.
 
 ## Long Tasks
 

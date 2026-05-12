@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { AudioSettingsDrawer } from '../components/player/AudioSettingsDrawer';
+import { readRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
 import { AppTitleBar } from '../components/layout/AppTitleBar';
 import type { AppRoute, AppRouteId } from './routes';
@@ -54,6 +55,31 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
     return () => window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
+  }, []);
+
+  useEffect(() => {
+    const audio = window.echo?.audio;
+
+    if (!audio) {
+      return;
+    }
+
+    const remembered = readRememberedAudioOutput();
+
+    if (!remembered.enabled) {
+      return;
+    }
+
+    void audio
+      .setOutput({
+        outputMode: remembered.outputMode,
+        deviceIndex: remembered.deviceIndex,
+        deviceName: remembered.deviceName,
+      })
+      .then(setAudioDrawerStatus)
+      .catch((error) => {
+        console.error('Failed to restore remembered audio output', error);
+      });
   }, []);
 
   const notifyLibraryChanged = useCallback(async (): Promise<void> => {

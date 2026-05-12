@@ -779,8 +779,31 @@ export class LibraryStore {
         getTracks: this.lastTracksQueryMs,
         getAlbums: this.lastAlbumsQueryMs,
       },
+      averageAlbumPayloadBytes: this.getAverageAlbumPayloadBytes(),
+      coverCacheVersion: currentCoverCacheVersion,
       ...paths,
     };
+  }
+
+  private getAverageAlbumPayloadBytes(): number | null {
+    const row = this.getRow(
+      `SELECT AVG(
+        160
+        + LENGTH(id)
+        + LENGTH(album_key)
+        + LENGTH(title)
+        + LENGTH(album_artist)
+        + COALESCE(LENGTH(CAST(year AS TEXT)), 4)
+        + LENGTH(CAST(track_count AS TEXT))
+        + LENGTH(CAST(duration AS TEXT))
+        + COALESCE(LENGTH(cover_id), 4)
+        + CASE WHEN cover_id IS NULL THEN 4 ELSE LENGTH('echo-cover://album/') + LENGTH(cover_id) END
+      ) AS average_bytes
+      FROM albums`,
+    );
+    const value = Number(row?.average_bytes ?? 0);
+
+    return Number.isFinite(value) && value > 0 ? value : null;
   }
 
   private trackOrderSql(sort: string): string {
