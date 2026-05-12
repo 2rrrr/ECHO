@@ -1,0 +1,793 @@
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_core/juce_core.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <set>
+#include <string>
+#include <thread>
+#include <vector>
+
+#if JUCE_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
+namespace
+{
+struct Options
+{
+    bool list = false;
+    bool asio = false;
+    bool exclusive = false;
+    int sampleRate = 44100;
+    int channels = 2;
+    int deviceIndex = -1;
+    double volume = 1.0;
+    juce::String deviceName;
+};
+
+struct DeviceDescriptor
+{
+    int index = -1;
+    juce::String typeName;
+    juce::String name;
+    int sampleRate = 0;
+    int sharedSampleRate = 0;
+    bool isDefault = false;
+    bool isAsio = false;
+};
+
+void logLine(const std::string& message)
+{
+    std::cerr << "[echo-audio-host] " << message << std::endl;
+}
+
+void writeJsonLine(const std::string& json)
+{
+    std::cout << json << std::endl;
+}
+
+std::string jsonEscape(const juce::String& input)
+{
+    std::string source = input.toStdString();
+    std::string result;
+    result.reserve(source.size() + 8);
+
+    for (char ch : source)
+    {
+        switch (ch)
+        {
+            case '\\': result += "\\\\"; break;
+            case '"': result += "\\\""; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default: result += ch; break;
+        }
+    }
+
+    return result;
+}
+
+int parseInt(const juce::String& value, int fallback)
+{
+    if (value.isEmpty())
+        return fallback;
+
+    try
+    {
+        return std::stoi(value.toStdString());
+    }
+    catch (...)
+    {
+        return fallback;
+    }
+}
+
+double parseDouble(const juce::String& value, double fallback)
+{
+    if (value.isEmpty())
+        return fallback;
+
+    try
+    {
+        return std::stod(value.toStdString());
+    }
+    catch (...)
+    {
+        return fallback;
+    }
+}
+
+std::vector<juce::String> getCommandLineArgs(int argc, char* argv[])
+{
+#if JUCE_WINDOWS
+    int wideArgc = 0;
+    LPWSTR* wideArgv = CommandLineToArgvW(GetCommandLineW(), &wideArgc);
+    std::vector<juce::String> wideArgs;
+
+    if (wideArgv != nullptr)
+    {
+        wideArgs.reserve(static_cast<size_t>(wideArgc));
+
+        for (int i = 0; i < wideArgc; ++i)
+            wideArgs.emplace_back(wideArgv[i]);
+
+        LocalFree(wideArgv);
+        return wideArgs;
+    }
+#endif
+
+    std::vector<juce::String> args;
+    args.reserve(static_cast<size_t>(std::max(argc, 0)));
+
+    for (int i = 0; i < argc; ++i)
+        args.emplace_back(argv[i] != nullptr ? juce::String::fromUTF8(argv[i]) : juce::String());
+
+    return args;
+}
+
+Options parseOptions(const std::vector<juce::String>& args)
+{
+    Options options;
+
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        const auto arg = args[i];
+
+        if (arg == "-list")
+        {
+            options.list = true;
+        }
+        else if (arg == "-asio")
+        {
+            options.asio = true;
+        }
+        else if (arg == "-exclusive")
+        {
+            options.exclusive = true;
+        }
+        else if (arg == "-sr" && i + 1 < args.size())
+        {
+            options.sampleRate = std::max(1, parseInt(args[++i], options.sampleRate));
+        }
+        else if (arg == "-ch" && i + 1 < args.size())
+        {
+            options.channels = std::max(1, std::min(8, parseInt(args[++i], options.channels)));
+        }
+        else if (arg == "-device-index" && i + 1 < args.size())
+        {
+            options.deviceIndex = parseInt(args[++i], -1);
+        }
+        else if (arg == "-device" && i + 1 < args.size())
+        {
+            options.deviceName = args[++i];
+        }
+        else if (arg == "-vol" && i + 1 < args.size())
+        {
+            options.volume = std::max(0.0, std::min(1.0, parseDouble(args[++i], options.volume)));
+        }
+    }
+
+    return options;
+}
+
+bool isAsioType(const juce::String& typeName)
+{
+    return typeName.containsIgnoreCase("asio");
+}
+
+bool isPreferredSharedType(const juce::String& typeName)
+{
+    return typeName.containsIgnoreCase("windows audio")
+        || typeName.containsIgnoreCase("wasapi");
+}
+
+int sharedTypePriority(const juce::String& typeName)
+{
+    if (typeName.containsIgnoreCase("shared"))
+        return 0;
+
+    if (typeName.containsIgnoreCase("windows audio") || typeName.containsIgnoreCase("wasapi"))
+        return 1;
+
+    if (typeName.containsIgnoreCase("directsound"))
+        return 2;
+
+    return 3;
+}
+
+int pickRate(const juce::Array<double>& rates, bool maxRate)
+{
+    if (rates.isEmpty())
+        return 0;
+
+    double picked = rates[0];
+
+    for (auto rate : rates)
+    {
+        if (std::abs(rate - 48000.0) < 0.5 && ! maxRate)
+            return 48000;
+
+        picked = maxRate ? std::max(picked, rate) : picked;
+    }
+
+    return static_cast<int>(std::round(picked));
+}
+
+void createDeviceTypes(juce::OwnedArray<juce::AudioIODeviceType>& types)
+{
+    juce::AudioDeviceManager manager;
+    manager.createAudioDeviceTypes(types);
+}
+
+std::vector<DeviceDescriptor> enumerateDevices(bool asioOnly, bool dedupe = true)
+{
+    juce::OwnedArray<juce::AudioIODeviceType> types;
+    createDeviceTypes(types);
+
+    std::vector<juce::AudioIODeviceType*> candidateTypes;
+
+    for (auto* type : types)
+    {
+        if (type == nullptr)
+            continue;
+
+        const bool typeIsAsio = isAsioType(type->getTypeName());
+        if (asioOnly != typeIsAsio)
+            continue;
+
+        if (dedupe && ! asioOnly && ! isPreferredSharedType(type->getTypeName()))
+            continue;
+
+        candidateTypes.push_back(type);
+    }
+
+    if (candidateTypes.empty())
+    {
+        for (auto* type : types)
+        {
+            if (type == nullptr)
+                continue;
+
+            const bool typeIsAsio = isAsioType(type->getTypeName());
+            if (asioOnly == typeIsAsio)
+                candidateTypes.push_back(type);
+        }
+    }
+
+    std::sort(candidateTypes.begin(), candidateTypes.end(), [] (const auto* left, const auto* right)
+    {
+        return sharedTypePriority(left->getTypeName()) < sharedTypePriority(right->getTypeName());
+    });
+
+    std::vector<DeviceDescriptor> devices;
+    std::set<std::string> seenDeviceNames;
+    int nextIndex = 0;
+
+    for (auto* type : candidateTypes)
+    {
+        type->scanForDevices();
+        const auto names = type->getDeviceNames(false);
+        const int defaultIndex = type->getDefaultDeviceIndex(false);
+
+        for (int i = 0; i < names.size(); ++i)
+        {
+            const auto dedupeKey = names[i].toStdString();
+            if (dedupe && ! asioOnly && seenDeviceNames.find(dedupeKey) != seenDeviceNames.end())
+                continue;
+
+            seenDeviceNames.insert(dedupeKey);
+            devices.push_back({
+                nextIndex++,
+                type->getTypeName(),
+                names[i],
+                0,
+                48000,
+                i == defaultIndex,
+                isAsioType(type->getTypeName()),
+            });
+        }
+    }
+
+    return devices;
+}
+
+void listDevices(bool asioOnly)
+{
+    const auto devices = enumerateDevices(asioOnly);
+
+    for (const auto& device : devices)
+    {
+        std::cout
+            << device.index << "\t"
+            << device.name.toRawUTF8() << "\t"
+            << device.sampleRate << "\t"
+            << (device.isDefault ? 1 : 0) << "\t"
+            << device.sharedSampleRate << std::endl;
+    }
+}
+
+juce::AudioIODeviceType* findTypeByName(juce::OwnedArray<juce::AudioIODeviceType>& types, const juce::String& typeName)
+{
+    for (auto* type : types)
+    {
+        if (type != nullptr && type->getTypeName() == typeName)
+            return type;
+    }
+
+    return nullptr;
+}
+
+bool isLooseDeviceNameMatch(const juce::String& left, const juce::String& right)
+{
+    return left == right
+        || left.containsIgnoreCase(right)
+        || right.containsIgnoreCase(left);
+}
+
+DeviceDescriptor selectDevice(const Options& options)
+{
+    const auto devices = enumerateDevices(options.asio);
+
+    if (devices.empty())
+        throw std::runtime_error("no output devices available");
+
+    if (options.deviceName.isNotEmpty())
+    {
+        const auto found = std::find_if(devices.begin(), devices.end(), [&] (const DeviceDescriptor& device)
+        {
+            return device.name == options.deviceName || device.name.containsIgnoreCase(options.deviceName);
+        });
+
+        if (found != devices.end())
+            return *found;
+
+        logLine("No match for requested device name, falling back to device index/default");
+    }
+
+    if (options.deviceIndex >= 0)
+    {
+        const auto found = std::find_if(devices.begin(), devices.end(), [&] (const DeviceDescriptor& device)
+        {
+            return device.index == options.deviceIndex;
+        });
+
+        if (found != devices.end())
+            return *found;
+
+        logLine("Invalid device index " + std::to_string(options.deviceIndex) + ", falling back to default");
+    }
+
+    const auto defaultDevice = std::find_if(devices.begin(), devices.end(), [] (const DeviceDescriptor& device)
+    {
+        return device.isDefault;
+    });
+
+    return defaultDevice != devices.end() ? *defaultDevice : devices.front();
+}
+
+std::vector<DeviceDescriptor> buildOpenCandidates(const Options& options, const DeviceDescriptor& selected)
+{
+    std::vector<DeviceDescriptor> candidates;
+    std::set<std::string> seen;
+
+    const auto addCandidate = [&] (const DeviceDescriptor& device)
+    {
+        const auto key = device.typeName.toStdString() + "\n" + device.name.toStdString();
+        if (seen.find(key) != seen.end())
+            return;
+
+        seen.insert(key);
+        candidates.push_back(device);
+    };
+
+    addCandidate(selected);
+
+    const auto allDevices = enumerateDevices(options.asio, false);
+
+    for (const auto& device : allDevices)
+    {
+        if (isLooseDeviceNameMatch(device.name, selected.name))
+            addCandidate(device);
+    }
+
+    if (selected.isDefault)
+    {
+        for (const auto& device : allDevices)
+        {
+            if (device.isDefault)
+                addCandidate(device);
+        }
+    }
+
+    return candidates;
+}
+
+
+class PcmRingAudioSource final : public juce::AudioSource
+{
+public:
+    PcmRingAudioSource(int channelCount, int capacityFrames, double gainToUse)
+        : channels(channelCount),
+          gain(static_cast<float>(gainToUse)),
+          fifo(capacityFrames),
+          buffer(static_cast<size_t>(capacityFrames * channelCount), 0.0f)
+    {
+    }
+
+    void prepareToPlay(int, double) override {}
+
+    void releaseResources() override {}
+
+    void getNextAudioBlock(const juce::AudioSourceChannelInfo& info) override
+    {
+        if (info.buffer == nullptr)
+            return;
+
+        info.clearActiveBufferRegion();
+
+        int framesNeeded = info.numSamples;
+        int outputOffset = 0;
+
+        while (framesNeeded > 0)
+        {
+            int start1 = 0;
+            int size1 = 0;
+            int start2 = 0;
+            int size2 = 0;
+            fifo.prepareToRead(framesNeeded, start1, size1, start2, size2);
+
+            const int framesRead = size1 + size2;
+            if (framesRead <= 0)
+                break;
+
+            copyToOutput(start1, size1, *info.buffer, info.startSample + outputOffset);
+            copyToOutput(start2, size2, *info.buffer, info.startSample + outputOffset + size1);
+            fifo.finishedRead(framesRead);
+
+            framesPlayed.fetch_add(static_cast<uint64_t>(framesRead), std::memory_order_relaxed);
+            framesNeeded -= framesRead;
+            outputOffset += framesRead;
+        }
+    }
+
+    bool push(const float* samples, int frameCount)
+    {
+        int written = 0;
+
+        while (written < frameCount && ! stopRequested.load(std::memory_order_relaxed))
+        {
+            int start1 = 0;
+            int size1 = 0;
+            int start2 = 0;
+            int size2 = 0;
+            fifo.prepareToWrite(frameCount - written, start1, size1, start2, size2);
+
+            const int framesWritable = size1 + size2;
+            if (framesWritable <= 0)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(4));
+                continue;
+            }
+
+            copyFromInput(samples + written * channels, start1, size1);
+            copyFromInput(samples + (written + size1) * channels, start2, size2);
+            fifo.finishedWrite(framesWritable);
+            written += framesWritable;
+        }
+
+        return written == frameCount;
+    }
+
+    void markInputEnded()
+    {
+        inputEnded.store(true, std::memory_order_release);
+    }
+
+    void requestStop()
+    {
+        stopRequested.store(true, std::memory_order_release);
+    }
+
+    bool isDrained() const
+    {
+        return inputEnded.load(std::memory_order_acquire) && fifo.getNumReady() == 0;
+    }
+
+    uint64_t getFramesPlayed() const
+    {
+        return framesPlayed.load(std::memory_order_relaxed);
+    }
+
+private:
+    void copyFromInput(const float* source, int startFrame, int frameCount)
+    {
+        if (frameCount <= 0)
+            return;
+
+        std::memcpy(
+            buffer.data() + static_cast<size_t>(startFrame * channels),
+            source,
+            static_cast<size_t>(frameCount * channels) * sizeof(float));
+    }
+
+    void copyToOutput(int startFrame, int frameCount, juce::AudioBuffer<float>& output, int outputStart)
+    {
+        if (frameCount <= 0)
+            return;
+
+        const float* source = buffer.data() + static_cast<size_t>(startFrame * channels);
+        const int outputChannels = output.getNumChannels();
+
+        for (int channel = 0; channel < outputChannels; ++channel)
+        {
+            float* destination = output.getWritePointer(channel, outputStart);
+            const int sourceChannel = std::min(channel, channels - 1);
+
+            for (int frame = 0; frame < frameCount; ++frame)
+                destination[frame] = source[frame * channels + sourceChannel] * gain;
+        }
+    }
+
+    const int channels;
+    const float gain;
+    juce::AbstractFifo fifo;
+    std::vector<float> buffer;
+    std::atomic<bool> inputEnded { false };
+    std::atomic<bool> stopRequested { false };
+    std::atomic<uint64_t> framesPlayed { 0 };
+};
+
+void stdinReader(PcmRingAudioSource& source, int channels)
+{
+#if JUCE_WINDOWS
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+
+    constexpr size_t chunkBytes = 64 * 1024;
+    const size_t frameBytes = static_cast<size_t>(channels) * sizeof(float);
+    std::vector<char> chunk(chunkBytes);
+    std::vector<char> pending;
+
+    while (std::cin.good())
+    {
+        std::cin.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+        const auto bytesRead = static_cast<size_t>(std::cin.gcount());
+
+        if (bytesRead == 0)
+            break;
+
+        pending.insert(pending.end(), chunk.begin(), chunk.begin() + static_cast<std::ptrdiff_t>(bytesRead));
+
+        const size_t frameCount = pending.size() / frameBytes;
+        if (frameCount == 0)
+            continue;
+
+        const size_t sampleCount = frameCount * static_cast<size_t>(channels);
+        std::vector<float> samples(sampleCount);
+        std::memcpy(samples.data(), pending.data(), sampleCount * sizeof(float));
+
+        if (! source.push(samples.data(), static_cast<int>(frameCount)))
+            break;
+
+        pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(sampleCount * sizeof(float)));
+    }
+
+    source.markInputEnded();
+}
+
+std::vector<int> buildSampleRateAttempts(const Options& options, const DeviceDescriptor& device)
+{
+    std::vector<int> rates;
+
+    const auto add = [&] (int rate)
+    {
+        if (rate > 0 && std::find(rates.begin(), rates.end(), rate) == rates.end())
+            rates.push_back(rate);
+    };
+
+    add(options.sampleRate);
+    add(device.sharedSampleRate);
+    add(48000);
+    add(44100);
+    add(device.sampleRate);
+
+    return rates;
+}
+
+std::unique_ptr<juce::AudioIODevice> openDevice(
+    juce::AudioIODeviceType& type,
+    const DeviceDescriptor& descriptor,
+    const Options& options,
+    int& actualSampleRate)
+{
+    std::unique_ptr<juce::AudioIODevice> device(type.createDevice(descriptor.name, {}));
+
+    if (device == nullptr)
+        throw std::runtime_error("failed to create output device");
+
+    juce::BigInteger outputChannels;
+    const int availableChannels = std::max(1, device->getOutputChannelNames().size());
+    const int channelCount = std::min(options.channels, availableChannels);
+
+    for (int i = 0; i < channelCount; ++i)
+        outputChannels.setBit(i);
+
+    juce::String lastError;
+    const auto attempts = buildSampleRateAttempts(options, descriptor);
+
+    for (const auto rate : attempts)
+    {
+        lastError = device->open({}, outputChannels, static_cast<double>(rate), 512);
+
+        if (lastError.isEmpty())
+        {
+            actualSampleRate = static_cast<int>(std::round(device->getCurrentSampleRate()));
+            return device;
+        }
+
+        logLine("Open failed at " + std::to_string(rate) + " Hz: " + lastError.toStdString());
+    }
+
+    throw std::runtime_error(lastError.isNotEmpty() ? lastError.toStdString() : "failed to open output device");
+}
+
+std::unique_ptr<juce::AudioIODevice> openSelectedDevice(
+    const Options& options,
+    const DeviceDescriptor& selected,
+    juce::OwnedArray<juce::AudioIODeviceType>& types,
+    DeviceDescriptor& openedDescriptor,
+    int& actualSampleRate)
+{
+    const auto candidates = buildOpenCandidates(options, selected);
+    std::string lastError;
+
+    for (const auto& candidate : candidates)
+    {
+        auto* type = findTypeByName(types, candidate.typeName);
+
+        if (type == nullptr)
+        {
+            lastError = "device type disappeared: " + candidate.typeName.toStdString();
+            logLine(lastError);
+            continue;
+        }
+
+        type->scanForDevices();
+        logLine(
+            "Trying JUCE device type " + candidate.typeName.toStdString()
+            + " for " + candidate.name.toStdString());
+
+        try
+        {
+            int openedSampleRate = options.sampleRate;
+            auto device = openDevice(*type, candidate, options, openedSampleRate);
+            openedDescriptor = candidate;
+            actualSampleRate = openedSampleRate;
+            logLine(
+                "Opened output with " + candidate.typeName.toStdString()
+                + " at " + std::to_string(actualSampleRate) + " Hz");
+            return device;
+        }
+        catch (const std::exception& error)
+        {
+            lastError = error.what();
+            logLine(
+                "Backend " + candidate.typeName.toStdString()
+                + " failed for " + candidate.name.toStdString()
+                + ": " + lastError);
+        }
+    }
+
+    throw std::runtime_error(
+        "failed to open output device \"" + selected.name.toStdString()
+        + "\": " + (lastError.empty() ? "no compatible backend" : lastError));
+}
+
+int runHost(const Options& options)
+{
+    if (options.exclusive)
+        logLine("WASAPI exclusive is accepted by CLI but v1 opens JUCE shared output");
+
+    if (options.asio)
+        logLine("ASIO is accepted by CLI but v1 shared playback is the acceptance path");
+
+    const auto descriptor = selectDevice(options);
+    logLine("Using device index " + std::to_string(descriptor.index) + ": " + descriptor.name.toStdString());
+
+    juce::OwnedArray<juce::AudioIODeviceType> types;
+    createDeviceTypes(types);
+
+    int actualSampleRate = options.sampleRate;
+    auto openedDescriptor = descriptor;
+    auto device = openSelectedDevice(options, descriptor, types, openedDescriptor, actualSampleRate);
+
+    PcmRingAudioSource source(
+        options.channels,
+        std::max(actualSampleRate * 8, 4096),
+        options.volume);
+    juce::AudioSourcePlayer player;
+    player.setSource(&source);
+    device->start(&player);
+
+    writeJsonLine(
+        std::string("{\"ready\":true,\"sampleRate\":") + std::to_string(actualSampleRate)
+        + ",\"hardwareSampleRate\":" + std::to_string(actualSampleRate)
+        + ",\"channels\":" + std::to_string(options.channels)
+        + ",\"exclusive\":false,\"backend\":\"juce\",\"deviceType\":\""
+        + jsonEscape(openedDescriptor.typeName) + "\",\"deviceName\":\""
+        + jsonEscape(openedDescriptor.name) + "\"}");
+
+    std::thread reader(stdinReader, std::ref(source), options.channels);
+    uint64_t lastReported = std::numeric_limits<uint64_t>::max();
+
+    while (! source.isDrained())
+    {
+        const auto frames = source.getFramesPlayed();
+
+        if (frames != lastReported)
+        {
+            writeJsonLine(std::string("{\"pos\":") + std::to_string(frames) + "}");
+            lastReported = frames;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    if (reader.joinable())
+        reader.join();
+
+    const auto finalFrames = source.getFramesPlayed();
+    if (finalFrames != lastReported)
+        writeJsonLine(std::string("{\"pos\":") + std::to_string(finalFrames) + "}");
+
+    writeJsonLine("{\"event\":\"ended\"}");
+
+    device->stop();
+    player.setSource(nullptr);
+    source.requestStop();
+
+    return 0;
+}
+} // namespace
+
+int main(int argc, char* argv[])
+{
+    try
+    {
+        juce::ScopedJuceInitialiser_GUI juceInitialiser;
+        const auto options = parseOptions(getCommandLineArgs(argc, argv));
+
+        if (options.list)
+        {
+            listDevices(options.asio);
+            return 0;
+        }
+
+        return runHost(options);
+    }
+    catch (const std::exception& error)
+    {
+        logLine(error.what());
+        writeJsonLine("{\"event\":\"error\"}");
+        return 1;
+    }
+}

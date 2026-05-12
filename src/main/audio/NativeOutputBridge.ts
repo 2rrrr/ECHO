@@ -47,6 +47,39 @@ const getElectronAppPath = (): string | null => {
   }
 };
 
+const defaultLogger = (message: string): void => {
+  console.warn(message);
+};
+
+const appendTailLine = (lines: string[], line: string): void => {
+  const trimmed = line.trim();
+
+  if (!trimmed) {
+    return;
+  }
+
+  lines.push(trimmed);
+  if (lines.length > 8) {
+    lines.shift();
+  }
+};
+
+const createHostError = (
+  reason: string,
+  hostBinary: string,
+  args: string[],
+  stderrLines: string[],
+): Error => {
+  const stderr = stderrLines.join(' | ');
+  const details = [`host="${hostBinary}"`, `args="${args.join(' ')}"`];
+
+  if (stderr) {
+    details.push(`stderr="${stderr}"`);
+  }
+
+  return new Error(`echo-audio-host ${reason}; ${details.join('; ')}`);
+};
+
 export const resolveHostBinary = (options: HostBinaryResolveOptions = {}): string | null => {
   const exe = process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host';
   const appPath = options.appPath === undefined ? getElectronAppPath() : options.appPath;
@@ -154,7 +187,7 @@ export class NativeOutputBridge extends EventEmitter {
     this.hostBinary = dependencies.hostBinary ?? null;
     this.spawn = dependencies.spawn ?? nodeSpawn;
     this.readyTimeoutMs = dependencies.readyTimeoutMs ?? 5000;
-    this.logger = dependencies.logger ?? (() => undefined);
+    this.logger = dependencies.logger ?? defaultLogger;
     this.on('error', () => undefined);
   }
 
@@ -204,6 +237,7 @@ export class NativeOutputBridge extends EventEmitter {
       this.readyMessage = null;
 
       const args = this.createSpawnArgs(options);
+      const stderrLines: string[] = [];
       let settled = false;
       const settleResolve = (value: NativeBridgeReadyResult): void => {
         if (settled) {
@@ -236,12 +270,14 @@ export class NativeOutputBridge extends EventEmitter {
 
       const stderr = readline.createInterface({ input: this.proc.stderr });
       stderr.on('line', (line) => {
+        appendTailLine(stderrLines, line);
         this.logger(`[echo-audio-host] ${line}`);
       });
 
       this.proc.on('error', (error) => {
-        settleReject(error);
-        this.emit('error', error);
+        const hostError = createHostError(`spawn_error:${error.message}`, bin, args, stderrLines);
+        settleReject(hostError);
+        this.emit('error', hostError);
       });
 
       this.proc.on('exit', (code, signal) => {
@@ -255,10 +291,11 @@ export class NativeOutputBridge extends EventEmitter {
           return;
         }
 
-        const error =
+        const reason =
           code === -2
-            ? new Error('exclusive_denied')
-            : new Error(code != null ? `exit_code_${code}` : `exit_signal_${signal ?? '?'}`);
+            ? 'exclusive_denied'
+            : code != null ? `exit_code_${code}` : `exit_signal_${signal ?? '?'}`;
+        const error = createHostError(reason, bin, args, stderrLines);
 
         if (!wasReady) {
           settleReject(error);
@@ -273,7 +310,7 @@ export class NativeOutputBridge extends EventEmitter {
         this.readyTimer = null;
         if (!this.ready) {
           this.stop();
-          settleReject(new Error('timeout waiting for echo-audio-host ready'));
+          settleReject(createHostError('timeout_waiting_for_ready', bin, args, stderrLines));
         }
       }, this.readyTimeoutMs);
     });
@@ -333,10 +370,12 @@ export class NativeOutputBridge extends EventEmitter {
     const args = ['-sr', String(options.requestedOutputSampleRate), '-ch', String(options.channels)];
     const deviceIndex = Number(options.deviceIndex ?? -1);
 
+    if (options.deviceName) {
+      args.push('-device', options.deviceName);
+    }
+
     if (Number.isInteger(deviceIndex) && deviceIndex >= 0) {
       args.push('-device-index', String(deviceIndex));
-    } else if (options.deviceName) {
-      args.push('-device', options.deviceName);
     }
 
     if (options.asio) {

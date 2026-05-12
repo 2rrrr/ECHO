@@ -6,6 +6,7 @@ import type {
   AudioPlaybackState,
   AudioStatus,
 } from '../../shared/types/audio';
+import type { PlaybackProbeHint } from '../../shared/types/playback';
 
 export type {
   AudioDeviceInfo,
@@ -87,6 +88,7 @@ export type NativeBridgeReadyResult = {
 export type AudioSessionPlayRequest = LocalAudioSource & {
   startSeconds?: number;
   output?: AudioOutputSettings;
+  probe?: PlaybackProbeHint;
 };
 
 export type AudioCoreEventMap = {

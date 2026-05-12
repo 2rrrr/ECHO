@@ -8,9 +8,19 @@ export type PlaybackStatus = {
   filePath: string | null;
 };
 
+export type PlaybackProbeHint = {
+  durationSeconds?: number;
+  fileSampleRate?: number | null;
+  channels?: number;
+  codec?: string | null;
+  bitDepth?: number | null;
+  bitrate?: number | null;
+};
+
 export type PlaybackStartRequest = {
   filePath: string;
   trackId?: string;
   startSeconds?: number;
   output?: AudioOutputSettings;
+  probe?: PlaybackProbeHint;
 };

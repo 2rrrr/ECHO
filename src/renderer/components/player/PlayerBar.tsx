@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ChangeEvent, SyntheticEvent } from 'react';
 import {
   ChevronUp,
   Gauge,
@@ -43,6 +44,7 @@ export const PlayerBar = (): JSX.Element => {
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(null);
 
   const refreshStatus = useCallback(async (): Promise<void> => {
     const echo = window.echo;
@@ -80,7 +82,11 @@ export const PlayerBar = (): JSX.Element => {
   const trackId = audioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
   const positionSeconds = audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000;
   const durationSeconds = audioStatus?.durationSeconds ?? (playbackStatus?.durationMs ?? 0) / 1000;
-  const progressPercent = durationSeconds > 0 ? Math.min(100, Math.max(0, (positionSeconds / durationSeconds) * 100)) : 0;
+  const displayedPositionSeconds = seekPreviewSeconds ?? positionSeconds;
+  const boundedDisplayedPositionSeconds =
+    durationSeconds > 0 ? Math.min(durationSeconds, Math.max(0, displayedPositionSeconds)) : 0;
+  const progressPercent =
+    durationSeconds > 0 ? Math.min(100, Math.max(0, (boundedDisplayedPositionSeconds / durationSeconds) * 100)) : 0;
   const state = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
   const outputRows = useMemo(
     () => [
@@ -113,6 +119,64 @@ export const PlayerBar = (): JSX.Element => {
       setError(playError instanceof Error ? playError.message : String(playError));
     }
   }, [isPlaying, refreshStatus]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.code !== 'Space' || event.repeat) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const isTextInput =
+        tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON';
+
+      if (target?.isContentEditable || isTextInput) {
+        return;
+      }
+
+      event.preventDefault();
+      void handlePlayPause();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handlePlayPause]);
+
+  const commitSeek = useCallback(
+    async (nextPositionSeconds: number): Promise<void> => {
+      const playback = window.echo?.playback;
+
+      if (!playback || durationSeconds <= 0) {
+        setSeekPreviewSeconds(null);
+        return;
+      }
+
+      const safePositionSeconds = Math.min(durationSeconds, Math.max(0, nextPositionSeconds));
+
+      try {
+        setSeekPreviewSeconds(safePositionSeconds);
+        setPlaybackStatus(await playback.seek(safePositionSeconds));
+        await refreshStatus();
+      } catch (seekError) {
+        setError(seekError instanceof Error ? seekError.message : String(seekError));
+      } finally {
+        setSeekPreviewSeconds(null);
+      }
+    },
+    [durationSeconds, refreshStatus],
+  );
+
+  const handleSeekChange = useCallback((event: ChangeEvent<HTMLInputElement>): void => {
+    setSeekPreviewSeconds(Number(event.currentTarget.value));
+  }, []);
+
+  const handleSeekCommit = useCallback(
+    (event: SyntheticEvent<HTMLInputElement>): void => {
+      void commitSeek(Number(event.currentTarget.value));
+    },
+    [commitSeek],
+  );
 
   return (
     <footer className="player-bar" aria-label="Playback controls">
@@ -162,10 +226,24 @@ export const PlayerBar = (): JSX.Element => {
         </div>
 
         <div className="progress-row" aria-label="Playback position">
-          <span>{formatTime(positionSeconds)}</span>
+          <span>{formatTime(boundedDisplayedPositionSeconds)}</span>
           <div className="progress-track">
             <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
             <div className="progress-thumb" style={{ left: `${progressPercent}%` }} />
+            <input
+              aria-label="Seek position"
+              className="progress-slider"
+              disabled={!filePath || durationSeconds <= 0}
+              max={Math.max(0, durationSeconds)}
+              min={0}
+              onBlur={handleSeekCommit}
+              onChange={handleSeekChange}
+              onKeyUp={handleSeekCommit}
+              onPointerUp={handleSeekCommit}
+              step={0.1}
+              type="range"
+              value={boundedDisplayedPositionSeconds}
+            />
           </div>
           <span>{formatTime(durationSeconds)}</span>
         </div>

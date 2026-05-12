@@ -133,6 +133,14 @@ export const SongsPage = (): JSX.Element => {
       const status = await playback.playLocalFile({
         filePath: track.path,
         trackId: track.id,
+        probe: {
+          durationSeconds: track.duration,
+          fileSampleRate: track.sampleRate,
+          channels: 2,
+          codec: track.codec,
+          bitDepth: track.bitDepth,
+          bitrate: track.bitrate,
+        },
       });
       setCurrentTrackId(status.currentTrackId ?? track.id);
     } catch (playError) {

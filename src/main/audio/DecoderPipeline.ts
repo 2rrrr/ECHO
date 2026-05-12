@@ -30,6 +30,39 @@ const normalizePath = (value: unknown): string | null => {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 };
 
+const defaultLogger = (message: string): void => {
+  console.warn(message);
+};
+
+const appendTailLine = (lines: string[], line: string): void => {
+  const trimmed = line.trim();
+
+  if (!trimmed) {
+    return;
+  }
+
+  lines.push(trimmed);
+  if (lines.length > 8) {
+    lines.shift();
+  }
+};
+
+const createDecoderError = (
+  reason: string,
+  ffmpegPath: string,
+  args: string[],
+  stderrLines: string[],
+): Error => {
+  const stderr = stderrLines.join(' | ');
+  const details = [`ffmpeg="${ffmpegPath}"`, `args="${args.join(' ')}"`];
+
+  if (stderr) {
+    details.push(`stderr="${stderr}"`);
+  }
+
+  return new Error(`${reason}; ${details.join('; ')}`);
+};
+
 export const resolveDecoderFfmpegPath = (dependencies: DecoderPipelineDependencies = {}): string => {
   const explicitPath = normalizePath(dependencies.ffmpegPath);
   if (explicitPath) {
@@ -66,7 +99,8 @@ export class DecoderPipeline {
   constructor(dependencies: DecoderPipelineDependencies = {}) {
     this.ffmpegPath = resolveDecoderFfmpegPath(dependencies);
     this.spawn = dependencies.spawn ?? (nodeSpawn as DecoderSpawner);
-    this.logger = dependencies.logger ?? (() => undefined);
+    this.logger = dependencies.logger ?? defaultLogger;
+    this.logger(`[DecoderPipeline] ffmpeg: ${this.ffmpegPath}`);
   }
 
   async probeLocalFile(filePath: string): Promise<AudioProbeResult> {
@@ -75,8 +109,7 @@ export class DecoderPipeline {
       skipCovers: true,
     });
     const format = metadata.format;
-
-    return {
+    const result = {
       filePath,
       durationSeconds: Math.max(0, Number(format.duration ?? 0)),
       fileSampleRate: normalizePositiveInteger(format.sampleRate),
@@ -85,6 +118,14 @@ export class DecoderPipeline {
       bitDepth: normalizePositiveInteger(format.bitsPerSample),
       bitrate: normalizePositiveInteger(format.bitrate),
     };
+
+    this.logger(
+      `[DecoderPipeline] probe: file="${filePath}" codec=${result.codec ?? 'n/a'} sampleRate=${
+        result.fileSampleRate ?? 'n/a'
+      } channels=${result.channels} duration=${result.durationSeconds}`,
+    );
+
+    return result;
   }
 
   decodeLocalFile(request: PcmDecodeRequest): DecoderRun {
@@ -109,6 +150,7 @@ export class DecoderPipeline {
     let proc: DecoderChildProcess;
 
     try {
+      this.logger(`[DecoderPipeline] spawn: ${this.ffmpegPath} ${args.join(' ')}`);
       proc = this.spawn(this.ffmpegPath, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
@@ -117,9 +159,11 @@ export class DecoderPipeline {
       throw normalizeSpawnError(error instanceof Error ? error : new Error(String(error)));
     }
     let stopped = false;
+    const stderrLines: string[] = [];
 
     const stderr = readline.createInterface({ input: proc.stderr });
     stderr.on('line', (line) => {
+      appendTailLine(stderrLines, line);
       this.logger(`[ffmpeg] ${line}`);
     });
 
@@ -130,7 +174,12 @@ export class DecoderPipeline {
           return;
         }
 
-        reject(normalizeSpawnError(error));
+        const normalized = normalizeSpawnError(error);
+        reject(
+          normalized.message === 'ffmpeg_missing'
+            ? normalized
+            : createDecoderError(`ffmpeg_error:${normalized.message}`, this.ffmpegPath, args, stderrLines),
+        );
       });
 
       proc.on('exit', (code, signal) => {
@@ -139,7 +188,8 @@ export class DecoderPipeline {
           return;
         }
 
-        reject(new Error(code != null ? `ffmpeg_exit_code_${code}` : `ffmpeg_exit_signal_${signal ?? '?'}`));
+        const reason = code != null ? `ffmpeg_exit_code_${code}` : `ffmpeg_exit_signal_${signal ?? '?'}`;
+        reject(createDecoderError(reason, this.ffmpegPath, args, stderrLines));
       });
     });
 

@@ -12,9 +12,12 @@ import type {
   AudioDeviceInfo,
   AudioProbeResult,
   DecoderRun,
+  NativeBridgeReadyResult,
   NativeOutputStartOptions,
   PcmDecodeRequest,
 } from './audioTypes';
+
+const noopLogger = (): void => undefined;
 
 const probe = (filePath: string, fileSampleRate: number): AudioProbeResult => ({
   filePath,
@@ -85,6 +88,7 @@ class FakeBridge extends EventEmitter {
   });
   readonly stop = vi.fn();
   startOptions: NativeOutputStartOptions | null = null;
+  positionSeconds = 0;
 
   constructor(private readonly readySampleRate?: number) {
     super();
@@ -103,6 +107,21 @@ class FakeBridge extends EventEmitter {
       requestedOutputSampleRate: options.requestedOutputSampleRate,
       actualDeviceSampleRate,
     };
+  }
+
+  getPositionSeconds(): number {
+    return this.positionSeconds;
+  }
+}
+
+class StartupFailingBridge extends EventEmitter {
+  readonly writable = null;
+  readonly stop = vi.fn();
+
+  async start(): Promise<NativeBridgeReadyResult> {
+    throw new Error(
+      'echo-audio-host exit_code_1; host="echo-audio-host.exe"; args="-sr 44100 -ch 2"; stderr="Failed to initialize output device"',
+    );
   }
 
   getPositionSeconds(): number {
@@ -129,6 +148,7 @@ const createSessionHarness = (
       bridges.push(bridge);
       return bridge;
     },
+    logger: noopLogger,
   });
 
   return { decoder, bridges, session };
@@ -222,8 +242,89 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.warnings).toContain('shared_output_resampling_or_mixer_rate_difference');
   });
 
+  it('prefers stored device name over stale device index after host replacement', async () => {
+    const devices: AudioDeviceInfo[] = [
+      {
+        id: 'shared:0',
+        index: 0,
+        name: 'TEAC USB AUDIO DEVICE',
+        outputMode: 'shared',
+        sampleRate: 48000,
+        sharedDeviceSampleRate: 48000,
+        isDefault: true,
+      },
+      {
+        id: 'shared:6',
+        index: 6,
+        name: 'VoiceMeeter Aux Input',
+        outputMode: 'shared',
+        sampleRate: 48000,
+        sharedDeviceSampleRate: 48000,
+        isDefault: false,
+      },
+    ];
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [48000], devices);
+
+    await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'shared', deviceIndex: 6, deviceName: 'TEAC USB AUDIO DEVICE' },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      deviceIndex: 6,
+      deviceName: 'TEAC USB AUDIO DEVICE',
+    });
+  });
+
+  it('uses library probe hints and avoids device enumeration on the playback hot path', async () => {
+    const decoder = new FakeDecoder(new Map());
+    const bridges: FakeBridge[] = [];
+    let listCalls = 0;
+    const session = new AudioSession({
+      decoder,
+      deviceService: {
+        listDevices: () => {
+          listCalls += 1;
+          return [];
+        },
+      },
+      createBridge: () => {
+        const bridge = new FakeBridge(48000);
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'hinted.flac',
+      trackId: 'track-1',
+      output: { outputMode: 'shared', deviceIndex: 6, deviceName: 'TEAC USB AUDIO DEVICE' },
+      probe: {
+        durationSeconds: 123,
+        fileSampleRate: 44100,
+        channels: 2,
+        codec: 'FLAC',
+        bitDepth: 24,
+        bitrate: 1400000,
+      },
+    });
+
+    expect(listCalls).toBe(0);
+    expect(status.durationSeconds).toBe(123);
+    expect(status.fileSampleRate).toBe(44100);
+    expect(bridges[0].startOptions).toMatchObject({
+      deviceIndex: 6,
+      deviceName: 'TEAC USB AUDIO DEVICE',
+    });
+    expect(decoder.decodeRequests[0]).toMatchObject({
+      filePath: 'hinted.flac',
+      decoderOutputSampleRate: 48000,
+    });
+  });
+
   it('ready sample-rate mismatch preserves requested rate and exposes a warning', async () => {
-    const { session } = createSessionHarness([probe('441.flac', 44100)], [48000]);
+    const { decoder, session } = createSessionHarness([probe('441.flac', 44100)], [48000]);
 
     const status = await session.playLocalFile({
       filePath: '441.flac',
@@ -234,6 +335,49 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.actualDeviceSampleRate).toBe(48000);
     expect(status.sampleRateMismatch).toBe(true);
     expect(status.warnings).toContain('actual_device_sample_rate_mismatch:44100->48000');
+    expect(decoder.decodeRequests[0].decoderOutputSampleRate).toBe(48000);
+  });
+
+  it('pause stops the active native host and preserves the current position', async () => {
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
+
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 12.5;
+    const status = session.pause();
+
+    expect(status.state).toBe('paused');
+    expect(status.positionSeconds).toBe(12.5);
+    expect(bridges[0].stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('play resumes a paused file from the paused position', async () => {
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
+
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 18.25;
+    session.pause();
+    const status = await session.play();
+
+    expect(status.state).toBe('playing');
+    expect(bridges).toHaveLength(2);
+    expect(bridges[1].startOptions?.startSeconds).toBe(18.25);
+  });
+
+  it('seek while paused moves the stored position without starting playback', async () => {
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
+
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 7;
+    session.pause();
+    const pausedStatus = await session.seek(33);
+
+    expect(pausedStatus.state).toBe('paused');
+    expect(pausedStatus.positionSeconds).toBe(33);
+    expect(bridges).toHaveLength(1);
+
+    await session.play();
+    expect(bridges).toHaveLength(2);
+    expect(bridges[1].startOptions?.startSeconds).toBe(33);
   });
 });
 
@@ -290,6 +434,7 @@ describe('NativeOutputBridge host arguments', () => {
     const bridge = new NativeOutputBridge({
       hostBinary: 'echo-audio-host.exe',
       spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
     });
 
     await bridge.start({
@@ -304,6 +449,44 @@ describe('NativeOutputBridge host arguments', () => {
     }
     },
   );
+
+  it('passes device name and index so the host can recover from stale indexes', async () => {
+    const spawned: Array<{ file: string; args: string[] }> = [];
+    const fakeSpawn = (file: string, args: string[]): ChildProcessWithoutNullStreams => {
+      spawned.push({ file, args });
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":48000}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      channels: 2,
+      deviceIndex: 6,
+      deviceName: 'TEAC USB AUDIO DEVICE',
+    });
+
+    expect(spawned[0].args).toEqual(
+      expect.arrayContaining(['-device', 'TEAC USB AUDIO DEVICE', '-device-index', '6']),
+    );
+  });
 });
 
 describe('AudioSession host availability', () => {
@@ -313,10 +496,12 @@ describe('AudioSession host availability', () => {
       deviceService: { listDevices: () => [] },
       createBridge: () => new FakeBridge(),
       isNativeHostAvailable: () => false,
+      logger: noopLogger,
     });
 
     expect(unavailableSession.getStatus().host).toBe('unavailable');
   });
+
 });
 
 describe('DecoderPipeline ffmpeg resolution', () => {
@@ -366,6 +551,7 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     const decoder = new DecoderPipeline({
       ffmpegPath: 'missing-ffmpeg',
       spawn,
+      logger: noopLogger,
     });
     const run = decoder.decodeLocalFile({
       filePath: 'song.flac',
@@ -384,6 +570,7 @@ describe('DecoderPipeline ffmpeg resolution', () => {
       deviceService: { listDevices: () => [] },
       createBridge: () => new FakeBridge(),
       isNativeHostAvailable: () => true,
+      logger: noopLogger,
     });
 
     await session.playLocalFile({
@@ -394,5 +581,90 @@ describe('DecoderPipeline ffmpeg resolution', () => {
 
     expect(session.getStatus().state).toBe('error');
     expect(session.getStatus().error).toBe('ffmpeg_missing');
+  });
+
+  it('includes ffmpeg stderr and spawn details when decoding exits non-zero', async () => {
+    const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = () => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: vi.fn(() => true),
+      });
+
+      queueMicrotask(() => {
+        child.stderr.write('Invalid data found when processing input\n');
+        child.emit('exit', 1, null);
+      });
+
+      return child as unknown as ReturnType<NonNullable<DecoderPipelineDependencies['spawn']>>;
+    };
+    const decoder = new DecoderPipeline({
+      ffmpegPath: 'test-ffmpeg',
+      spawn,
+      logger: noopLogger,
+    });
+    const run = decoder.decodeLocalFile({
+      filePath: 'broken.flac',
+      startSeconds: 0,
+      channels: 2,
+      decoderOutputSampleRate: 44100,
+    });
+
+    await expect(run.done).rejects.toThrow(
+      'ffmpeg_exit_code_1; ffmpeg="test-ffmpeg"; args="-hide_banner -loglevel error -nostdin -ss 0 -i broken.flac -vn -f f32le -ac 2 -ar 44100 pipe:1"; stderr="Invalid data found when processing input"',
+    );
+  });
+});
+
+describe('NativeOutputBridge diagnostics', () => {
+  it('includes host stderr and spawn details when the native host exits before ready', async () => {
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stderr.write('[echo-audio-host] Failed to initialize output device\n');
+        child.emit('exit', 1, null);
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await expect(
+      bridge.start({
+        requestedOutputSampleRate: 44100,
+        channels: 2,
+      }),
+    ).rejects.toThrow(
+      'echo-audio-host exit_code_1; host="echo-audio-host.exe"; args="-sr 44100 -ch 2"; stderr="[echo-audio-host] Failed to initialize output device"',
+    );
+  });
+
+  it('propagates native host startup failures into AudioSession status', async () => {
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new StartupFailingBridge(),
+      isNativeHostAvailable: () => true,
+      logger: noopLogger,
+    });
+
+    await expect(
+      session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'exclusive' } }),
+    ).rejects.toThrow('Failed to initialize output device');
+    expect(session.getStatus().state).toBe('error');
+    expect(session.getStatus().error).toContain('Failed to initialize output device');
   });
 });

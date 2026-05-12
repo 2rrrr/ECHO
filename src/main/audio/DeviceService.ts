@@ -38,6 +38,9 @@ const parseDeviceListLine = (line: string, outputMode: AudioDeviceInfo['outputMo
 export class DeviceService {
   private readonly exec: typeof execFileSync;
   private readonly hostBinary: string | null;
+  private readonly cacheTtlMs = 5000;
+  private sharedCache: { at: number; devices: AudioDeviceInfo[] } | null = null;
+  private asioCache: { at: number; devices: AudioDeviceInfo[] } | null = null;
 
   constructor(dependencies: DeviceServiceDependencies = {}) {
     this.exec = dependencies.execFileSync ?? execFileSync;
@@ -49,11 +52,31 @@ export class DeviceService {
   }
 
   listSharedDevices(): AudioDeviceInfo[] {
-    return this.runDeviceList(['-list'], 'shared');
+    return this.getCachedDevices('shared');
   }
 
   listAsioDevices(): AudioDeviceInfo[] {
-    return this.runDeviceList(['-list', '-asio'], 'asio');
+    return this.getCachedDevices('asio');
+  }
+
+  private getCachedDevices(outputMode: AudioDeviceInfo['outputMode']): AudioDeviceInfo[] {
+    const now = Date.now();
+    const cache = outputMode === 'asio' ? this.asioCache : this.sharedCache;
+
+    if (cache && now - cache.at < this.cacheTtlMs) {
+      return [...cache.devices];
+    }
+
+    const devices = this.runDeviceList(outputMode === 'asio' ? ['-list', '-asio'] : ['-list'], outputMode);
+    const nextCache = { at: now, devices };
+
+    if (outputMode === 'asio') {
+      this.asioCache = nextCache;
+    } else {
+      this.sharedCache = nextCache;
+    }
+
+    return [...devices];
   }
 
   private runDeviceList(args: string[], outputMode: AudioDeviceInfo['outputMode']): AudioDeviceInfo[] {

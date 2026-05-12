@@ -142,6 +142,14 @@ describe('SongsPage', () => {
       expect(playLocalFile).toHaveBeenCalledWith({
         filePath: track.path,
         trackId: track.id,
+        probe: {
+          durationSeconds: track.duration,
+          fileSampleRate: track.sampleRate,
+          channels: 2,
+          codec: track.codec,
+          bitDepth: track.bitDepth,
+          bitrate: track.bitrate,
+        },
       }),
     );
   });

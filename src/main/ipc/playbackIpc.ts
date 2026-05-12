@@ -1,7 +1,7 @@
 import { dialog, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioOutputMode, AudioOutputSettings } from '../../shared/types/audio';
-import type { PlaybackStartRequest, PlaybackStatus } from '../../shared/types/playback';
+import type { PlaybackProbeHint, PlaybackStartRequest, PlaybackStatus } from '../../shared/types/playback';
 import { getAudioSession } from '../audio/AudioSession';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
@@ -62,6 +62,55 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings | undefine
   return output;
 };
 
+const optionalText = (value: unknown): string | null | undefined => {
+  if (value === null) {
+    return null;
+  }
+
+  return typeof value === 'string' && value.trim() ? value : undefined;
+};
+
+const normalizeProbeHint = (value: unknown): PlaybackProbeHint | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Record<string, unknown>;
+  const output: PlaybackProbeHint = {};
+  const durationSeconds = optionalNonNegativeNumber(input.durationSeconds);
+  const fileSampleRate = input.fileSampleRate === null ? null : optionalPositiveNumber(input.fileSampleRate);
+  const channels = optionalPositiveNumber(input.channels);
+  const bitDepth = input.bitDepth === null ? null : optionalPositiveNumber(input.bitDepth);
+  const bitrate = input.bitrate === null ? null : optionalPositiveNumber(input.bitrate);
+  const codec = optionalText(input.codec);
+
+  if (durationSeconds !== undefined) {
+    output.durationSeconds = durationSeconds;
+  }
+
+  if (fileSampleRate !== undefined) {
+    output.fileSampleRate = fileSampleRate === null ? null : Math.round(fileSampleRate);
+  }
+
+  if (channels !== undefined) {
+    output.channels = Math.max(1, Math.min(8, Math.round(channels)));
+  }
+
+  if (codec !== undefined) {
+    output.codec = codec;
+  }
+
+  if (bitDepth !== undefined) {
+    output.bitDepth = bitDepth === null ? null : Math.round(bitDepth);
+  }
+
+  if (bitrate !== undefined) {
+    output.bitrate = bitrate === null ? null : Math.round(bitrate);
+  }
+
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
 const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('playback request must be an object');
@@ -74,6 +123,7 @@ const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
     trackId: typeof input.trackId === 'string' && input.trackId.trim() ? input.trackId : undefined,
     startSeconds: optionalNonNegativeNumber(input.startSeconds),
     output: normalizeOutputSettings(input.output),
+    probe: normalizeProbeHint(input.probe),
   };
 };
 
@@ -95,8 +145,8 @@ export const registerPlaybackIpc = (): void => {
     await getAudioSession().playLocalFile(normalizePlayRequest(request));
     return toPlaybackStatus();
   });
-  ipcMain.handle(IpcChannels.PlaybackPlay, (): PlaybackStatus => {
-    getAudioSession().play();
+  ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => {
+    await getAudioSession().play();
     return toPlaybackStatus();
   });
   ipcMain.handle(IpcChannels.PlaybackPause, (): PlaybackStatus => {
