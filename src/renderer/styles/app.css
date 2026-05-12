@@ -825,6 +825,38 @@
   white-space: nowrap;
 }
 
+.plain-page-header {
+  display: grid;
+  gap: 6px;
+}
+
+.plain-page-header h1 {
+  margin: 0;
+  color: #1d2d42;
+  font-size: 30px;
+  font-weight: 840;
+}
+
+.plain-page-header p {
+  margin: 0;
+  color: #667589;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.library-diagnostics-panel {
+  margin-top: 18px;
+}
+
+.library-diagnostics-grid {
+  width: 100%;
+}
+
+.library-diagnostics-grid strong {
+  white-space: normal;
+  word-break: break-word;
+}
+
 .settings-inline-note,
 .settings-inline-error {
   margin: 8px 0 0;
@@ -1378,6 +1410,30 @@
   background: #8ca0b8;
   box-shadow: 0 3px 10px rgba(56, 78, 102, 0.22);
   transform: translate(-50%, -50%);
+}
+
+.player-error {
+  overflow: hidden;
+  color: #d45159;
+  font-size: 11px;
+  font-weight: 720;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-status > span {
+  overflow: hidden;
+  max-width: 150px;
+  color: #536276;
+  font-size: 11px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-status > span.output-warning {
+  color: #c25b28;
 }
 
 @media (max-width: 1120px) {

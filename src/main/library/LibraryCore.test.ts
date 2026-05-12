@@ -511,6 +511,30 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('getDiagnostics returns counts and timings without full track or cover lists', async () => {
+    const harness = createHarness();
+    writeAudioFile(harness.folder, 'Diagnostics.flac');
+    harness.addFolder();
+
+    await harness.scanFolder();
+    harness.service.getTracks({ pageSize: 1 });
+    harness.service.getAlbums({ pageSize: 1 });
+    const diagnostics = harness.service.getDiagnostics();
+    const serialized = JSON.stringify(diagnostics);
+
+    expect(diagnostics.foldersCount).toBe(1);
+    expect(diagnostics.tracksCount).toBe(1);
+    expect(diagnostics.albumsCount).toBe(1);
+    expect(diagnostics.lastScan?.status).toBe('completed');
+    expect(typeof diagnostics.lastQueryMs.getTracks).toBe('number');
+    expect(typeof diagnostics.lastQueryMs.getAlbums).toBe('number');
+    expect(diagnostics.databasePath).toBe(harness.databasePath);
+    expect(serialized).not.toContain('"items"');
+    expect(serialized).not.toContain('coverLarge');
+    expect(serialized).not.toContain('coverOriginal');
+    harness.cleanup();
+  });
+
   it('embedded cover wins over folder/default cover', async () => {
     const harness = createHarness();
     const filePath = writeAudioFile(harness.folder, 'Cover Priority.flac');

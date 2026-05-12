@@ -12,11 +12,15 @@
     "rebuild:native:node": "npm rebuild better-sqlite3",
     "sync:audio-host": "node scripts/sync-audio-host.mjs",
     "build": "npm run typecheck && electron-vite build",
-    "lint": "eslint .",
+    "check:encoding": "node scripts/check-encoding.mjs",
+    "lint": "npm run check:encoding && eslint .",
     "pretest": "npm run rebuild:native:node",
     "test": "vitest run",
     "posttest": "npm run rebuild:native",
     "typecheck": "tsc --noEmit",
+    "prebenchmark:library": "npm run rebuild:native:node",
+    "benchmark:library": "node scripts/benchmark-library.mjs",
+    "postbenchmark:library": "npm run rebuild:native",
     "repair:electron": "node scripts/install-electron.cjs"
   },
   "dependencies": {

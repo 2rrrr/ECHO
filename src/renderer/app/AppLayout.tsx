@@ -43,6 +43,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     return () => window.clearTimeout(timer);
   }, [chromeNotice]);
 
+  useEffect(() => {
+    const handleNavigateImportFolder = (): void => {
+      setActiveRouteId('import-folder');
+    };
+
+    window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
+    return () => window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
+  }, []);
+
   const notifyLibraryChanged = useCallback(async (): Promise<void> => {
     try {
       await window.echo?.library.getSummary();

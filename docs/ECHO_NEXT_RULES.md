@@ -214,3 +214,9 @@ Library Core tests should prefer real SQLite and mocked metadata readers over la
 Tests that touch Library Core must cover the worker boundary with fake `MetadataReader`, `CoverExtractor`, and `FileScanner` implementations so the architecture stays Rust/C++ ready.
 
 Folder import UX must keep `library.chooseFolder()` in main/preload, treat repeated imports as idempotent rescans, and refresh SongsPage / AlbumsPage after import or scan completion through the shared `library:changed` event. Sidebar import entries are direct actions: `Import Folder` opens the folder picker instead of navigating, and `Import File` opens the local audio file picker without exposing Electron dialogs to Renderer code.
+
+SongsPage must stay a list view, not an import wizard. Its folder-plus button may navigate to `ImportFolderPage` through the lightweight `app:navigate:import-folder` event, while `FoldersPage`, `ImportFolderPage`, and Settings reuse `LibraryFoldersPanel`.
+
+TrackRow may start single-track local playback through a callback passed down from SongsPage. SongsPage may store `currentTrackId`, but high-frequency playback position and audio status must stay out of App.tsx and must not rerender the song list.
+
+Library diagnostics are dev-only. They must use `library.getDiagnostics()`, must not trigger scans, and must not return full track lists, full cover records, binary cover data, or base64 cover data.

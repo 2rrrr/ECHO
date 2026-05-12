@@ -1,5 +1,6 @@
 import type {
   LibraryAlbum,
+  LibraryDiagnostics,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
@@ -10,6 +11,7 @@ import type {
 
 export type {
   LibraryAlbum,
+  LibraryDiagnostics,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,

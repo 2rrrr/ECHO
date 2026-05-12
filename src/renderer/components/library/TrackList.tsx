@@ -8,9 +8,10 @@ type TrackListProps = {
   currentTrackId: string | null;
   canLoadMore?: boolean;
   onEndReached?: () => void;
+  onPlay?: (track: LibraryTrack) => void;
 };
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, onEndReached }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, onEndReached, onPlay }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: tracks.length,
@@ -51,7 +52,7 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, on
                   data-index={virtualRow.index}
                   style={{ transform: `translateY(${virtualRow.start}px)` }}
                 >
-                  <TrackRow isPlaying={track.id === currentTrackId} track={track} />
+                  <TrackRow isPlaying={track.id === currentTrackId} track={track} onPlay={onPlay} />
                 </div>
               );
             })}

@@ -14,6 +14,7 @@ export const IpcChannels = {
   LibraryGetAlbums: 'library:get-albums',
   LibraryGetAlbumTracks: 'library:get-album-tracks',
   LibraryGetSummary: 'library:get-summary',
+  LibraryGetDiagnostics: 'library:get-diagnostics',
   PlaybackGetStatus: 'playback:get-status',
   PlaybackPlayLocalFile: 'playback:play-local-file',
   PlaybackPlay: 'playback:play',

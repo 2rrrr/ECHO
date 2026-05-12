@@ -18,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AlbumsPage } from '../pages/AlbumsPage';
 import { ArtistsPage } from '../pages/ArtistsPage';
+import { FoldersPage } from '../pages/FoldersPage';
 import { ImportFolderPage } from '../pages/ImportFolderPage';
 import { PlaylistsPage } from '../pages/PlaylistsPage';
 import { SettingsPage } from '../pages/SettingsPage';
@@ -95,7 +96,7 @@ export const appRoutes: AppRoute[] = [
     description: 'Local import roots.',
     icon: Folder,
     placement: 'main',
-    element: <PlaceholderPage icon={Folder} title="Folders" description="Library folder management will live here." />,
+    element: <FoldersPage />,
   },
   {
     id: 'remote',

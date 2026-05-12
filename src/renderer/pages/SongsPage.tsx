@@ -23,6 +23,7 @@ export const SongsPage = (): JSX.Element => {
   const [sort, setSort] = useState<LibrarySort>('title');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -85,6 +86,18 @@ export const SongsPage = (): JSX.Element => {
   }, [loadTracks]);
 
   useEffect(() => {
+    const playback = window.echo?.playback;
+
+    if (!playback) {
+      return;
+    }
+
+    void playback.getStatus().then((status) => {
+      setCurrentTrackId(status.currentTrackId);
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     const handleLibraryChanged = (): void => {
       void loadTracks(1, 'replace');
     };
@@ -103,6 +116,30 @@ export const SongsPage = (): JSX.Element => {
     void loadTracks(1, 'replace');
   };
 
+  const handleImportFolder = (): void => {
+    window.dispatchEvent(new Event('app:navigate:import-folder'));
+  };
+
+  const handlePlayTrack = useCallback(async (track: LibraryTrack): Promise<void> => {
+    const playback = window.echo?.playback;
+
+    if (!playback) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to play local files.');
+      return;
+    }
+
+    try {
+      setError(null);
+      const status = await playback.playLocalFile({
+        filePath: track.path,
+        trackId: track.id,
+      });
+      setCurrentTrackId(status.currentTrackId ?? track.id);
+    } catch (playError) {
+      setError(playError instanceof Error ? playError.message : String(playError));
+    }
+  }, []);
+
   return (
     <div className="songs-page">
       <header className="songs-header">
@@ -112,7 +149,7 @@ export const SongsPage = (): JSX.Element => {
         </div>
 
         <div className="songs-tools" aria-label="曲目工具">
-          <button className="tool-button" type="button" aria-label="导入文件夹" title="导入文件夹">
+          <button className="tool-button" type="button" aria-label="导入文件夹" title="导入文件夹" onClick={handleImportFolder}>
             <FolderPlus size={17} />
           </button>
           <button className="tool-button" type="button" aria-label="扫描" title="扫描">
@@ -152,7 +189,7 @@ export const SongsPage = (): JSX.Element => {
         </label>
       </div>
 
-      <TrackList tracks={tracks} currentTrackId={null} canLoadMore={hasMore && !isLoading} onEndReached={handleLoadMore} />
+      <TrackList tracks={tracks} currentTrackId={currentTrackId} canLoadMore={hasMore && !isLoading} onEndReached={handleLoadMore} onPlay={handlePlayTrack} />
 
       {error || isLoading ? (
         <div className="list-footer">

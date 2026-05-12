@@ -1,6 +1,7 @@
 import type { AudioDeviceInfo, AudioOutputSettings, AudioStatus } from '../shared/types/audio';
 import type {
   LibraryAlbum,
+  LibraryDiagnostics,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
@@ -32,6 +33,7 @@ export type EchoApi = {
       query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>,
     ) => Promise<LibraryPage<LibraryTrack>>;
     getSummary: () => Promise<LibrarySummary>;
+    getDiagnostics: () => Promise<LibraryDiagnostics>;
   };
   playback: {
     getStatus: () => Promise<PlaybackStatus>;

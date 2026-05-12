@@ -6,6 +6,7 @@ import type { AlbumService } from './AlbumService';
 import type {
   CoverResult,
   LibraryAlbum,
+  LibraryDiagnostics,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
@@ -63,6 +64,9 @@ const textOrNull = (value: unknown): string | null => (typeof value === 'string'
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
 export class LibraryStore {
+  private lastTracksQueryMs: number | null = null;
+  private lastAlbumsQueryMs: number | null = null;
+
   constructor(private readonly database: EchoDatabase) {}
 
   transaction<T>(work: () => T): T {
@@ -548,6 +552,7 @@ export class LibraryStore {
   }
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {
+    const startedAt = performance.now();
     const { page, pageSize, search, sort } = pageFromQuery(query);
     const offset = (page - 1) * pageSize;
     const whereSql = search
@@ -574,16 +579,21 @@ export class LibraryStore {
     );
     const total = Number(totalRow?.total ?? 0);
 
-    return {
-      items: rows.map((row) => this.mapTrack(row)),
-      page,
-      pageSize,
-      total,
-      hasMore: offset + rows.length < total,
-    };
+    try {
+      return {
+        items: rows.map((row) => this.mapTrack(row)),
+        page,
+        pageSize,
+        total,
+        hasMore: offset + rows.length < total,
+      };
+    } finally {
+      this.lastTracksQueryMs = performance.now() - startedAt;
+    }
   }
 
   getAlbums(query?: LibraryPageQuery): LibraryPage<LibraryAlbum> {
+    const startedAt = performance.now();
     const { page, pageSize, search, sort } = pageFromQuery(query);
     const offset = (page - 1) * pageSize;
     const whereSql = search ? "WHERE albums.title LIKE ? ESCAPE '\\' OR albums.album_artist LIKE ? ESCAPE '\\'" : '';
@@ -605,13 +615,17 @@ export class LibraryStore {
     );
     const total = Number(totalRow?.total ?? 0);
 
-    return {
-      items: rows.map((row) => this.mapAlbum(row)),
-      page,
-      pageSize,
-      total,
-      hasMore: offset + rows.length < total,
-    };
+    try {
+      return {
+        items: rows.map((row) => this.mapAlbum(row)),
+        page,
+        pageSize,
+        total,
+        hasMore: offset + rows.length < total,
+      };
+    } finally {
+      this.lastAlbumsQueryMs = performance.now() - startedAt;
+    }
   }
 
   getAlbumTracks(albumId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>): LibraryPage<LibraryTrack> {
@@ -663,6 +677,48 @@ export class LibraryStore {
       folderCount,
       totalDuration: duration,
       lastScanAt: textOrNull(scanRow?.finished_at),
+    };
+  }
+
+  getDiagnostics(paths: {
+    databasePath: string | null;
+    databaseSizeBytes: number | null;
+    coverCachePath: string | null;
+    coverCacheSizeBytes: number | null;
+  }): LibraryDiagnostics {
+    const lastScanRow = this.getRow(
+      `SELECT status, phase, discovered_count, parsed_count, skipped_count, cover_count, error_count, started_at, finished_at
+       FROM scan_jobs
+       ORDER BY COALESCE(finished_at, started_at, updated_at) DESC
+       LIMIT 1`,
+    );
+
+    return {
+      foldersCount: Number(
+        this.getRow("SELECT COUNT(*) AS total FROM folders WHERE enabled = 1 AND status != 'removed'")?.total ?? 0,
+      ),
+      tracksCount: Number(this.getRow('SELECT COUNT(*) AS total FROM tracks WHERE missing = 0')?.total ?? 0),
+      albumsCount: Number(this.getRow('SELECT COUNT(*) AS total FROM albums')?.total ?? 0),
+      artistsCount: Number(this.getRow('SELECT COUNT(*) AS total FROM artists')?.total ?? 0),
+      coversCount: Number(this.getRow('SELECT COUNT(*) AS total FROM covers')?.total ?? 0),
+      lastScan: lastScanRow
+        ? {
+            status: this.mapScanStatus(lastScanRow.status),
+            phase: this.mapScanPhase(lastScanRow.phase),
+            discoveredCount: Number(lastScanRow.discovered_count ?? 0),
+            parsedCount: Number(lastScanRow.parsed_count ?? 0),
+            skippedCount: Number(lastScanRow.skipped_count ?? 0),
+            coverCount: Number(lastScanRow.cover_count ?? 0),
+            errorCount: Number(lastScanRow.error_count ?? 0),
+            startedAt: textOrNull(lastScanRow.started_at),
+            finishedAt: textOrNull(lastScanRow.finished_at),
+          }
+        : null,
+      lastQueryMs: {
+        getTracks: this.lastTracksQueryMs,
+        getAlbums: this.lastAlbumsQueryMs,
+      },
+      ...paths,
     };
   }
 

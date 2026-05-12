@@ -21,6 +21,7 @@ const echoApi: EchoApi = {
     getAlbums: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbums, query),
     getAlbumTracks: (albumId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumTracks, albumId, query),
     getSummary: () => ipcRenderer.invoke(IpcChannels.LibraryGetSummary),
+    getDiagnostics: () => ipcRenderer.invoke(IpcChannels.LibraryGetDiagnostics),
   },
   playback: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),

@@ -33,6 +33,8 @@ const formatFolderError = (error: unknown): string => {
   return message || 'Import failed';
 };
 
+const getLibraryBridge = (): Window['echo']['library'] | null => window.echo?.library ?? null;
+
 export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelProps): JSX.Element => {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [folderPath, setFolderPath] = useState('');
@@ -44,7 +46,15 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
 
   const refreshFolders = useCallback(async () => {
     try {
-      setFolders(await window.echo.library.getFolders());
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setFolders([]);
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to manage library folders.');
+        return;
+      }
+
+      setFolders(await library.getFolders());
       setError(null);
     } catch (refreshError) {
       setError(formatFolderError(refreshError));
@@ -53,7 +63,7 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
 
   const dispatchLibraryChanged = useCallback(async () => {
     try {
-      await window.echo.library.getSummary();
+      await getLibraryBridge()?.getSummary();
     } catch {
       // Summary warmup is best-effort.
     }
@@ -71,7 +81,14 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
 
   const startScan = useCallback(
     async (folderId: string, statusMessage?: string): Promise<void> => {
-      const scan = await window.echo.library.scanFolder(folderId);
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to scan folders.');
+        return;
+      }
+
+      const scan = await library.scanFolder(folderId);
       updateScanStatus(scan);
 
       if (statusMessage) {
@@ -93,7 +110,14 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
       const alreadyImported = folders.some((folder) => folder.path === normalizedPath);
 
       try {
-        const folder = await window.echo.library.addFolder(normalizedPath);
+        const library = getLibraryBridge();
+
+        if (!library) {
+          setError('Desktop bridge unavailable. Open ECHO Next in Electron to import folders.');
+          return;
+        }
+
+        const folder = await library.addFolder(normalizedPath);
         setFolderPath(normalizedPath);
         setMessage(alreadyImported ? 'Folder already exists, starting rescan' : 'Folder added, starting scan');
         await refreshFolders();
@@ -107,7 +131,14 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
 
   const handleChooseFolder = useCallback(async (): Promise<void> => {
     try {
-      const chosenPath = await window.echo.library.chooseFolder();
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to choose folders.');
+        return;
+      }
+
+      const chosenPath = await library.chooseFolder();
 
       if (!chosenPath) {
         return;
@@ -127,7 +158,14 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
   const handleCancelScan = useCallback(
     async (folderId: string, jobId: string): Promise<void> => {
       try {
-        const scan = await window.echo.library.cancelScan(jobId);
+        const library = getLibraryBridge();
+
+        if (!library) {
+          setError('Desktop bridge unavailable. Open ECHO Next in Electron to cancel scans.');
+          return;
+        }
+
+        const scan = await library.cancelScan(jobId);
         updateScanStatus(scan);
         setMessage('Scan cancelled');
         await dispatchLibraryChanged();
@@ -141,7 +179,14 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
   const handleRemoveFolder = useCallback(
     async (folderId: string): Promise<void> => {
       try {
-        await window.echo.library.removeFolder(folderId);
+        const library = getLibraryBridge();
+
+        if (!library) {
+          setError('Desktop bridge unavailable. Open ECHO Next in Electron to remove folders.');
+          return;
+        }
+
+        await library.removeFolder(folderId);
         setScanStatuses((current) => {
           const next = { ...current };
           delete next[folderId];
@@ -184,9 +229,9 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
 
     const timer = window.setInterval(() => {
       for (const jobId of activeJobIds) {
-        void window.echo.library.getScanStatus(jobId).then((status) => {
-          updateScanStatus(status);
-        });
+          void getLibraryBridge()?.getScanStatus(jobId).then((status) => {
+            updateScanStatus(status);
+          });
       }
     }, 1000);
 

@@ -180,6 +180,7 @@ Preload exposes typed methods only:
 - `library.getAlbums({ page, pageSize, search, sort })`
 - `library.getAlbumTracks(albumId, { page, pageSize })`
 - `library.getSummary()`
+- `library.getDiagnostics()`
 
 IPC handlers validate input and call `LibraryService`. SQL, scanning, metadata, cover, and grouping logic stay inside Library Core.
 
@@ -187,7 +188,7 @@ IPC handlers validate input and call `LibraryService`. SQL, scanning, metadata, 
 
 `AlbumsPage` reads paged albums with `pageSize = 60` from the persisted `albums` table. It never regroups tracks in Renderer.
 
-Settings and the import fallback view share the same `LibraryFoldersPanel`. It supports:
+Folders, Settings, and Import Folder share the same `LibraryFoldersPanel`. It supports:
 
 - system folder selection through `library.chooseFolder()`
 - manual path entry as an advanced fallback
@@ -199,14 +200,36 @@ Settings and the import fallback view share the same `LibraryFoldersPanel`. It s
 Import flow:
 
 - `library.chooseFolder()` opens the Electron directory picker in main
-- the sidebar `Import Folder` action opens the directory picker directly; it does not navigate to a page
-- Settings and the fallback import view fill the chosen path into the input and immediately start import and scan
+- the `Folders` route is the normal folder management surface
+- the `Import Folder` route is a focused import surface that uses the same panel with input focus
+- the SongsPage folder-plus action dispatches `app:navigate:import-folder`, keeping SongsPage thin
+- App chrome can still open the directory picker directly for quick import
+- Settings and the import view fill the chosen path into the input and immediately start import and scan
 - repeated imports of the same path are idempotent and become a rescan
 - when a scan completes, the panel calls `library.getSummary()` and emits a `library:changed` window event so SongsPage and AlbumsPage reload their first page
 
 The sidebar `Import File` action opens the existing local audio file picker directly. Phase 1 does not add single-file library ingestion; that remains separate from the folder-based Library Core cache.
 
 This is not a file manager and never copies, moves, renames, or deletes disk files.
+
+## Phase 1.1 Playback And Diagnostics
+
+`TrackRow` accepts `onPlay(track)` while staying memoized. `TrackList` passes the callback through, and `SongsPage` calls:
+
+```ts
+window.echo.playback.playLocalFile({
+  filePath: track.path,
+  trackId: track.id,
+});
+```
+
+`SongsPage` updates only `currentTrackId` from the returned playback status. It does not subscribe to playback progress, so position polling cannot rerender the song list.
+
+`PlayerBar` owns lightweight 1s polling of `playback.getStatus()` and `audio.getStatus()` until push IPC exists. It displays current file, track id, state, position/duration, codec, `fileSampleRate`, `actualDeviceSampleRate`, `outputMode`, and `sampleRateMismatch`.
+
+`library.getDiagnostics()` returns counts, last scan counters, last paged query timings, database path/size, and cover cache path/size. It never triggers a scan and never returns track lists or full cover payloads. The diagnostics panel is dev-only in Settings > Library.
+
+`npm run benchmark:library` generates 3000 and 10000 fake tracks, measures SQLite insertion, album grouping, first-page track/album queries, unchanged scan skip simulation, memory, and database size. It does not need real audio files.
 
 ## Performance Budget
 

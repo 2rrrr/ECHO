@@ -7,6 +7,33 @@ export type LibrarySummary = {
   lastScanAt: string | null;
 };
 
+export type LibraryDiagnostics = {
+  foldersCount: number;
+  tracksCount: number;
+  albumsCount: number;
+  artistsCount: number;
+  coversCount: number;
+  lastScan: {
+    status: LibraryScanStatus['status'];
+    phase: LibraryScanStatus['phase'];
+    discoveredCount: number;
+    parsedCount: number;
+    skippedCount: number;
+    coverCount: number;
+    errorCount: number;
+    startedAt: string | null;
+    finishedAt: string | null;
+  } | null;
+  lastQueryMs: {
+    getTracks: number | null;
+    getAlbums: number | null;
+  };
+  databasePath: string | null;
+  databaseSizeBytes: number | null;
+  coverCachePath: string | null;
+  coverCacheSizeBytes: number | null;
+};
+
 export type LibraryFolder = {
   id: string;
   path: string;

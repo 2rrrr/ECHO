@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import electron from 'electron';
 import { createDatabase } from '../database/createDatabase';
@@ -9,6 +9,7 @@ import { ScanJobQueue } from './ScanJobQueue';
 import type { MetadataService } from './MetadataService';
 import type {
   LibraryAlbum,
+  LibraryDiagnostics,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
@@ -38,6 +39,8 @@ export class LibraryService {
     private readonly store: LibraryStore,
     private readonly scanJobQueue: ScanJobQueue,
     private readonly closeDatabase: () => void,
+    private readonly databasePath: string | null = null,
+    private readonly coverCacheDir: string | null = null,
   ) {}
 
   addFolder(folderPath: string): LibraryFolder {
@@ -93,6 +96,15 @@ export class LibraryService {
     return this.store.getSummary();
   }
 
+  getDiagnostics(): LibraryDiagnostics {
+    return this.store.getDiagnostics({
+      databasePath: this.databasePath,
+      databaseSizeBytes: this.databasePath ? pathSize(this.databasePath) : null,
+      coverCachePath: this.coverCacheDir,
+      coverCacheSizeBytes: this.coverCacheDir ? directorySize(this.coverCacheDir) : null,
+    });
+  }
+
   async waitForScan(jobId: string): Promise<void> {
     await this.scanJobQueue.waitForIdle(jobId);
   }
@@ -133,7 +145,7 @@ export const createLibraryService = (
     coverConcurrency: dependencies.coverConcurrency,
   });
 
-  return new LibraryService(store, scanJobQueue, () => database.close());
+  return new LibraryService(store, scanJobQueue, () => database.close(), databasePath, coverCacheDir);
 };
 
 let defaultLibraryService: LibraryService | null = null;
@@ -150,4 +162,40 @@ export const getLibraryService = (): LibraryService => {
   }
 
   return defaultLibraryService;
+};
+
+const pathSize = (targetPath: string): number | null => {
+  try {
+    return existsSync(targetPath) ? statSync(targetPath).size : null;
+  } catch {
+    return null;
+  }
+};
+
+const directorySize = (targetPath: string): number | null => {
+  if (!existsSync(targetPath)) {
+    return null;
+  }
+
+  let total = 0;
+  const pending = [targetPath];
+
+  try {
+    while (pending.length) {
+      const current = pending.pop()!;
+      const stat = statSync(current);
+
+      if (stat.isDirectory()) {
+        for (const entry of readdirSync(current)) {
+          pending.push(join(current, entry));
+        }
+      } else {
+        total += stat.size;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return total;
 };

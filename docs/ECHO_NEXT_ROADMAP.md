@@ -26,6 +26,12 @@ Phase 0 intentionally kept scanning, playback, and SQLite out of the shell.
 - persisted album wall data that survives restart
 - `SongsPage` with paged API reads and virtualized rows
 - `AlbumsPage` with paged album-wall reads from SQLite
+- `FoldersPage` for folder management, plus focused `ImportFolderPage`
+- SongsPage folder-plus navigation to `ImportFolderPage`
+- TrackRow single-track playback through `playback.playLocalFile({ filePath, trackId })`
+- PlayerBar status readout for playback and audio sample-rate fields
+- dev-only Library Diagnostics through `library.getDiagnostics()`
+- `benchmark:library` fake-data pressure script for 3000 and 10000 tracks
 - sidebar `Import Folder` direct picker plus Settings/fallback folder import UX using `library.chooseFolder()`
 - sidebar `Import File` direct picker for the existing local audio file open path; single-file library ingestion remains deferred
 - focused tests for migration, scanning, metadata priority, cover priority, album grouping, restart persistence, pagination, and scan errors
@@ -43,7 +49,8 @@ Deferred beyond the minimal Phase 1 loop:
 
 ## Phase 1.5: Native Worker & Performance Validation
 
-- build a Rust `CoverWorker`
+- decide whether to build a Rust `CoverWorker` from Phase 1.1 diagnostics and benchmark data
+- build a Rust `CoverWorker` if cover extraction/cache generation is the measured bottleneck
 - evaluate whether `MetadataWorker` should move to Rust/C++
 - pressure test 3000 and 10000 track libraries
 - record CPU, memory, total scan time, metadata time, cover time, and album wall load time

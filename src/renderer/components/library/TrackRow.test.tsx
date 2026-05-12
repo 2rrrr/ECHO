@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TrackRow } from './TrackRow';
 import type { LibraryTrack } from '../../../shared/types/library';
 
@@ -50,5 +50,21 @@ describe('TrackRow', () => {
 
     expect(screen.getByRole('listitem').getAttribute('data-playing')).toBe('true');
     expect(screen.getByText('Afraid')).toBeTruthy();
+  });
+
+  it('calls onPlay from click and double click without action button bubbling', () => {
+    const onPlay = vi.fn();
+    render(<TrackRow isPlaying={false} track={track()} onPlay={onPlay} />);
+
+    fireEvent.click(screen.getByRole('listitem'));
+    expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ id: 'track-1' }));
+
+    onPlay.mockClear();
+    fireEvent.doubleClick(screen.getByRole('listitem'));
+    expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ id: 'track-1' }));
+
+    onPlay.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '喜欢 Afraid' }));
+    expect(onPlay).not.toHaveBeenCalled();
   });
 });

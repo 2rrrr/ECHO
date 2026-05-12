@@ -112,7 +112,8 @@ Targets for Phase 1 and Phase 1.5 validation:
 
 Phase 1.5 Native Worker & Performance Validation:
 
-- build Rust `CoverWorker`
+- use Phase 1.1 `library.getDiagnostics()` and `npm run benchmark:library` results before committing to Rust worker work
+- build Rust `CoverWorker` if cover extraction/cache generation is the measured bottleneck
 - evaluate Rust `MetadataWorker`
 - run 3000 and 10000 track pressure tests
 - record CPU, memory, total scan time, metadata time, cover time, and album wall load time

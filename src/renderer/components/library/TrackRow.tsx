@@ -1,4 +1,5 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
+import type { KeyboardEvent, MouseEvent } from 'react';
 import { Heart, ListPlus, MoreHorizontal, Music2 } from 'lucide-react';
 import type { LibraryTrack } from '../../../shared/types/library';
 
@@ -12,6 +13,7 @@ export type HifiTag = {
 type TrackRowProps = {
   track: LibraryTrack;
   isPlaying: boolean;
+  onPlay?: (track: LibraryTrack) => void;
 };
 
 const formatDuration = (duration: number): string => {
@@ -70,11 +72,35 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, onPlay }: TrackRowProps): JSX.Element => {
     const tags = tagsFromTrack(track);
+    const handlePlay = useCallback((): void => {
+      onPlay?.(track);
+    }, [onPlay, track]);
+    const handleKeyDown = useCallback(
+      (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handlePlay();
+        }
+      },
+      [handlePlay],
+    );
+    const stopActionPropagation = useCallback((event: MouseEvent): void => {
+      event.stopPropagation();
+    }, []);
 
     return (
-      <div className="track-row" data-playing={isPlaying} role="listitem">
+      <div
+        className="track-row"
+        data-clickable={Boolean(onPlay)}
+        data-playing={isPlaying}
+        role="listitem"
+        tabIndex={onPlay ? 0 : undefined}
+        onClick={handlePlay}
+        onDoubleClick={handlePlay}
+        onKeyDown={handleKeyDown}
+      >
         <div className="track-cover" data-empty={!track.coverThumb} aria-hidden="true">
           {track.coverThumb ? <img alt="" src={track.coverThumb} /> : <Music2 size={22} />}
         </div>
@@ -98,7 +124,7 @@ export const TrackRow = memo(
 
         <div className="track-duration">{formatDuration(track.duration)}</div>
 
-        <div className="track-actions" aria-label={`${track.title} 操作`}>
+        <div className="track-actions" aria-label={`${track.title} 操作`} onClick={stopActionPropagation} onDoubleClick={stopActionPropagation}>
           <button className="row-action" type="button" aria-label={`喜欢 ${track.title}`} title="喜欢">
             <Heart size={16} />
           </button>
@@ -112,7 +138,7 @@ export const TrackRow = memo(
       </div>
     );
   },
-  (previous, next) => previous.track === next.track && previous.isPlaying === next.isPlaying,
+  (previous, next) => previous.track === next.track && previous.isPlaying === next.isPlaying && previous.onPlay === next.onPlay,
 );
 
 TrackRow.displayName = 'TrackRow';
