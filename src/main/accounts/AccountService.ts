@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFil
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import {
+  type AccountCredentials,
   accountProviders,
   youtubeBrowsers,
   type AccountProvider,
@@ -86,6 +87,17 @@ export class AccountService {
   getStatus(provider: AccountProvider): AccountStatus {
     this.requireProvider(provider);
     return this.providers[provider].toStatus(this.readRecords()[provider]);
+  }
+
+  getCredentials(provider: AccountProvider): AccountCredentials {
+    this.requireProvider(provider);
+    const record = this.readRecords()[provider];
+
+    return {
+      provider,
+      cookie: record?.cookie,
+      browser: record?.browser,
+    };
   }
 
   saveCookie(provider: AccountProvider, cookie: string): AccountStatus {

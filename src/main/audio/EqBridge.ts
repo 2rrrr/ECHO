@@ -42,26 +42,43 @@ const createBands = (gains: number[] = []): EqBand[] =>
     q: 1,
   }));
 
-const builtInPresets: EqPreset[] = [
-  { id: 'flat', name: 'Flat', preampDb: 0, bands: createBands(), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'bass-boost', name: 'Bass Boost', preampDb: -2, bands: createBands([4, 3.5, 2.5, 1, 0, 0, 0, -0.5, -1, -1]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'vocal-clear', name: 'Vocal Clear', preampDb: -1.5, bands: createBands([-2, -1.5, -1, 0.5, 1.5, 2.5, 2, 1, 0, -0.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'treble-sparkle', name: 'Treble Sparkle', preampDb: -2, bands: createBands([-1, -0.8, -0.5, 0, 0, 0.5, 1.2, 2.4, 3.4, 3]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'loudness', name: 'Loudness', preampDb: -4, bands: createBands([4, 3.5, 2, 0.5, -0.5, -0.5, 0.3, 1.5, 2.2, 2.4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'night', name: 'Night', preampDb: -4, bands: createBands([-2, -2, -1.5, -0.5, 0, 1, 0.8, -0.5, -2, -3]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'headphone-warm', name: 'Headphone Warm', preampDb: -2, bands: createBands([1.5, 2, 2, 1.2, 0.4, 0, -0.4, -0.8, -1, -1.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'anime-jpop', name: 'Anime / J-Pop', preampDb: -3, bands: createBands([1.5, 1.2, 0.6, -0.5, -0.8, 0.8, 2, 2.6, 2.2, 1]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'rock', name: 'Rock', preampDb: -3, bands: createBands([2.5, 2, 1, -0.5, -1, 0, 1.2, 2.3, 2, 1.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'classical', name: 'Classical', preampDb: -1, bands: createBands([0.5, 0.5, 0, 0, -0.3, -0.2, 0.4, 1, 1.2, 0.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'harman-target', name: 'Harman Target', preampDb: -5, bands: createBands([5, 4.5, 3.2, 1.2, 0, 0, 1.2, 2.2, 1.2, 0.4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'harman-in-ear', name: 'Harman In-Ear', preampDb: -6, bands: createBands([6, 5.5, 4, 1.8, 0.2, 0, 1.5, 2.6, 1.8, 0.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'diffuse-field', name: 'Diffuse Field', preampDb: -4, bands: createBands([-3, -2.4, -1.2, 0, 0.6, 1.4, 3.2, 4, 2.2, 0.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'bk-room-curve', name: 'B&K Room Curve', preampDb: -3, bands: createBands([3, 2.5, 1.7, 0.8, 0.1, -0.5, -1.1, -1.7, -2.3, -2.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'studio-neutral', name: 'Studio Neutral', preampDb: -1, bands: createBands([0, -0.4, -0.4, 0, 0, 0.4, 0.9, 0.8, 0.2, -0.4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'classic-smiley', name: 'Classic Smiley', preampDb: -4, bands: createBands([4, 3.2, 1.4, -1.2, -2, -1.4, 0.5, 2, 3.4, 4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'vinyl-warmth', name: 'Vinyl Warmth', preampDb: -2.5, bands: createBands([2.5, 2, 1.2, 0.5, 0, -0.3, -0.8, -1.2, -1.8, -2.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'broadcast-voice', name: 'Broadcast Voice', preampDb: -3, bands: createBands([-4, -3, -1.5, 0.8, 2, 3, 2.5, 1, -1, -2.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+type BuiltInPresetDefinition = {
+  id: string;
+  name: string;
+  preampDb: number;
+  gains: number[];
+};
+
+const builtInPresetDefinitions: BuiltInPresetDefinition[] = [
+  { id: 'flat', name: 'Flat', preampDb: 0, gains: [] },
+  { id: 'bass-boost', name: 'Bass Boost', preampDb: -8, gains: [7.5, 6.8, 5, 2.3, 0.5, -0.4, -1, -1.6, -2.2, -2.8] },
+  { id: 'vocal-clear', name: 'Vocal Clear', preampDb: -6, gains: [-6, -5, -3, 0.5, 2.8, 4.5, 3.8, 2, -0.8, -2.8] },
+  { id: 'treble-sparkle', name: 'Treble Sparkle', preampDb: -7, gains: [-3, -2.5, -1.8, -0.8, 0, 0.8, 2.8, 4.8, 6.2, 5.5] },
+  { id: 'loudness', name: 'Loudness', preampDb: -8, gains: [7.5, 6.8, 4.4, 1.2, -1.6, -1.8, 0.6, 2.8, 4.6, 5.2] },
+  { id: 'night', name: 'Night', preampDb: -2, gains: [-6.5, -5.8, -3.6, -1.2, 0, 1.2, 0.6, -1.8, -4.5, -6.5] },
+  { id: 'headphone-warm', name: 'Headphone Warm', preampDb: -6, gains: [5, 5.3, 4, 2, 0.5, -0.4, -1.1, -1.8, -2.6, -3.5] },
+  { id: 'anime-jpop', name: 'Anime / J-Pop', preampDb: -6, gains: [3, 2.3, 0.5, -1.8, -2.2, 1.2, 3.8, 5.5, 4.6, 2.2] },
+  { id: 'rock', name: 'Rock', preampDb: -6, gains: [5.5, 4.6, 1.8, -2, -3, -0.6, 2.2, 4.5, 3.8, 2] },
+  { id: 'classical', name: 'Classical', preampDb: -4, gains: [1.8, 1.4, 0.3, -0.4, -1, -0.5, 1, 2.8, 3.5, 2.2] },
+  { id: 'harman-target', name: 'Harman Target', preampDb: -6, gains: [6, 5.8, 4.5, 2, 0.5, 0, 2.5, 3.5, 2, 0.5] },
+  { id: 'harman-in-ear', name: 'Harman In-Ear', preampDb: -8, gains: [8, 7, 5.5, 2.5, 0, -0.5, 2.5, 4, 3, 1.5] },
+  { id: 'diffuse-field', name: 'Diffuse Field', preampDb: -7, gains: [-5.5, -4.8, -2.8, -0.8, 0.6, 2, 5.5, 6.2, 3.8, 0.8] },
+  { id: 'bk-room-curve', name: 'B&K Room Curve', preampDb: -6, gains: [5.5, 4.8, 3.4, 1.7, 0.5, -0.8, -2, -3.2, -4.4, -5.4] },
+  { id: 'studio-neutral', name: 'Studio Neutral', preampDb: -2, gains: [-1.5, -1.8, -1, -0.2, 0.2, 1.1, 2, 1.6, 0.2, -1.2] },
+  { id: 'classic-smiley', name: 'Classic Smiley', preampDb: -8, gains: [7, 6, 3, -2.8, -4.5, -3.2, 1, 4, 6.2, 7] },
+  { id: 'vinyl-warmth', name: 'Vinyl Warmth', preampDb: -6, gains: [5, 4.4, 2.8, 1, 0, -0.7, -1.6, -2.8, -4, -5.2] },
+  { id: 'broadcast-voice', name: 'Broadcast Voice', preampDb: -6, gains: [-8, -6.5, -3.4, 1.5, 4, 5.5, 4.4, 1.5, -2.5, -5.5] },
 ];
+
+const builtInPresets: EqPreset[] = builtInPresetDefinitions.map((preset) => ({
+  id: preset.id,
+  name: preset.name,
+  preampDb: preset.preampDb,
+  bands: createBands(preset.gains),
+  createdAt: 'built-in',
+  updatedAt: 'built-in',
+  readonly: true,
+}));
 
 const defaultState = (): EqState => ({
   enabled: false,
@@ -339,7 +356,7 @@ export class EqBridge extends EventEmitter {
       presetName: flat.name,
       clippingRisk: false,
     };
-    await this.sendNative({ type: 'eq:reset' });
+    await this.sendNative({ type: 'eq:set-preset', preampDb: flat.preampDb, bands: flat.bands });
     return this.emitState();
   }
 

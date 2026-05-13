@@ -7,7 +7,18 @@ export type LyricLine = {
 
 export type LyricsKind = 'empty' | 'plain' | 'synced' | 'instrumental';
 
-export type LyricsSource = 'none' | 'local' | 'lrclib' | 'manual' | 'cached';
+export type LyricsProviderId =
+  | 'local'
+  | 'lrclib'
+  | 'netease'
+  | 'qqmusic'
+  | 'musixmatch'
+  | 'genius'
+  | 'manual';
+
+export type LyricsSource = 'none' | LyricsProviderId | 'cached';
+
+export type LyricsMatchRisk = 'low' | 'medium' | 'high';
 
 export type TrackLyrics = {
   id: string;
@@ -30,7 +41,7 @@ export type TrackLyrics = {
 
 export type LyricsSearchCandidate = {
   id: string;
-  provider: 'lrclib' | 'local';
+  provider: LyricsProviderId;
   providerLyricsId?: string | null;
   title: string;
   artist: string;
@@ -41,6 +52,13 @@ export type LyricsSearchCandidate = {
   hasPlain: boolean;
   score: number;
   sourceLabel: string;
+  risk?: LyricsMatchRisk;
+  reasons?: string[];
+  titleScore?: number;
+  artistScore?: number;
+  albumScore?: number;
+  durationScore?: number;
+  versionScore?: number;
 };
 
 export type LyricsQuery = {

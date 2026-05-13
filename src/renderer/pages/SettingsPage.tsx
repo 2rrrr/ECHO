@@ -27,6 +27,7 @@ import type { CoverCacheMigrationResult } from '../../shared/types/coverCache';
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { LastFmStatus } from '../../shared/types/lastfm';
+import type { DuplicateTrackIndexSummary } from '../../shared/types/library';
 import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
@@ -513,6 +514,9 @@ export const SettingsPage = (): JSX.Element => {
   const [albumGroupingMessage, setAlbumGroupingMessage] = useState<string | null>(null);
   const [libraryScanBusy, setLibraryScanBusy] = useState(false);
   const [libraryScanMessage, setLibraryScanMessage] = useState<string | null>(null);
+  const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
+  const [duplicateBusyAction, setDuplicateBusyAction] = useState<'toggle' | 'analyze' | null>(null);
+  const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
   const [fontPickerQuery, setFontPickerQuery] = useState('');
@@ -624,12 +628,28 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshDuplicateSummary = useCallback(async () => {
+    try {
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setDuplicateSummary(null);
+        return;
+      }
+
+      setDuplicateSummary(await library.getDuplicateIndexSummary('strict'));
+    } catch {
+      setDuplicateSummary(null);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshStatus();
     void refreshDevices();
     void refreshDiscordPresenceStatus();
     void refreshLastFmStatus();
     void refreshAccountStatuses();
+    void refreshDuplicateSummary();
     const app = getAppBridge();
     const diagnostics = getDiagnosticsBridge();
     void app?.getSettings().then(setAppSettings).catch(() => undefined);
@@ -641,7 +661,7 @@ export const SettingsPage = (): JSX.Element => {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [refreshAccountStatuses, refreshDevices, refreshDiscordPresenceStatus, refreshLastFmStatus, refreshStatus]);
+  }, [refreshAccountStatuses, refreshDevices, refreshDiscordPresenceStatus, refreshDuplicateSummary, refreshLastFmStatus, refreshStatus]);
 
   useEffect(() => {
     setOutputMode(status?.outputMode ?? 'shared');
@@ -1261,6 +1281,73 @@ export const SettingsPage = (): JSX.Element => {
     }
   };
 
+  const handleDuplicateVisibilityToggle = async (): Promise<void> => {
+    const app = getAppBridge();
+    const library = getLibraryBridge();
+    const nextEnabled = !(appSettings?.duplicateTracksEnabled ?? false);
+
+    if (!app || !library) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to change duplicate track settings.');
+      return;
+    }
+
+    try {
+      setDuplicateBusyAction('toggle');
+      setDuplicateMessage(null);
+      setError(null);
+      const [settings, summary] = await Promise.all([
+        app.setSettings({
+          duplicateTracksEnabled: nextEnabled,
+          duplicateTracksMode: 'strict',
+        }),
+        library.getDuplicateIndexSummary('strict'),
+      ]);
+
+      setAppSettings(settings);
+      setDuplicateSummary(summary);
+      if (nextEnabled) {
+        setDuplicateMessage(
+          summary.duplicateGroups > 0
+            ? `已开启隐藏重复歌曲，当前隐藏 ${summary.hiddenTracks} 首。`
+            : '已开启隐藏重复歌曲。还没有分析结果，请先分析重复歌曲。',
+        );
+      } else {
+        setDuplicateMessage('已关闭隐藏重复歌曲。');
+      }
+      window.dispatchEvent(new Event('settings:changed'));
+      window.dispatchEvent(new Event('library:changed'));
+    } catch (duplicateError) {
+      setDuplicateMessage(null);
+      setError(duplicateError instanceof Error ? duplicateError.message : String(duplicateError));
+    } finally {
+      setDuplicateBusyAction(null);
+    }
+  };
+
+  const handleAnalyzeDuplicateTracks = async (): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to analyze duplicate tracks.');
+      return;
+    }
+
+    try {
+      setDuplicateBusyAction('analyze');
+      setDuplicateMessage(null);
+      setError(null);
+      const summary = await library.refreshDuplicateTracks('strict');
+      setDuplicateSummary(summary);
+      setDuplicateMessage(`发现 ${summary.duplicateGroups} 组重复歌曲，当前可隐藏 ${summary.hiddenTracks} 首。`);
+      window.dispatchEvent(new Event('library:changed'));
+    } catch (duplicateError) {
+      setDuplicateMessage(null);
+      setError(duplicateError instanceof Error ? duplicateError.message : String(duplicateError));
+    } finally {
+      setDuplicateBusyAction(null);
+    }
+  };
+
   const toggleNetworkProvider = (provider: AppSettings['networkMetadataProviders'][number]): void => {
     const current = appSettings?.networkMetadataProviders ?? ['mock'];
     const next = current.includes(provider) ? current.filter((item) => item !== provider) : [...current, provider];
@@ -1773,6 +1860,44 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <LibraryFoldersPanel />
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                title="重复歌曲"
+                description="在歌曲列表中隐藏低音质重复版本，不会删除文件。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--duplicates">
+                  <div className="settings-status-grid">
+                    <span>
+                      <em>隐藏状态</em>
+                      <strong>{appSettings?.duplicateTracksEnabled ? `已开启，隐藏 ${duplicateSummary?.hiddenTracks ?? 0} 首` : '未开启'}</strong>
+                    </span>
+                    <span>
+                      <em>分析结果</em>
+                      <strong>{duplicateSummary ? `${duplicateSummary.duplicateGroups} 组 / ${duplicateSummary.duplicateMembers} 首候选` : '尚未读取'}</strong>
+                    </span>
+                    <span>
+                      <em>更新时间</em>
+                      <strong>{duplicateSummary?.updatedAt ? new Date(duplicateSummary.updatedAt).toLocaleString() : '尚未分析'}</strong>
+                    </span>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>隐藏重复歌曲</span>
+                      <ToggleButton
+                        active={appSettings?.duplicateTracksEnabled ?? false}
+                        disabled={!appSettings || duplicateBusyAction !== null}
+                        onClick={() => void handleDuplicateVisibilityToggle()}
+                      />
+                    </div>
+                    <button className="settings-action-button" type="button" disabled={duplicateBusyAction !== null} onClick={() => void handleAnalyzeDuplicateTracks()}>
+                      <RotateCw className={duplicateBusyAction === 'analyze' ? 'spinning-icon' : undefined} size={15} />
+                      {duplicateBusyAction === 'analyze' ? '分析中...' : '分析重复歌曲'}
+                    </button>
+                  </div>
+                  {appSettings?.duplicateTracksEnabled ? <p className="settings-inline-note">当前已隐藏 {duplicateSummary?.hiddenTracks ?? 0} 首重复歌曲。</p> : null}
+                  {duplicateMessage ? <p className="settings-inline-note">{duplicateMessage}</p> : null}
+                </div>
+              </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title="专辑合并策略"

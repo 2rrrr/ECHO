@@ -100,6 +100,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const [redoStack, setRedoStack] = useState<EqSnapshot[]>([]);
   const [loudnessMatchedAb, setLoudnessMatchedAb] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState(false);
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
   const debounceTimers = useRef<Record<number, number>>({});
   const frequencyDebounceTimers = useRef<Record<number, number>>({});
   const editStartSnapshot = useRef<EqSnapshot | null>(null);
@@ -107,6 +108,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const selectedPreset = presets.find((preset) => preset.id === state.presetId);
   const selectedPresetReadonly = selectedPreset?.readonly ?? true;
   const canOverwritePreset = Boolean(selectedPreset && !selectedPreset.readonly);
+  const frequencyEditUnlocked = showAdvancedTools && frequencyUnlocked;
   const audioLevels = audioStatus?.audioLevels ?? null;
   const estimatedOutputPeakDb = audioLevels?.estimatedOutputPeakDb ?? null;
   const realtimeLevelClippingRisk = estimatedOutputPeakDb !== null && estimatedOutputPeakDb >= 0;
@@ -146,6 +148,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    if (!showAdvancedTools && frequencyUnlocked) {
+      setFrequencyUnlocked(false);
+    }
+  }, [frequencyUnlocked, showAdvancedTools]);
+
   const commitState = useCallback(
     (nextState: EqState): void => {
       setState(nextState);
@@ -166,6 +174,24 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     setUndoStack((current) => [...current, snapshot].slice(-maxHistoryLength));
     setRedoStack([]);
   }, []);
+
+  const clearGainDebounce = (band: number): void => {
+    window.clearTimeout(debounceTimers.current[band]);
+    delete debounceTimers.current[band];
+  };
+
+  const clearFrequencyDebounce = (band: number): void => {
+    window.clearTimeout(frequencyDebounceTimers.current[band]);
+    delete frequencyDebounceTimers.current[band];
+  };
+
+  const clearAllGainDebounces = (): void => {
+    Object.keys(debounceTimers.current).forEach((band) => clearGainDebounce(Number(band)));
+  };
+
+  const clearAllFrequencyDebounces = (): void => {
+    Object.keys(frequencyDebounceTimers.current).forEach((band) => clearFrequencyDebounce(Number(band)));
+  };
 
   const beginEqEdit = (): void => {
     if (!editStartSnapshot.current) {
@@ -220,14 +246,20 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       bands: current.bands.map((item, index) => (index === band ? { ...item, gainDb } : item)),
     }));
 
-    window.clearTimeout(debounceTimers.current[band]);
+    clearGainDebounce(band);
     debounceTimers.current[band] = window.setTimeout(() => sendBandGain(band, gainDb), 45);
   };
 
   const handleBandCommit = (band: number, gainDb: number): void => {
     commitEqEdit();
     setSelectedBandIndex(band);
-    window.clearTimeout(debounceTimers.current[band]);
+    clearGainDebounce(band);
+    setState((current) => ({
+      ...current,
+      presetId: 'custom',
+      presetName: 'Custom',
+      bands: current.bands.map((item, index) => (index === band ? { ...item, gainDb } : item)),
+    }));
     sendBandGain(band, gainDb);
   };
 
@@ -249,7 +281,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
   const handleBandFrequencyChange = (band: number, frequencyHz: number): void => {
     beginEqEdit();
-    const safeFrequencyHz = resolveBandFrequency(frequencyHz, frequencyUnlocked);
+    const safeFrequencyHz = resolveBandFrequency(frequencyHz, frequencyEditUnlocked);
     setSelectedBandIndex(band);
     setState((current) => ({
       ...current,
@@ -258,15 +290,21 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       bands: current.bands.map((item, index) => (index === band ? { ...item, frequencyHz: safeFrequencyHz } : item)),
     }));
 
-    window.clearTimeout(frequencyDebounceTimers.current[band]);
+    clearFrequencyDebounce(band);
     frequencyDebounceTimers.current[band] = window.setTimeout(() => sendBandFrequency(band, safeFrequencyHz), 45);
   };
 
   const handleBandFrequencyCommit = (band: number, frequencyHz: number): void => {
     commitEqEdit();
-    const safeFrequencyHz = resolveBandFrequency(frequencyHz, frequencyUnlocked);
+    const safeFrequencyHz = resolveBandFrequency(frequencyHz, frequencyEditUnlocked);
     setSelectedBandIndex(band);
-    window.clearTimeout(frequencyDebounceTimers.current[band]);
+    clearFrequencyDebounce(band);
+    setState((current) => ({
+      ...current,
+      presetId: 'custom',
+      presetName: 'Custom',
+      bands: current.bands.map((item, index) => (index === band ? { ...item, frequencyHz: safeFrequencyHz } : item)),
+    }));
     sendBandFrequency(band, safeFrequencyHz);
   };
 
@@ -365,6 +403,13 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
   const resetSelectedBand = (): void => {
     pushUndoSnapshot(createEqHistorySnapshot(state));
+    clearGainDebounce(selectedBandIndex);
+    setState((current) => ({
+      ...current,
+      presetId: 'custom',
+      presetName: 'Custom',
+      bands: current.bands.map((item, index) => (index === selectedBandIndex ? { ...item, gainDb: 0 } : item)),
+    }));
     sendBandGain(selectedBandIndex, 0);
   };
 
@@ -373,6 +418,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     const nextBands = state.bands.map((band) => ({ ...band, gainDb: 0 }));
     const nextState = { ...state, presetId: 'custom', presetName: 'Custom', bands: nextBands };
     pushUndoSnapshot(createEqHistorySnapshot(state));
+    clearAllGainDebounces();
     setState(nextState);
 
     if (!eq) {
@@ -390,6 +436,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     const nextBands = state.bands.map((band, index) => ({ ...band, frequencyHz: eqFrequenciesHz[index] ?? band.frequencyHz }));
     const nextState = { ...state, presetId: 'custom', presetName: 'Custom', bands: nextBands };
     pushUndoSnapshot(createEqHistorySnapshot(state));
+    clearAllFrequencyDebounces();
     setState(nextState);
 
     if (!eq) {
@@ -409,7 +456,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const adjustSelectedFrequency = (direction: -1 | 1, fine: boolean): void => {
-    if (!selectedBand || !frequencyUnlocked) {
+    if (!selectedBand || !frequencyEditUnlocked) {
       return;
     }
 
@@ -428,6 +475,17 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     }
 
     pushUndoSnapshot(createEqHistorySnapshot(state));
+    const preset = presets.find((item) => item.id === presetId);
+    if (preset) {
+      setState((current) => ({
+        ...current,
+        preampDb: preset.preampDb,
+        bands: preset.bands.map((band) => ({ ...band })),
+        presetId: preset.id,
+        presetName: preset.name,
+        clippingRisk: false,
+      }));
+    }
     void eq.setPreset(presetId).then(commitState).catch((presetError: unknown) => {
       setError(presetError instanceof Error ? presetError.message : String(presetError));
     });
@@ -443,6 +501,13 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     }
 
     pushUndoSnapshot(createEqHistorySnapshot(state));
+    clearAllGainDebounces();
+    clearAllFrequencyDebounces();
+    setState({
+      ...fallbackState,
+      enabled: state.enabled,
+      bands: fallbackState.bands.map((band) => ({ ...band })),
+    });
     void eq.reset().then(commitState).catch((resetError: unknown) => {
       setError(resetError instanceof Error ? resetError.message : String(resetError));
     });
@@ -670,12 +735,19 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <span>{state.enabled ? t('settings.eq.state.eqEnabled') : t('settings.eq.state.eqDisabled')}</span>
           </label>
           <EqPresetSelector presets={presets} value={state.presetId} onChange={setPreset} />
-          <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.undo')} title={t('settings.eq.action.undo')} disabled={undoStack.length === 0} onClick={undoEq}>
-            <Undo2 size={15} />
+          <button className="eq-soft-button" type="button" data-active={showAdvancedTools} onClick={() => setShowAdvancedTools((current) => !current)}>
+            {showAdvancedTools ? t('settings.eq.action.hideAdvanced') : t('settings.eq.action.showAdvanced')}
           </button>
-          <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.redo')} title={t('settings.eq.action.redo')} disabled={redoStack.length === 0} onClick={redoEq}>
-            <Redo2 size={15} />
-          </button>
+          {showAdvancedTools ? (
+            <>
+              <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.undo')} title={t('settings.eq.action.undo')} disabled={undoStack.length === 0} onClick={undoEq}>
+                <Undo2 size={15} />
+              </button>
+              <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.redo')} title={t('settings.eq.action.redo')} disabled={redoStack.length === 0} onClick={redoEq}>
+                <Redo2 size={15} />
+              </button>
+            </>
+          ) : null}
           <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.resetEq')} title={t('settings.eq.action.resetEq')} onClick={reset}>
             <RotateCcw size={15} />
           </button>
@@ -705,7 +777,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </div>
       </div>
 
-      {selectedPresetMetadata ? (
+      {selectedPresetMetadata && showAdvancedTools ? (
         <aside className="eq-preset-metadata" data-category={selectedPresetMetadata.category}>
           <span>{t(selectedPresetMetadata.targetTypeKey as TranslationKey)}</span>
           {selectedPresetMetadata.approximation ? <strong>{t('settings.eq.preset.approximation')}</strong> : null}
@@ -768,7 +840,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <EqCurveView
             bands={state.bands}
             enabled={state.enabled}
-            frequencyUnlocked={frequencyUnlocked}
+            frequencyUnlocked={frequencyEditUnlocked}
             selectedBandIndex={selectedBandIndex}
             onBandSelect={setSelectedBandIndex}
             onBandChange={handleBandChange}
@@ -776,6 +848,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             onBandFrequencyChange={handleBandFrequencyChange}
             onBandFrequencyCommit={handleBandFrequencyCommit}
           />
+          {showAdvancedTools ? (
           <div className="eq-inspector">
             <div className="eq-inspector-title">
               <span>{t('settings.eq.band.inspector')}</span>
@@ -788,12 +861,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                 type="number"
                 min={eqMinFrequencyHz}
                 max={eqMaxFrequencyHz}
-                step={frequencyUnlocked ? 1 : undefined}
+                step={frequencyEditUnlocked ? 1 : undefined}
                 value={Math.round(selectedBand?.frequencyHz ?? eqFrequenciesHz[selectedBandIndex] ?? 1000)}
                 onChange={(event) => handleBandFrequencyChange(selectedBandIndex, Number(event.currentTarget.value))}
                 onBlur={(event) => handleBandFrequencyCommit(selectedBandIndex, Number(event.currentTarget.value))}
               />
-              <em>{frequencyUnlocked ? t('settings.eq.band.frequencyUnlocked') : t('settings.eq.band.frequencySnapped')}</em>
+              <em>{frequencyEditUnlocked ? t('settings.eq.band.frequencyUnlocked') : t('settings.eq.band.frequencySnapped')}</em>
             </label>
             <label>
               <span>{t('settings.eq.band.gain')}</span>
@@ -815,16 +888,16 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               <button className="eq-soft-button" type="button" onClick={() => adjustSelectedGain(0.5)}>+0.5</button>
             </div>
             <div className="eq-stepper-group" aria-label={t('settings.eq.band.frequencyStepper')}>
-              <button className="eq-soft-button" type="button" disabled={!frequencyUnlocked} onClick={() => adjustSelectedFrequency(-1, false)}>
+              <button className="eq-soft-button" type="button" disabled={!frequencyEditUnlocked} onClick={() => adjustSelectedFrequency(-1, false)}>
                 {t('settings.eq.action.freqDown')}
               </button>
-              <button className="eq-soft-button" type="button" disabled={!frequencyUnlocked} onClick={() => adjustSelectedFrequency(-1, true)}>
+              <button className="eq-soft-button" type="button" disabled={!frequencyEditUnlocked} onClick={() => adjustSelectedFrequency(-1, true)}>
                 {t('settings.eq.action.freqFineDown')}
               </button>
-              <button className="eq-soft-button" type="button" disabled={!frequencyUnlocked} onClick={() => adjustSelectedFrequency(1, true)}>
+              <button className="eq-soft-button" type="button" disabled={!frequencyEditUnlocked} onClick={() => adjustSelectedFrequency(1, true)}>
                 {t('settings.eq.action.freqFineUp')}
               </button>
-              <button className="eq-soft-button" type="button" disabled={!frequencyUnlocked} onClick={() => adjustSelectedFrequency(1, false)}>
+              <button className="eq-soft-button" type="button" disabled={!frequencyEditUnlocked} onClick={() => adjustSelectedFrequency(1, false)}>
                 {t('settings.eq.action.freqUp')}
               </button>
             </div>
@@ -836,6 +909,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               {t('settings.eq.action.resetBand', { frequency: selectedBand ? formatFrequencyLabel(selectedBand.frequencyHz) : t('settings.eq.band.fallback') })}
             </button>
           </div>
+          ) : null}
           <div className="eq-band-strip" aria-label={t('settings.eq.band.readoutsAria')}>
             {state.bands.map((band, index) => (
               <button
@@ -856,13 +930,16 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <button className="eq-soft-button" type="button" onClick={resetAllGains}>
               {t('settings.eq.action.resetAllGains')}
             </button>
-            <button className="eq-soft-button" type="button" onClick={resetStandardFrequencies}>
-              {t('settings.eq.action.resetFrequencies')}
-            </button>
+            {showAdvancedTools ? (
+              <button className="eq-soft-button" type="button" onClick={resetStandardFrequencies}>
+                {t('settings.eq.action.resetFrequencies')}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
 
+      {showAdvancedTools ? (
       <div className="eq-compare-row">
         <span className="eq-compare-label">{t('settings.eq.ab.title')}</span>
         <label className="eq-compare-toggle">
@@ -909,6 +986,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         <span>{bitPerfectText}</span>
         {clippingRisk ? <strong>{t('settings.eq.warning.lowerPreamp')}</strong> : <strong><ShieldCheck size={14} /> {t('settings.eq.status.safeHeadroomShort')}</strong>}
       </div>
+      ) : null}
 
       <section className="channel-balance-panel" aria-label="Channel balance panel" data-enabled={channelBalance.enabled}>
         <header className="channel-balance-header">

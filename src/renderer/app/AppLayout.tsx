@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { AudioSettingsDrawer } from '../components/player/AudioSettingsDrawer';
 import { LyricsSettingsDrawer } from '../components/lyrics/LyricsSettingsDrawer';
+import { MvSettingsDrawer } from '../components/lyrics/MvSettingsDrawer';
 import { DragDropImportOverlay } from '../components/import/DragDropImportOverlay';
 import { readRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -23,6 +24,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [diagnosticsNotice, setDiagnosticsNotice] = useState(false);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
+  const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -251,9 +253,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         activeRouteId={activeRouteId}
         isAudioSettingsOpen={isAudioDrawerOpen}
         isLyricsSettingsOpen={isLyricsDrawerOpen}
+        isMvSettingsOpen={isMvDrawerOpen}
         onRouteChange={navigateRoute}
         onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
         onOpenLyricsSettings={() => setIsLyricsDrawerOpen(true)}
+        onOpenMvSettings={() => setIsMvDrawerOpen(true)}
         onMinimize={() => void handleWindowAction('minimize')}
         onToggleMaximize={() => void handleWindowAction('toggleMaximize')}
         onClose={() => void handleWindowAction('close')}
@@ -321,6 +325,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         onStatusChange={setAudioDrawerStatus}
       />
       <LyricsSettingsDrawer isOpen={isLyricsDrawerOpen} onClose={() => setIsLyricsDrawerOpen(false)} />
+      <MvSettingsDrawer isOpen={isMvDrawerOpen} onClose={() => setIsMvDrawerOpen(false)} />
 
       {isStandaloneRoute && !isLyricsRoute ? null : <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />}
     </div>

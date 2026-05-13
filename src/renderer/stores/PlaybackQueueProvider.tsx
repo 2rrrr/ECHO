@@ -113,6 +113,16 @@ const findCurrentIndex = (items: QueueItem[], currentQueueId: string | null, cur
   return currentTrackId ? items.findIndex((item) => item.track.id === currentTrackId) : -1;
 };
 
+const getShuffleCandidates = (items: QueueItem[], activeItem: QueueItem | null, history: QueueItem[]): QueueItem[] => {
+  const excludedQueueIds = new Set(history.map((item) => item.queueId));
+
+  if (activeItem) {
+    excludedQueueIds.add(activeItem.queueId);
+  }
+
+  return items.filter((item) => !excludedQueueIds.has(item.queueId));
+};
+
 const clampMoveIndex = (index: number, length: number): number => Math.max(0, Math.min(index, length - 1));
 
 const isCompletedPlayback = (playedSeconds: number, durationSeconds: number): boolean =>
@@ -326,6 +336,21 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     return status;
   }, [finishPlaybackHistorySession, startPlaybackHistorySession]);
 
+  const autoSearchMv = useCallback((trackId: string): void => {
+    const mvApi = window.echo?.mv;
+    if (!mvApi?.getSelected) {
+      return;
+    }
+
+    void (async () => {
+      const settings = await mvApi.getSettings?.();
+      const candidates = settings?.autoSearch && mvApi.searchNetworkCandidates ? await mvApi.searchNetworkCandidates(trackId) : [];
+      window.dispatchEvent(new CustomEvent('mv:candidatesChanged', { detail: { trackId, candidates } }));
+      await mvApi.getSelected(trackId);
+      window.dispatchEvent(new CustomEvent('mv:changed', { detail: { trackId } }));
+    })().catch(() => undefined);
+  }, []);
+
   const commitPlayedItem = useCallback(
     (item: QueueItem, status: PlaybackStatus, options: { recordHistory?: boolean; previousItem?: QueueItem | null } = {}): void => {
       const previousItem = options.previousItem ?? findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
@@ -337,8 +362,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       setLastPlayedTrack(item.track);
       setCurrentQueueId(item.queueId);
       setCurrentTrackIdInternal(status.currentTrackId ?? item.track.id);
+      autoSearchMv(item.track.id);
     },
-    [setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack],
+    [autoSearchMv, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack],
   );
 
   const replaceQueue = useCallback(
@@ -527,7 +553,12 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     let target: QueueItem | null = null;
 
     if (isShuffleEnabledRef.current) {
-      const candidates = activeItem ? current.filter((item) => item.queueId !== activeItem.queueId) : current;
+      let candidates = getShuffleCandidates(current, activeItem ?? null, historyRef.current);
+
+      if (candidates.length === 0 && activeRepeatMode === 'all') {
+        candidates = activeItem ? current.filter((item) => item.queueId !== activeItem.queueId) : current;
+      }
+
       target = candidates[Math.floor(Math.random() * candidates.length)] ?? null;
 
       if (!target && activeRepeatMode === 'all') {
@@ -590,7 +621,8 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     const currentIndex = findCurrentIndex(items, currentQueueId, currentTrackId);
 
     if (isShuffleEnabled) {
-      return repeatMode === 'all' ? items.length > 0 : items.length > 1 || currentIndex < 0;
+      const activeItem = currentIndex >= 0 ? items[currentIndex] : findItemByQueueId(items, currentQueueId);
+      return getShuffleCandidates(items, activeItem ?? null, history).length > 0 || repeatMode === 'all';
     }
 
     return currentIndex < 0 || currentIndex < items.length - 1 || repeatMode === 'all';

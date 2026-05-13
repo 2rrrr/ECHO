@@ -1,5 +1,6 @@
 import {
   Captions,
+  Film,
   Headphones,
   Library,
   Minus,
@@ -14,9 +15,11 @@ type AppTitleBarProps = {
   activeRouteId: AppRouteId;
   isAudioSettingsOpen?: boolean;
   isLyricsSettingsOpen?: boolean;
+  isMvSettingsOpen?: boolean;
   onRouteChange: (routeId: AppRouteId) => void;
   onOpenAudioSettings: () => void;
   onOpenLyricsSettings?: () => void;
+  onOpenMvSettings?: () => void;
   onMinimize: () => void;
   onToggleMaximize: () => void;
   onClose: () => void;
@@ -34,9 +37,11 @@ export const AppTitleBar = ({
   activeRouteId,
   isAudioSettingsOpen = false,
   isLyricsSettingsOpen = false,
+  isMvSettingsOpen = false,
   onRouteChange,
   onOpenAudioSettings,
   onOpenLyricsSettings = () => undefined,
+  onOpenMvSettings = () => undefined,
   onMinimize,
   onToggleMaximize,
   onClose,
@@ -65,6 +70,13 @@ export const AppTitleBar = ({
       onClick: onOpenLyricsSettings,
     },
     {
+      id: 'mv-settings',
+      label: t('route.mvSettings.label'),
+      icon: Film,
+      active: isMvSettingsOpen,
+      onClick: onOpenMvSettings,
+    },
+    {
       id: 'settings',
       label: t('route.settings.label'),
       icon: Settings,
@@ -88,9 +100,11 @@ export const AppTitleBar = ({
             <button
               className="titlebar-action"
               data-active={action.active ? 'true' : 'false'}
-              data-drawer-trigger={action.id === 'audio-settings' || action.id === 'lyrics-settings' ? 'true' : 'false'}
+              data-drawer-trigger={action.id === 'audio-settings' || action.id === 'lyrics-settings' || action.id === 'mv-settings' ? 'true' : 'false'}
               data-drawer-open={
-                (action.id === 'audio-settings' && isAudioSettingsOpen) || (action.id === 'lyrics-settings' && isLyricsSettingsOpen)
+                (action.id === 'audio-settings' && isAudioSettingsOpen) ||
+                (action.id === 'lyrics-settings' && isLyricsSettingsOpen) ||
+                (action.id === 'mv-settings' && isMvSettingsOpen)
                   ? 'true'
                   : 'false'
               }

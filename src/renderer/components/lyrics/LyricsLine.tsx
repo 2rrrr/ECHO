@@ -6,6 +6,7 @@ type LyricsLineProps = {
   past: boolean;
   onSeek: (timeMs: number) => void;
   seekable?: boolean;
+  showRomanization?: boolean;
 };
 
 const getLyricDensity = (line: LyricLineType): 'short' | 'medium' | 'long' | 'dense' => {
@@ -28,7 +29,7 @@ const getLyricDensity = (line: LyricLineType): 'short' | 'medium' | 'long' | 'de
   return 'short';
 };
 
-export const LyricsLine = ({ active, line, onSeek, past, seekable = true }: LyricsLineProps): JSX.Element => {
+export const LyricsLine = ({ active, line, onSeek, past, seekable = true, showRomanization = true }: LyricsLineProps): JSX.Element => {
   const density = getLyricDensity(line);
 
   return (
@@ -46,7 +47,7 @@ export const LyricsLine = ({ active, line, onSeek, past, seekable = true }: Lyri
       }}
     >
       <span>{line.text}</span>
-      {line.romanization ? <small>{line.romanization}</small> : null}
+      {showRomanization && line.romanization ? <small>{line.romanization}</small> : null}
       {line.translation ? <em>{line.translation}</em> : null}
     </button>
   );

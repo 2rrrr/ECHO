@@ -42,7 +42,6 @@ export const SongsPage = (): JSX.Element => {
   const [isLoading, setIsLoading] = useState(false);
   const [isScanningMissing, setIsScanningMissing] = useState(false);
   const [hideDuplicates, setHideDuplicates] = useState(false);
-  const [isAnalyzingDuplicates, setIsAnalyzingDuplicates] = useState(false);
   const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
   const [duplicateHiddenCounts, setDuplicateHiddenCounts] = useState<Record<string, number>>({});
@@ -146,30 +145,30 @@ export const SongsPage = (): JSX.Element => {
     void loadTracks(1, 'replace');
   }, [loadTracks]);
 
-  useEffect(() => {
-    const loadDuplicateSettings = async (): Promise<void> => {
-      const app = window.echo?.app;
-      const library = window.echo?.library;
+  const loadDuplicateSettings = useCallback(async (): Promise<void> => {
+    const app = window.echo?.app;
+    const library = window.echo?.library;
 
-      if (!app || !library) {
-        return;
+    if (!app || !library) {
+      return;
+    }
+
+    try {
+      const [settings, summary] = await Promise.all([app.getSettings(), library.getDuplicateIndexSummary('strict')]);
+      setHideDuplicates(settings.duplicateTracksEnabled);
+      setDuplicateSummary(summary);
+
+      if (settings.duplicateTracksEnabled && summary.duplicateGroups === 0) {
+        setDuplicateMessage('需要先分析重复歌曲');
       }
-
-      try {
-        const [settings, summary] = await Promise.all([app.getSettings(), library.getDuplicateIndexSummary('strict')]);
-        setHideDuplicates(settings.duplicateTracksEnabled);
-        setDuplicateSummary(summary);
-
-        if (settings.duplicateTracksEnabled && summary.duplicateGroups === 0) {
-          setDuplicateMessage('需要先分析重复歌曲');
-        }
-      } catch {
-        // Duplicate controls are optional around the core song list.
-      }
-    };
-
-    void loadDuplicateSettings();
+    } catch {
+      // Duplicate controls are optional around the core song list.
+    }
   }, []);
+
+  useEffect(() => {
+    void loadDuplicateSettings();
+  }, [loadDuplicateSettings]);
 
   useEffect(() => {
     const handleLibraryChanged = (): void => {
@@ -179,6 +178,15 @@ export const SongsPage = (): JSX.Element => {
     window.addEventListener('library:changed', handleLibraryChanged);
     return () => window.removeEventListener('library:changed', handleLibraryChanged);
   }, [loadTracks]);
+
+  useEffect(() => {
+    const handleSettingsChanged = (): void => {
+      void loadDuplicateSettings();
+    };
+
+    window.addEventListener('settings:changed', handleSettingsChanged);
+    return () => window.removeEventListener('settings:changed', handleSettingsChanged);
+  }, [loadDuplicateSettings]);
 
   const handleLoadMore = useCallback((): void => {
     if (!isLoading && hasMore) {
@@ -215,51 +223,6 @@ export const SongsPage = (): JSX.Element => {
       setError(scanError instanceof Error ? scanError.message : String(scanError));
     } finally {
       setIsScanningMissing(false);
-    }
-  };
-
-  const handleToggleHideDuplicates = async (): Promise<void> => {
-    const next = !hideDuplicates;
-    setHideDuplicates(next);
-    setDuplicateMessage(null);
-
-    try {
-      await window.echo?.app?.setSettings({
-        duplicateTracksEnabled: next,
-        duplicateTracksMode: 'strict',
-      });
-      const summary = await window.echo?.library?.getDuplicateIndexSummary('strict');
-      setDuplicateSummary(summary ?? null);
-
-      if (next && (!summary || summary.duplicateGroups === 0)) {
-        setDuplicateMessage('需要先分析重复歌曲');
-      }
-    } catch (toggleError) {
-      setError(toggleError instanceof Error ? toggleError.message : String(toggleError));
-    }
-  };
-
-  const handleAnalyzeDuplicates = async (): Promise<void> => {
-    const library = window.echo?.library;
-
-    if (!library) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to analyze duplicate tracks.');
-      return;
-    }
-
-    setIsAnalyzingDuplicates(true);
-    setError(null);
-    setDuplicateMessage(null);
-
-    try {
-      const summary = await library.refreshDuplicateTracks('strict');
-      setDuplicateSummary(summary);
-      setDuplicateMessage(`发现 ${summary.duplicateGroups} 组重复歌曲，隐藏 ${summary.hiddenTracks} 个低音质版本`);
-      await loadTracks(1, 'replace');
-    } catch (duplicateError) {
-      setError(duplicateError instanceof Error ? duplicateError.message : String(duplicateError));
-    } finally {
-      setIsAnalyzingDuplicates(false);
     }
   };
 
@@ -574,19 +537,6 @@ export const SongsPage = (): JSX.Element => {
           >
             <Trash2 size={17} />
           </button>
-          <button
-            className={`duplicate-toggle ${hideDuplicates ? 'active' : ''}`}
-            type="button"
-            title="只在列表中隐藏低音质重复项，不会删除文件。"
-            aria-pressed={hideDuplicates}
-            onClick={() => void handleToggleHideDuplicates()}
-          >
-            隐藏重复歌曲
-          </button>
-          <button className="duplicate-analyze-button" type="button" disabled={isAnalyzingDuplicates} onClick={() => void handleAnalyzeDuplicates()}>
-            <RotateCw className={isAnalyzingDuplicates ? 'spinning-icon' : undefined} size={15} />
-            {isAnalyzingDuplicates ? '分析中...' : '分析重复歌曲'}
-          </button>
         </div>
       </header>
 
@@ -657,9 +607,9 @@ export const SongsPage = (): JSX.Element => {
         onPlay={handlePlayTrack}
       />
 
-      {error || statusMessage || duplicateMessage || isLoading || isScanningMissing || isClearing || isAnalyzingDuplicates ? (
+      {error || statusMessage || duplicateMessage || isLoading || isScanningMissing || isClearing ? (
         <div className="list-footer">
-          <span>{error ?? statusMessage ?? duplicateMessage ?? (isAnalyzingDuplicates ? '正在分析重复歌曲...' : isScanningMissing ? '正在扫描失效歌曲...' : isClearing ? '正在清空列表...' : '正在读取曲库...')}</span>
+          <span>{error ?? statusMessage ?? duplicateMessage ?? (isScanningMissing ? '正在扫描失效歌曲...' : isClearing ? '正在清空列表...' : '正在读取曲库...')}</span>
         </div>
       ) : null}
 

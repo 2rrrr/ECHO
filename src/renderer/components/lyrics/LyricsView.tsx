@@ -7,6 +7,7 @@ type LyricsViewProps = {
   lyrics: LyricsState;
   positionMs: number;
   onSeek: (timeMs: number) => void;
+  showRomanization?: boolean;
 };
 
 export const getActiveLyricIndex = (lines: LyricsState['lines'], positionMs: number, offsetMs: number): number => {
@@ -33,7 +34,7 @@ export const getActiveLyricIndex = (lines: LyricsState['lines'], positionMs: num
   return activeIndex;
 };
 
-export const LyricsView = ({ lyrics, onSeek, positionMs }: LyricsViewProps): JSX.Element => {
+export const LyricsView = ({ lyrics, onSeek, positionMs, showRomanization = true }: LyricsViewProps): JSX.Element => {
   const scrollRef = useRef<HTMLElement | null>(null);
   const isSynced = lyrics.kind === 'synced';
   const activeIndex = useMemo(
@@ -70,7 +71,7 @@ export const LyricsView = ({ lyrics, onSeek, positionMs }: LyricsViewProps): JSX
       <section className="lyrics-empty" aria-label="Lyrics">
         <Music2 size={26} />
         <strong>{lyrics.kind === 'instrumental' ? '纯音乐，请欣赏' : '暂无歌词'}</strong>
-        <span>{lyrics.kind === 'instrumental' ? 'Instrumental track' : '未找到可用歌词，可尝试搜索或重新匹配。'}</span>
+        {lyrics.kind === 'instrumental' ? <span>Instrumental track</span> : null}
       </section>
     );
   }
@@ -83,6 +84,7 @@ export const LyricsView = ({ lyrics, onSeek, positionMs }: LyricsViewProps): JSX
           key={`${line.timeMs}-${index}`}
           line={line}
           past={isSynced && index < activeIndex}
+          showRomanization={showRomanization}
           onSeek={onSeek}
           seekable={isSynced && line.timeMs >= 0}
         />

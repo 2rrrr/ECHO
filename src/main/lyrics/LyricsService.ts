@@ -7,23 +7,39 @@ import { defaultSettings, getAppSettings } from '../app/appSettings';
 import { getLibraryService } from '../library/LibraryService';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { AppSettings } from '../../shared/types/appSettings';
-import type { LyricsQuery, LyricsSearchCandidate, LyricsSource, TrackLyrics } from '../../shared/types/lyrics';
+import type { LyricsMatchRisk, LyricsProviderId, LyricsQuery, LyricsSearchCandidate, LyricsSource, TrackLyrics } from '../../shared/types/lyrics';
 import { deserializeLyricLines, serializeLyricLines } from './lyricsParser';
-import { canAutoAcceptLyricsCandidate, normalizeText, scoreLyricsCandidate } from './lyricsScoring';
+import { normalizeText, normalizeTextForIdentity } from './lyricsScoring';
 import { LocalLyricsProvider } from './LocalLyricsProvider';
 import { LrclibProvider, mapLrclibRecordToTrackLyrics, type LrclibRecord } from './LrclibProvider';
+import { NeteaseLyricsProvider } from './NeteaseLyricsProvider';
+import { QQMusicLyricsProvider } from './QQMusicLyricsProvider';
+import { LyricsMatchEngine, type MatchedLyricsCandidate } from './LyricsMatchEngine';
+import type { LyricsProvider, LyricsProviderResult } from './LyricsProvider';
+import { providerResultToTrackLyrics, StubLyricsProvider } from './LyricsProvider';
+import { extractLyricsVersionFlags, serializeLyricsVersionFlags } from './lyricsVersionFlags';
+import { sortLyricsCandidates } from './lyricsCandidateDedup';
+import { fillMissingRomanization, hasMissingRomanization } from './lyricsRomanization';
 
 type LyricsSettings = Pick<
   AppSettings,
-  'lyricsNetworkEnabled' | 'lyricsPreferredProvider' | 'lyricsAutoSearch' | 'lyricsAutoAcceptScore' | 'lyricsDefaultOffsetMs'
+  | 'lyricsNetworkEnabled'
+  | 'lyricsPreferredProvider'
+  | 'lyricsEnabledProviders'
+  | 'lyricsProviderTimeoutMs'
+  | 'lyricsTotalMatchTimeoutMs'
+  | 'lyricsAutoSearch'
+  | 'lyricsAutoAcceptScore'
+  | 'lyricsCoverAutoAcceptScore'
+  | 'lyricsDefaultOffsetMs'
 >;
 
 type LibraryLookup = {
   getTrack: (trackId: string) => LibraryTrack | null;
 };
 
-type LocalProvider = Pick<LocalLyricsProvider, 'getLyrics' | 'searchCandidates' | 'getLyricsFromCandidate'>;
-type OnlineProvider = Pick<LrclibProvider, 'getLyrics' | 'searchCandidates'>;
+type LocalProvider = Pick<LocalLyricsProvider, 'getLyrics' | 'searchCandidates' | 'getLyricsFromCandidate'> & Partial<LyricsProvider>;
+type OnlineProvider = Pick<LrclibProvider, 'getLyrics' | 'searchCandidates'> & Partial<LyricsProvider>;
 
 type LyricsCacheRow = {
   id: string;
@@ -48,7 +64,7 @@ type LyricsCacheRow = {
 type LyricsCandidateRow = {
   id: string;
   track_id: string | null;
-  provider: 'lrclib' | 'local';
+  provider: LyricsProviderId;
   provider_lyrics_id: string | null;
   title: string;
   artist: string;
@@ -58,6 +74,13 @@ type LyricsCandidateRow = {
   has_synced: number;
   has_plain: number;
   score: number;
+  risk: LyricsMatchRisk | null;
+  reasons_json: string | null;
+  title_score: number | null;
+  artist_score: number | null;
+  album_score: number | null;
+  duration_score: number | null;
+  version_score: number | null;
   source_label: string;
   raw_json: string;
   status: string;
@@ -83,7 +106,17 @@ const numberOrNull = (value: unknown): number | null => {
 const hashJson = (value: unknown): string => createHash('sha1').update(JSON.stringify(value ?? {})).digest('hex');
 
 const providerName = (value: string): LyricsSource => {
-  if (value === 'none' || value === 'local' || value === 'lrclib' || value === 'manual' || value === 'cached') {
+  if (
+    value === 'none' ||
+    value === 'local' ||
+    value === 'lrclib' ||
+    value === 'netease' ||
+    value === 'qqmusic' ||
+    value === 'musixmatch' ||
+    value === 'genius' ||
+    value === 'manual' ||
+    value === 'cached'
+  ) {
     return value;
   }
 
@@ -119,13 +152,27 @@ const toNetworkQuery = (query: LyricsQuery): LyricsQuery => ({
 const cacheKeyFor = (query: LyricsQuery, provider: LyricsSource): string =>
   [
     provider,
+    normalizeTextForIdentity(query.title),
+    normalizeTextForIdentity(query.artist),
+    normalizeTextForIdentity(query.album),
+    query.durationSeconds ? String(Math.round(query.durationSeconds)) : '',
+    serializeLyricsVersionFlags(extractLyricsVersionFlags(query.title, query.artist, query.album, query.filePath)),
+  ].join('|');
+
+const legacyCacheKeyFor = (query: LyricsQuery, provider: LyricsSource): string =>
+  [
+    provider,
     normalizeText(query.title),
     normalizeText(query.artist),
     normalizeText(query.album),
     query.durationSeconds ? String(Math.round(query.durationSeconds)) : '',
   ].join('|');
 
-const allCacheKeysFor = (query: LyricsQuery): string[] => ['local', 'lrclib', 'manual', 'cached'].map((provider) => cacheKeyFor(query, provider as LyricsSource));
+const allCacheKeysFor = (query: LyricsQuery): string[] =>
+  ['local', 'lrclib', 'manual', 'cached', 'netease', 'qqmusic', 'musixmatch', 'genius'].flatMap((provider) => [
+    cacheKeyFor(query, provider as LyricsSource),
+    legacyCacheKeyFor(query, provider as LyricsSource),
+  ]);
 
 const parseRawJson = (value: string): unknown => {
   try {
@@ -135,37 +182,159 @@ const parseRawJson = (value: string): unknown => {
   }
 };
 
+const trackLyricsToProviderResult = (lyrics: TrackLyrics): LyricsProviderResult => ({
+  provider: lyrics.provider === 'cached' || lyrics.provider === 'none' ? 'manual' : lyrics.provider,
+  providerLyricsId: lyrics.providerLyricsId ?? null,
+  title: lyrics.title,
+  artist: lyrics.artist,
+  album: lyrics.album ?? null,
+  durationSeconds: lyrics.durationSeconds ?? null,
+  instrumental: lyrics.kind === 'instrumental',
+  plainLyrics: lyrics.plainText ?? null,
+  syncedLyrics: lyrics.syncedText ?? null,
+  raw: lyrics,
+});
+
+const lrclibRecordToProviderResult = (record: LrclibRecord, fallback: LyricsQuery): LyricsProviderResult => ({
+  provider: 'lrclib',
+  providerLyricsId: record.id == null ? null : String(record.id),
+  title: record.trackName ?? fallback.title,
+  artist: record.artistName ?? fallback.artist,
+  album: record.albumName ?? fallback.album ?? null,
+  durationSeconds: record.duration ?? fallback.durationSeconds ?? null,
+  instrumental: record.instrumental === true,
+  plainLyrics: record.plainLyrics ?? null,
+  syncedLyrics: record.syncedLyrics ?? null,
+  raw: record,
+});
+
+const isLyricsProvider = (provider: Partial<LyricsProvider>): provider is LyricsProvider =>
+  typeof provider.id === 'string' &&
+  typeof provider.label === 'string' &&
+  typeof provider.priority === 'number' &&
+  typeof provider.search === 'function' &&
+  Boolean(provider.capabilities);
+
+const adaptLocalProvider = (provider: LocalProvider): LyricsProvider => {
+  if (isLyricsProvider(provider)) {
+    return provider;
+  }
+
+  return {
+    id: 'local',
+    label: 'Local',
+    priority: 1000,
+    capabilities: {
+      synced: true,
+      plain: true,
+      translation: false,
+      romanization: false,
+      byDuration: false,
+      byIsrc: false,
+      byMusicBrainzId: false,
+      needsAccount: false,
+    },
+    async search(request) {
+      const lyrics = provider.getLyrics(request.query);
+      return lyrics ? [trackLyricsToProviderResult(lyrics)] : [];
+    },
+  };
+};
+
+const adaptOnlineProvider = (provider: OnlineProvider): LyricsProvider => {
+  if (isLyricsProvider(provider)) {
+    return provider;
+  }
+
+  return {
+    id: 'lrclib',
+    label: 'LRCLIB',
+    priority: 700,
+    capabilities: {
+      synced: true,
+      plain: true,
+      translation: false,
+      romanization: false,
+      byDuration: true,
+      byIsrc: false,
+      byMusicBrainzId: false,
+      needsAccount: false,
+    },
+    async search(request) {
+      const lyrics = await provider.getLyrics(request.query);
+      if (lyrics) {
+        return [trackLyricsToProviderResult(lyrics)];
+      }
+
+      const candidates = await provider.searchCandidates(request.query);
+      return candidates
+        .map((candidate) => {
+          const raw = 'raw' in candidate ? candidate.raw : candidate;
+          return raw && typeof raw === 'object' ? lrclibRecordToProviderResult(raw as LrclibRecord, request.query) : null;
+        })
+        .filter((result): result is LyricsProviderResult => Boolean(result));
+    },
+  };
+};
+
 const safeSettings = (readSettings: () => AppSettings): LyricsSettings => {
   try {
     const settings = readSettings();
     return {
       lyricsNetworkEnabled: settings.lyricsNetworkEnabled !== false,
       lyricsPreferredProvider: 'lrclib',
+      lyricsEnabledProviders: Array.isArray(settings.lyricsEnabledProviders) && settings.lyricsEnabledProviders.length
+        ? settings.lyricsEnabledProviders
+        : (defaultSettings.lyricsEnabledProviders ?? ['local', 'lrclib', 'netease', 'qqmusic']),
+      lyricsProviderTimeoutMs: Number.isFinite(settings.lyricsProviderTimeoutMs)
+        ? Math.max(1000, Math.min(10000, Math.round(Number(settings.lyricsProviderTimeoutMs))))
+        : (defaultSettings.lyricsProviderTimeoutMs ?? 4500),
+      lyricsTotalMatchTimeoutMs: Number.isFinite(settings.lyricsTotalMatchTimeoutMs)
+        ? Math.max(1500, Math.min(15000, Math.round(Number(settings.lyricsTotalMatchTimeoutMs))))
+        : (defaultSettings.lyricsTotalMatchTimeoutMs ?? 6000),
       lyricsAutoSearch: settings.lyricsAutoSearch !== false,
       lyricsAutoAcceptScore: Number.isFinite(settings.lyricsAutoAcceptScore)
-        ? Math.max(0.5, Math.min(1, settings.lyricsAutoAcceptScore))
+        ? Math.max(0.5, Math.min(0.7, settings.lyricsAutoAcceptScore))
         : defaultSettings.lyricsAutoAcceptScore,
+      lyricsCoverAutoAcceptScore: Number.isFinite(settings.lyricsCoverAutoAcceptScore)
+        ? Math.max(0.5, Math.min(1, Number(settings.lyricsCoverAutoAcceptScore)))
+        : (defaultSettings.lyricsCoverAutoAcceptScore ?? 0.97),
       lyricsDefaultOffsetMs: clampOffset(Number(settings.lyricsDefaultOffsetMs ?? 0)),
     };
   } catch {
     return {
       lyricsNetworkEnabled: defaultSettings.lyricsNetworkEnabled,
       lyricsPreferredProvider: defaultSettings.lyricsPreferredProvider,
+      lyricsEnabledProviders: defaultSettings.lyricsEnabledProviders ?? ['local', 'lrclib', 'netease', 'qqmusic'],
+      lyricsProviderTimeoutMs: defaultSettings.lyricsProviderTimeoutMs ?? 4500,
+      lyricsTotalMatchTimeoutMs: defaultSettings.lyricsTotalMatchTimeoutMs ?? 6000,
       lyricsAutoSearch: defaultSettings.lyricsAutoSearch,
       lyricsAutoAcceptScore: defaultSettings.lyricsAutoAcceptScore,
+      lyricsCoverAutoAcceptScore: defaultSettings.lyricsCoverAutoAcceptScore ?? 0.97,
       lyricsDefaultOffsetMs: defaultSettings.lyricsDefaultOffsetMs,
     };
   }
 };
 
 export class LyricsService {
+  private readonly matchEngine: LyricsMatchEngine;
+
   constructor(
     private readonly database: EchoDatabase,
     private readonly library: LibraryLookup,
     private readonly localProvider: LocalProvider = new LocalLyricsProvider(),
     private readonly onlineProvider: OnlineProvider = new LrclibProvider(),
     private readonly readAppSettings: () => AppSettings = getAppSettings,
-  ) {}
+  ) {
+    this.matchEngine = new LyricsMatchEngine([
+      adaptLocalProvider(this.localProvider),
+      adaptOnlineProvider(this.onlineProvider),
+      new NeteaseLyricsProvider(),
+      new QQMusicLyricsProvider(),
+      new StubLyricsProvider('musixmatch', 'Musixmatch', 500),
+      new StubLyricsProvider('genius', 'Genius', 450),
+    ] satisfies LyricsProvider[]);
+  }
 
   async getLyricsForTrack(trackId: string): Promise<TrackLyrics | null> {
     const track = this.library.getTrack(trackId);
@@ -176,39 +345,32 @@ export class LyricsService {
     const query = toQuery(track);
     const cached = this.findCachedLyrics(query);
     if (cached) {
-      return cached;
-    }
-
-    try {
-      const localLyrics = this.localProvider.getLyrics(query);
-      if (localLyrics) {
-        return this.writeLyricsCache(query, localLyrics);
-      }
-    } catch {
-      // Local sidecar failures should never surface to playback or renderer.
+      return this.fillCachedRomanization(query, cached);
     }
 
     const settings = safeSettings(this.readAppSettings);
-    if (!settings.lyricsNetworkEnabled || !settings.lyricsAutoSearch || settings.lyricsPreferredProvider !== 'lrclib') {
-      return null;
-    }
 
     try {
-      const onlineLyrics = await this.onlineProvider.getLyrics(toNetworkQuery(query));
-      if (!onlineLyrics) {
-        return null;
+      const result = await this.matchEngine.match(query, {
+        enabledProviders: settings.lyricsEnabledProviders,
+        networkEnabled: settings.lyricsNetworkEnabled && settings.lyricsAutoSearch,
+        providerTimeoutMs: settings.lyricsProviderTimeoutMs,
+        totalMatchTimeoutMs: settings.lyricsTotalMatchTimeoutMs,
+        autoAcceptScore: settings.lyricsAutoAcceptScore,
+        coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
+        isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
+      });
+
+      if (result.accepted) {
+        const lyrics = providerResultToTrackLyrics(query, result.accepted.providerResult, result.accepted.score);
+        if (lyrics) {
+          return this.writeLyricsCache(query, await this.fillLyricsRomanization(lyrics));
+        }
       }
 
-      const candidate = this.trackLyricsToCandidate(query, onlineLyrics);
-      if (this.hasRejectedProviderLyrics(trackId, 'lrclib', candidate.providerLyricsId)) {
-        return null;
+      for (const candidate of result.candidates) {
+        this.upsertCandidate(trackId, candidate, this.matchedCandidateToRaw(candidate));
       }
-
-      if (canAutoAcceptLyricsCandidate(query, candidate, settings.lyricsAutoAcceptScore)) {
-        return this.writeLyricsCache(query, onlineLyrics);
-      }
-
-      this.upsertCandidate(trackId, candidate, this.trackLyricsToRaw(onlineLyrics));
     } catch {
       return null;
     }
@@ -222,37 +384,34 @@ export class LyricsService {
       return [];
     }
 
+    const settings = safeSettings(this.readAppSettings);
     const query = toQuery(track);
     const storedCandidates: StoredCandidate[] = [];
 
-    for (const candidate of this.localProvider.searchCandidates(query)) {
-      const stored = this.upsertCandidate(trackId, candidate, {
-        filePath: candidate.filePath,
-        extension: candidate.extension,
+    try {
+      const result = await this.matchEngine.match(query, {
+        enabledProviders: settings.lyricsEnabledProviders,
+        networkEnabled: settings.lyricsNetworkEnabled,
+        providerTimeoutMs: settings.lyricsProviderTimeoutMs,
+        totalMatchTimeoutMs: settings.lyricsTotalMatchTimeoutMs,
+        autoAcceptScore: settings.lyricsAutoAcceptScore,
+        coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
+        isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
       });
-      if (stored.status !== 'rejected') {
-        storedCandidates.push(stored);
-      }
-    }
 
-    const settings = safeSettings(this.readAppSettings);
-    if (settings.lyricsNetworkEnabled && settings.lyricsPreferredProvider === 'lrclib') {
-      try {
-        const onlineCandidates = await this.onlineProvider.searchCandidates(toNetworkQuery(query));
-        for (const candidate of onlineCandidates) {
-          const raw = 'raw' in candidate ? candidate.raw : candidate;
-          const stored = this.upsertCandidate(trackId, candidate, raw);
-          if (stored.status !== 'rejected') {
-            storedCandidates.push(stored);
-          }
+      for (const candidate of result.candidates) {
+        const stored = this.upsertCandidate(trackId, candidate, this.matchedCandidateToRaw(candidate));
+        if (stored.status !== 'rejected') {
+          storedCandidates.push(stored);
         }
-      } catch {
-        // Candidate search is best-effort; local results remain usable.
       }
+    } catch {
+      // Candidate search is best-effort; failures should not affect playback.
     }
 
-    return storedCandidates
-      .map((candidate) => ({
+    return sortLyricsCandidates(
+      query.durationSeconds,
+      storedCandidates.map((candidate) => ({
         id: candidate.id,
         provider: candidate.provider,
         providerLyricsId: candidate.providerLyricsId,
@@ -265,8 +424,15 @@ export class LyricsService {
         hasPlain: candidate.hasPlain,
         score: candidate.score,
         sourceLabel: candidate.sourceLabel,
-      }))
-      .sort((left, right) => right.score - left.score);
+        risk: candidate.risk,
+        reasons: candidate.reasons,
+        titleScore: candidate.titleScore,
+        artistScore: candidate.artistScore,
+        albumScore: candidate.albumScore,
+        durationScore: candidate.durationScore,
+        versionScore: candidate.versionScore,
+      })),
+    );
   }
 
   async applyLyricsCandidate(trackId: string, candidateId: string): Promise<TrackLyrics> {
@@ -280,9 +446,12 @@ export class LyricsService {
     const query = toQuery(track);
     const raw = parseRawJson(row.raw_json);
     let lyrics: TrackLyrics | null = null;
+    const rawRecord = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    const providerResult = this.readProviderResult(rawRecord);
 
-    if (row.provider === 'local') {
-      const rawRecord = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    if (providerResult) {
+      lyrics = providerResultToTrackLyrics(query, providerResult, row.score);
+    } else if (row.provider === 'local') {
       const filePath = textOrNull(rawRecord.filePath);
       const extension = rawRecord.extension === '.txt' ? '.txt' : '.lrc';
       if (filePath) {
@@ -292,7 +461,7 @@ export class LyricsService {
           extension,
         });
       }
-    } else {
+    } else if (row.provider === 'lrclib') {
       lyrics = mapLrclibRecordToTrackLyrics(toNetworkQuery(query), raw as LrclibRecord, row.score);
     }
 
@@ -300,7 +469,7 @@ export class LyricsService {
       throw new Error('Lyrics candidate is no longer available');
     }
 
-    const cached = this.writeLyricsCache(query, lyrics);
+    const cached = this.writeLyricsCache(query, await this.fillLyricsRomanization(lyrics));
     this.database
       .prepare('UPDATE lyrics_candidates SET status = ?, updated_at = ? WHERE id = ?')
       .run('accepted', nowIso(), candidateId);
@@ -343,8 +512,8 @@ export class LyricsService {
           `SELECT * FROM lyrics_cache
            WHERE track_id = ?
            ORDER BY CASE provider
-             WHEN 'local' THEN 0
-             WHEN 'manual' THEN 1
+             WHEN 'manual' THEN 0
+             WHEN 'local' THEN 1
              WHEN 'lrclib' THEN 2
              ELSE 3
            END, updated_at DESC
@@ -447,9 +616,10 @@ export class LyricsService {
       .prepare(
         `INSERT INTO lyrics_candidates (
           id, track_id, provider, provider_lyrics_id, title, artist, album, duration_seconds,
-          instrumental, has_synced, has_plain, score, source_label, raw_json, status,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          instrumental, has_synced, has_plain, score, risk, reasons_json, title_score,
+          artist_score, album_score, duration_score, version_score, source_label, raw_json,
+          status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           title = excluded.title,
           artist = excluded.artist,
@@ -459,6 +629,13 @@ export class LyricsService {
           has_synced = excluded.has_synced,
           has_plain = excluded.has_plain,
           score = excluded.score,
+          risk = excluded.risk,
+          reasons_json = excluded.reasons_json,
+          title_score = excluded.title_score,
+          artist_score = excluded.artist_score,
+          album_score = excluded.album_score,
+          duration_score = excluded.duration_score,
+          version_score = excluded.version_score,
           source_label = excluded.source_label,
           raw_json = excluded.raw_json,
           status = CASE lyrics_candidates.status WHEN 'rejected' THEN lyrics_candidates.status ELSE excluded.status END,
@@ -477,6 +654,13 @@ export class LyricsService {
         candidate.hasSynced ? 1 : 0,
         candidate.hasPlain ? 1 : 0,
         candidate.score,
+        candidate.risk ?? null,
+        JSON.stringify(candidate.reasons ?? []),
+        candidate.titleScore ?? null,
+        candidate.artistScore ?? null,
+        candidate.albumScore ?? null,
+        candidate.durationScore ?? null,
+        candidate.versionScore ?? null,
         candidate.sourceLabel,
         JSON.stringify(raw ?? {}),
         status,
@@ -492,7 +676,7 @@ export class LyricsService {
     };
   }
 
-  private hasRejectedProviderLyrics(trackId: string, provider: 'lrclib' | 'local', providerLyricsId?: string | null): boolean {
+  private hasRejectedProviderLyrics(trackId: string, provider: LyricsProviderId, providerLyricsId?: string | null): boolean {
     if (!providerLyricsId) {
       return false;
     }
@@ -508,37 +692,48 @@ export class LyricsService {
     return Boolean(row);
   }
 
-  private trackLyricsToCandidate(query: LyricsQuery, lyrics: TrackLyrics): LyricsSearchCandidate {
-    const candidateWithoutScore = {
-      provider: 'lrclib' as const,
-      providerLyricsId: lyrics.providerLyricsId ?? null,
-      title: lyrics.title,
-      artist: lyrics.artist,
-      album: lyrics.album ?? null,
-      durationSeconds: lyrics.durationSeconds ?? null,
-      instrumental: lyrics.kind === 'instrumental',
-      hasSynced: Boolean(lyrics.syncedText || lyrics.kind === 'synced'),
-      hasPlain: Boolean(lyrics.plainText || lyrics.kind === 'plain'),
-      sourceLabel: 'LRCLIB',
-    };
-
+  private matchedCandidateToRaw(candidate: MatchedLyricsCandidate): unknown {
     return {
-      id: randomUUID(),
-      ...candidateWithoutScore,
-      score: lyrics.score ?? scoreLyricsCandidate(query, candidateWithoutScore),
+      providerResult: candidate.providerResult,
+      decision: candidate.decision,
+      raw: candidate.raw ?? {},
     };
   }
 
-  private trackLyricsToRaw(lyrics: TrackLyrics): LrclibRecord {
+  private readProviderResult(rawRecord: Record<string, unknown>): LyricsProviderResult | null {
+    const value = rawRecord.providerResult;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const provider = record.provider;
+    if (
+      provider !== 'local' &&
+      provider !== 'lrclib' &&
+      provider !== 'netease' &&
+      provider !== 'qqmusic' &&
+      provider !== 'musixmatch' &&
+      provider !== 'genius' &&
+      provider !== 'manual'
+    ) {
+      return null;
+    }
+
     return {
-      id: lyrics.providerLyricsId ?? null,
-      trackName: lyrics.title,
-      artistName: lyrics.artist,
-      albumName: lyrics.album ?? null,
-      duration: lyrics.durationSeconds ?? null,
-      instrumental: lyrics.kind === 'instrumental',
-      plainLyrics: lyrics.plainText ?? null,
-      syncedLyrics: lyrics.syncedText ?? null,
+      provider,
+      providerLyricsId: textOrNull(record.providerLyricsId),
+      title: textOrNull(record.title) ?? '',
+      artist: textOrNull(record.artist) ?? '',
+      album: textOrNull(record.album),
+      durationSeconds: numberOrNull(record.durationSeconds),
+      instrumental: record.instrumental === true,
+      plainLyrics: textOrNull(record.plainLyrics),
+      syncedLyrics: textOrNull(record.syncedLyrics),
+      translationLyrics: textOrNull(record.translationLyrics),
+      romanizationLyrics: textOrNull(record.romanizationLyrics),
+      sourceUrl: textOrNull(record.sourceUrl),
+      raw: record.raw,
     };
   }
 
@@ -560,7 +755,27 @@ export class LyricsService {
       hasPlain: row.has_plain === 1,
       score: Number(row.score ?? 0),
       sourceLabel: row.source_label,
+      risk: row.risk ?? undefined,
+      reasons: this.parseReasons(row.reasons_json),
+      titleScore: numberOrNull(row.title_score) ?? undefined,
+      artistScore: numberOrNull(row.artist_score) ?? undefined,
+      albumScore: numberOrNull(row.album_score) ?? undefined,
+      durationScore: numberOrNull(row.duration_score) ?? undefined,
+      versionScore: numberOrNull(row.version_score) ?? undefined,
     };
+  }
+
+  private parseReasons(value: string | null): string[] | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private mapCacheRow(row: LyricsCacheRow): TrackLyrics {
@@ -582,6 +797,24 @@ export class LyricsService {
       cachedAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  private async fillLyricsRomanization(lyrics: TrackLyrics): Promise<TrackLyrics> {
+    if (lyrics.lines.length === 0 || !hasMissingRomanization(lyrics.lines)) {
+      return lyrics;
+    }
+
+    const lines = await fillMissingRomanization(lyrics.lines);
+    return lines === lyrics.lines ? lyrics : { ...lyrics, lines };
+  }
+
+  private async fillCachedRomanization(query: LyricsQuery, lyrics: TrackLyrics): Promise<TrackLyrics> {
+    const enriched = await this.fillLyricsRomanization(lyrics);
+    if (enriched === lyrics) {
+      return lyrics;
+    }
+
+    return this.writeLyricsCache(query, enriched);
   }
 }
 

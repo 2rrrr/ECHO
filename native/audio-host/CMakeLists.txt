@@ -24,16 +24,39 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(JUCE)
 
+set(ECHO_AUDIO_ENGINE_SOURCES
+  ../audio-engine/ChannelBalanceProcessor.cpp
+  ../audio-engine/EqMessageProtocol.cpp
+  ../audio-engine/EqPresetStore.cpp
+  ../audio-engine/EqProcessor.cpp
+)
+
+set(ECHO_JUCE_DEFINITIONS
+  JUCE_DISPLAY_SPLASH_SCREEN=0
+  JUCE_REPORT_APP_USAGE=0
+  JUCE_USE_CURL=0
+  JUCE_WEB_BROWSER=0
+  JUCE_ASIO=$<BOOL:${ECHO_ENABLE_ASIO}>
+  ECHO_ENABLE_ASIO=$<BOOL:${ECHO_ENABLE_ASIO}>
+)
+
+set(ECHO_JUCE_LIBRARIES
+  juce::juce_audio_basics
+  juce::juce_audio_devices
+  juce::juce_core
+  juce::juce_gui_basics
+  juce::juce_recommended_config_flags
+  juce::juce_recommended_lto_flags
+  juce::juce_recommended_warning_flags
+)
+
 juce_add_console_app(echo-audio-host
   PRODUCT_NAME "echo-audio-host"
 )
 
 target_sources(echo-audio-host
   PRIVATE
-    ../audio-engine/ChannelBalanceProcessor.cpp
-    ../audio-engine/EqMessageProtocol.cpp
-    ../audio-engine/EqPresetStore.cpp
-    ../audio-engine/EqProcessor.cpp
+    ${ECHO_AUDIO_ENGINE_SOURCES}
     src/main.cpp
 )
 
@@ -41,25 +64,40 @@ target_compile_features(echo-audio-host PRIVATE cxx_std_17)
 
 target_compile_definitions(echo-audio-host
   PRIVATE
-    JUCE_DISPLAY_SPLASH_SCREEN=0
-    JUCE_REPORT_APP_USAGE=0
-    JUCE_USE_CURL=0
-    JUCE_WEB_BROWSER=0
-    JUCE_ASIO=$<BOOL:${ECHO_ENABLE_ASIO}>
-    ECHO_ENABLE_ASIO=$<BOOL:${ECHO_ENABLE_ASIO}>
+    ${ECHO_JUCE_DEFINITIONS}
 )
 
 target_link_libraries(echo-audio-host
   PRIVATE
-    juce::juce_audio_basics
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_gui_basics
-    juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
-    juce::juce_recommended_warning_flags
+    ${ECHO_JUCE_LIBRARIES}
 )
 
 if(WIN32)
   target_link_libraries(echo-audio-host PRIVATE shell32)
 endif()
+
+juce_add_console_app(echo-audio-engine-tests
+  PRODUCT_NAME "echo-audio-engine-tests"
+)
+
+target_sources(echo-audio-engine-tests
+  PRIVATE
+    ${ECHO_AUDIO_ENGINE_SOURCES}
+    tests/audio_engine_tests.cpp
+)
+
+target_compile_features(echo-audio-engine-tests PRIVATE cxx_std_17)
+set_target_properties(echo-audio-engine-tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+target_compile_definitions(echo-audio-engine-tests
+  PRIVATE
+    ${ECHO_JUCE_DEFINITIONS}
+    ECHO_AUDIO_ENGINE_TESTS=1
+)
+
+target_link_libraries(echo-audio-engine-tests
+  PRIVATE
+    ${ECHO_JUCE_LIBRARIES}
+)
+
+enable_testing()
+add_test(NAME echo-audio-engine-tests COMMAND echo-audio-engine-tests)

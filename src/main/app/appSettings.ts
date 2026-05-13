@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
-import type { AppSettings } from '../../shared/types/appSettings';
+import type { AppSettings, LyricsBackgroundMode } from '../../shared/types/appSettings';
+import type { LyricsProviderId } from '../../shared/types/lyrics';
+import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
 import {
   channelBalanceMaxBalance,
   channelBalanceMaxGainDb,
@@ -12,6 +14,16 @@ import {
 } from '../../shared/types/audio';
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+const lyricsWallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const defaultLyricsColor = '#314054';
+const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
+
+export const getLyricsWallpaperDirectory = (): string => join(app.getPath('userData'), 'lyrics-wallpapers');
+
+const isPathInsideDirectory = (directory: string, filePath: string): boolean => {
+  const relativePath = relative(resolve(directory), resolve(filePath));
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+};
 
 export const defaultChannelBalanceSettings: ChannelBalanceState = {
   enabled: false,
@@ -34,9 +46,28 @@ export const defaultSettings: AppSettings = {
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
   lyricsNetworkEnabled: true,
   lyricsPreferredProvider: 'lrclib',
+  lyricsEnabledProviders: ['local', 'lrclib', 'netease', 'qqmusic'],
+  lyricsProviderTimeoutMs: 4500,
+  lyricsTotalMatchTimeoutMs: 6000,
+  lyricsCoverAutoAcceptScore: 0.97,
   lyricsAutoSearch: true,
-  lyricsAutoAcceptScore: 0.82,
+  lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
+  lyricsEnabled: true,
+  lyricsRomanizationEnabled: true,
+  lyricsFontSizePx: 36,
+  lyricsColor: defaultLyricsColor,
+  lyricsBackgroundMode: 'theme',
+  lyricsCustomWallpaperPath: null,
+  lyricsCoverOpacityPercent: 100,
+  lyricsCoverBlurPx: 10,
+  lyricsCoverBrightnessPercent: 100,
+  lyricsBackgroundScalePercent: 100,
+  mvEnabledProviders: ['bilibili', 'youtube'],
+  mvProviderOrder: ['bilibili', 'youtube'],
+  mvAutoSearch: true,
+  mvMaxQuality: '1080p',
+  mvAllow60fps: true,
   channelBalance: defaultChannelBalanceSettings,
   playerVolume: 1,
   playbackSpeed: 1,
@@ -80,6 +111,49 @@ const normalizeOptionalText = (value: unknown): string | null => {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeLyricsColor = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return defaultLyricsColor;
+  }
+
+  const normalized = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : defaultLyricsColor;
+};
+
+const normalizeLyricsBackgroundMode = (value: unknown): LyricsBackgroundMode =>
+  value === 'cover' || value === 'customWallpaper' || value === 'theme' ? value : defaultSettings.lyricsBackgroundMode;
+
+const normalizeMvProviderList = (value: unknown, fallback: NetworkMvProviderId[]): NetworkMvProviderId[] => {
+  if (!Array.isArray(value)) {
+    return [...fallback];
+  }
+
+  const providers = value.filter((provider): provider is NetworkMvProviderId =>
+    mvNetworkProviders.includes(provider as NetworkMvProviderId),
+  );
+  return [...new Set(providers)];
+};
+
+const normalizeMvMaxQuality = (value: unknown): MvSettings['maxQuality'] =>
+  value === '720p' || value === '1080p' || value === '1440p' || value === '2160p' || value === 'max' ? value : defaultSettings.mvMaxQuality;
+
+const normalizeLyricsWallpaperPath = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = resolve(value.trim());
+  if (!normalized || !lyricsWallpaperExtensions.has(extname(normalized).toLowerCase())) {
+    return null;
+  }
+
+  if (!isPathInsideDirectory(getLyricsWallpaperDirectory(), normalized) || !existsSync(normalized)) {
+    return null;
+  }
+
+  return normalized;
 };
 
 export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceState => {
@@ -143,7 +217,28 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       )
     : defaultSettings.networkMetadataProviders;
   const lyricsAutoAcceptScore = Number(settings.lyricsAutoAcceptScore);
+  const lyricsCoverAutoAcceptScore = Number(settings.lyricsCoverAutoAcceptScore);
   const lyricsDefaultOffsetMs = Number(settings.lyricsDefaultOffsetMs);
+  const lyricsFontSizePx = Number(settings.lyricsFontSizePx);
+  const lyricsCoverOpacityPercent = Number(settings.lyricsCoverOpacityPercent);
+  const lyricsCoverBlurPx = Number(settings.lyricsCoverBlurPx);
+  const lyricsCoverBrightnessPercent = Number(settings.lyricsCoverBrightnessPercent);
+  const lyricsBackgroundScalePercent = Number(settings.lyricsBackgroundScalePercent);
+  const lyricsProviderTimeoutMs = Number(settings.lyricsProviderTimeoutMs);
+  const lyricsTotalMatchTimeoutMs = Number(settings.lyricsTotalMatchTimeoutMs);
+  const mvProviderOrder = normalizeMvProviderList(settings.mvProviderOrder, defaultSettings.mvProviderOrder);
+  const lyricsEnabledProviders: LyricsProviderId[] = Array.isArray(settings.lyricsEnabledProviders)
+    ? settings.lyricsEnabledProviders.filter(
+        (provider): provider is LyricsProviderId =>
+          provider === 'local' ||
+          provider === 'lrclib' ||
+          provider === 'netease' ||
+          provider === 'qqmusic' ||
+          provider === 'musixmatch' ||
+          provider === 'genius' ||
+          provider === 'manual',
+      )
+    : (defaultSettings.lyricsEnabledProviders ?? ['local', 'lrclib', 'netease', 'qqmusic']);
 
   return {
     albumMergeStrategy,
@@ -154,13 +249,51 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
     lyricsNetworkEnabled: settings.lyricsNetworkEnabled !== false,
     lyricsPreferredProvider: 'lrclib',
+    lyricsEnabledProviders: lyricsEnabledProviders.length ? lyricsEnabledProviders : (defaultSettings.lyricsEnabledProviders ?? ['local', 'lrclib', 'netease', 'qqmusic']),
+    lyricsProviderTimeoutMs: Number.isFinite(lyricsProviderTimeoutMs)
+      ? Math.round(clamp(lyricsProviderTimeoutMs, 1000, 10000))
+      : defaultSettings.lyricsProviderTimeoutMs,
+    lyricsTotalMatchTimeoutMs: Number.isFinite(lyricsTotalMatchTimeoutMs)
+      ? Math.round(clamp(lyricsTotalMatchTimeoutMs, 1500, 15000))
+      : defaultSettings.lyricsTotalMatchTimeoutMs,
+    lyricsCoverAutoAcceptScore: Number.isFinite(lyricsCoverAutoAcceptScore)
+      ? clamp(lyricsCoverAutoAcceptScore, 0.5, 1)
+      : defaultSettings.lyricsCoverAutoAcceptScore,
     lyricsAutoSearch: settings.lyricsAutoSearch !== false,
     lyricsAutoAcceptScore: Number.isFinite(lyricsAutoAcceptScore)
-      ? clamp(lyricsAutoAcceptScore, 0.5, 1)
+      ? clamp(lyricsAutoAcceptScore, 0.5, 0.7)
       : defaultSettings.lyricsAutoAcceptScore,
     lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
       ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))
       : defaultSettings.lyricsDefaultOffsetMs,
+    lyricsEnabled: settings.lyricsEnabled !== false,
+    lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled !== false,
+    lyricsFontSizePx: Number.isFinite(lyricsFontSizePx)
+      ? Math.round(clamp(lyricsFontSizePx, 22, 56))
+      : defaultSettings.lyricsFontSizePx,
+    lyricsColor: normalizeLyricsColor(settings.lyricsColor),
+    lyricsBackgroundMode: normalizeLyricsBackgroundMode(settings.lyricsBackgroundMode),
+    lyricsCustomWallpaperPath: normalizeLyricsWallpaperPath(settings.lyricsCustomWallpaperPath),
+    lyricsCoverOpacityPercent: Number.isFinite(lyricsCoverOpacityPercent)
+      ? Math.round(clamp(lyricsCoverOpacityPercent, 0, 100))
+      : defaultSettings.lyricsCoverOpacityPercent,
+    lyricsCoverBlurPx: Number.isFinite(lyricsCoverBlurPx)
+      ? Math.round(clamp(lyricsCoverBlurPx, 0, 60))
+      : defaultSettings.lyricsCoverBlurPx,
+    lyricsCoverBrightnessPercent: Number.isFinite(lyricsCoverBrightnessPercent)
+      ? Math.round(clamp(lyricsCoverBrightnessPercent, 40, 140))
+      : defaultSettings.lyricsCoverBrightnessPercent,
+    lyricsBackgroundScalePercent: Number.isFinite(lyricsBackgroundScalePercent)
+      ? Math.round(clamp(lyricsBackgroundScalePercent, 70, 180))
+      : defaultSettings.lyricsBackgroundScalePercent,
+    mvEnabledProviders: normalizeMvProviderList(settings.mvEnabledProviders, defaultSettings.mvEnabledProviders),
+    mvProviderOrder: [
+      ...mvProviderOrder,
+      ...mvNetworkProviders.filter((provider) => !mvProviderOrder.includes(provider)),
+    ],
+    mvAutoSearch: settings.mvAutoSearch !== false,
+    mvMaxQuality: normalizeMvMaxQuality(settings.mvMaxQuality),
+    mvAllow60fps: settings.mvAllow60fps !== false,
     channelBalance: normalizeChannelBalanceSettings(settings.channelBalance),
     playerVolume: Number.isFinite(playerVolume) ? Math.max(0, Math.min(1, playerVolume)) : defaultSettings.playerVolume,
     playbackSpeed: Number.isFinite(playbackSpeed)

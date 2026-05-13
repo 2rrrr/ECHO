@@ -8,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <vector>
 
 namespace echo
@@ -32,6 +33,10 @@ public:
     bool isEnabled() const;
     bool hasClippingRisk() const;
 
+#if defined(ECHO_AUDIO_ENGINE_TESTS) && ECHO_AUDIO_ENGINE_TESTS
+    uint64_t getCoefficientUpdateCountForTests() const;
+#endif
+
 private:
     struct ChannelState
     {
@@ -40,6 +45,7 @@ private:
 
     void updateSmoothingSteps();
     void updateTargetSnapshot();
+    void updateBandCoefficient(int bandIndex);
 
     double currentSampleRate = 44100.0;
     int preparedChannels = 0;
@@ -60,6 +66,9 @@ private:
     EqFrequencyArray targetBandFrequencies {};
     EqFrequencyArray bandFrequencySteps {};
     std::array<BiquadCoefficients, eqBandCount> coefficients;
+#if defined(ECHO_AUDIO_ENGINE_TESTS) && ECHO_AUDIO_ENGINE_TESTS
+    uint64_t coefficientUpdateCount = 0;
+#endif
     std::vector<ChannelState> channelStates;
 
     std::atomic<bool> targetEnabled { false };

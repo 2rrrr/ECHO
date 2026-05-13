@@ -74,6 +74,7 @@ Parameter updates must:
 - smooth gain/preamp changes over roughly `25 ms`
 - crossfade bypass over roughly `15 ms`
 - avoid NaN output during rapid parameter changes
+- avoid recomputing all band coefficients every sample once gain/frequency smoothing has reached a steady target
 
 ## Electron Bridge
 
@@ -160,6 +161,32 @@ Built-in presets:
 - preset save/delete controls
 
 Curve movement is throttled while dragging, with accurate gain and frequency values sent on release.
+
+## Stability Acceptance
+
+EQ correctness is covered by both TypeScript bridge/UI tests and native audio-engine tests.
+
+Native test entrypoint:
+
+```text
+npm run test:audio-engine
+```
+
+Native DSP tests must verify:
+
+- disabled EQ returns the dry input exactly
+- Flat preset with EQ enabled stays numerically transparent while still reporting DSP active through app status
+- high-gain EQ returns to dry output after bypass crossfade completes
+- rapid gain, frequency, and preamp changes never output NaN or Inf
+- frequency clamps remain stable at and beyond `20 Hz` and `20 kHz`
+- steady-state processing does not keep recalculating all 10 biquad coefficients every sample
+
+Existing Electron/renderer tests must continue to verify:
+
+- `EqBridge` validation, preset persistence, and channel-balance clamping
+- EQ UI controls, curve editing, undo/redo, A/B slots, and preset actions
+- audio status bit-perfect disabling when EQ or channel balance is active
+- headroom and clipping-risk telemetry
 
 ## Later Scope
 

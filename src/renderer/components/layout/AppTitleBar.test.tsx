@@ -71,6 +71,26 @@ describe('AppTitleBar', () => {
     expect(onRouteChange).not.toHaveBeenCalled();
   });
 
+  it('opens the MV drawer from the MV settings button', () => {
+    const onRouteChange = vi.fn();
+    const onOpenMvSettings = vi.fn();
+
+    renderTitleBar({
+      activeRouteId: 'songs',
+      onRouteChange,
+      onOpenAudioSettings: vi.fn(),
+      onOpenMvSettings,
+      onMinimize: vi.fn(),
+      onToggleMaximize: vi.fn(),
+      onClose: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'MV Settings' }));
+
+    expect(onOpenMvSettings).toHaveBeenCalledTimes(1);
+    expect(onRouteChange).not.toHaveBeenCalled();
+  });
+
 
   it('wires window control buttons to provided handlers', () => {
     const onMinimize = vi.fn();

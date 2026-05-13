@@ -1,25 +1,45 @@
-import type { LyricsQuery, LyricsSearchCandidate } from '../../shared/types/lyrics';
+import type { LyricsMatchRisk, LyricsQuery, LyricsSearchCandidate } from '../../shared/types/lyrics';
+import { buildNormalizedLyricsQuery, type NormalizedLyricsQuery } from './lyricsQueryBuilder';
+import {
+  extractLyricsVersionFlags,
+  getVersionRisk,
+  hasLyricsVersionConflict,
+  type LyricsVersionFlags,
+} from './lyricsVersionFlags';
+import { normalizeTextForSearch } from './lyricsTextNormalization';
+export { normalizeText, normalizeTextForIdentity, normalizeTextForSearch } from './lyricsTextNormalization';
 
-const descriptorPattern =
-  /\s*(?:\((?:tv size|short ver\.?|live|cover|instrumental|karaoke|remaster(?:ed)?|from .*?)\)|\[(?:tv size|short ver\.?|live|cover|instrumental|karaoke|remaster(?:ed)?)\])\s*/giu;
+export type LyricsMatchDecision = {
+  score: number;
+  autoAccept: boolean;
+  candidateOnly: boolean;
+  rejected: boolean;
+  risk: LyricsMatchRisk;
+  reasons: string[];
+  providerPriorityBonus: number;
+  titleScore: number;
+  artistScore: number;
+  albumScore: number;
+  durationScore: number;
+  versionScore: number;
+};
 
-const trailingDescriptorPattern = /\s+-\s+(?:live|cover|instrumental|karaoke|remaster(?:ed)?|tv size|short ver\.?)\s*$/iu;
+export type LyricsScoringOptions = {
+  autoAcceptScore?: number;
+  coverAutoAcceptScore?: number;
+  providerPriorityBonus?: number;
+  rejectedByUser?: boolean;
+};
 
-export const normalizeText = (value: string | null | undefined): string =>
-  (value ?? '')
-    .normalize('NFKC')
-    .replace(descriptorPattern, ' ')
-    .replace(trailingDescriptorPattern, ' ')
-    .toLocaleLowerCase()
-    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+const tokens = (value: string, normalizer = normalizeTextForSearch): Set<string> => new Set(normalizer(value).split(' ').filter(Boolean));
 
-const tokens = (value: string): Set<string> => new Set(normalizeText(value).split(' ').filter(Boolean));
-
-export const similarity = (left: string | null | undefined, right: string | null | undefined): number => {
-  const a = normalizeText(left);
-  const b = normalizeText(right);
+export const similarity = (
+  left: string | null | undefined,
+  right: string | null | undefined,
+  normalizer: (value: string | null | undefined) => string = normalizeTextForSearch,
+): number => {
+  const a = normalizer(left);
+  const b = normalizer(right);
 
   if (!a || !b) {
     return 0;
@@ -33,8 +53,8 @@ export const similarity = (left: string | null | undefined, right: string | null
     return 0.88;
   }
 
-  const leftTokens = tokens(a);
-  const rightTokens = tokens(b);
+  const leftTokens = tokens(a, normalizer);
+  const rightTokens = tokens(b, normalizer);
   const union = new Set([...leftTokens, ...rightTokens]);
   if (!union.size) {
     return 0;
@@ -50,42 +70,192 @@ export const similarity = (left: string | null | undefined, right: string | null
   return overlap / union.size;
 };
 
-const durationScore = (queryDuration?: number | null, candidateDuration?: number | null): number => {
+export const getDurationDelta = (queryDuration?: number | null, candidateDuration?: number | null): number | null => {
   const query = Number(queryDuration);
   const candidate = Number(candidateDuration);
 
   if (!Number.isFinite(query) || !Number.isFinite(candidate) || query <= 0 || candidate <= 0) {
-    return 0.5;
+    return null;
   }
 
-  const delta = Math.abs(query - candidate);
-  if (delta <= 2) {
-    return 1;
-  }
+  return Math.abs(query - candidate);
+};
 
-  if (delta <= 8) {
-    return 0.82;
-  }
+export const scoreLyricsDuration = (queryDuration?: number | null, candidateDuration?: number | null): number => {
+  const delta = getDurationDelta(queryDuration, candidateDuration);
 
-  if (delta <= 20) {
+  if (delta === null) {
     return 0.45;
   }
 
-  return 0.12;
+  if (delta <= 1) {
+    return 1;
+  }
+
+  if (delta <= 2) {
+    return 0.96;
+  }
+
+  if (delta <= 5) {
+    return 0.86;
+  }
+
+  if (delta <= 10) {
+    return 0.62;
+  }
+
+  if (delta <= 20) {
+    return 0.32;
+  }
+
+  return 0.04;
 };
 
-export const scoreLyricsCandidate = (query: LyricsQuery, candidate: Omit<LyricsSearchCandidate, 'id' | 'score'>): number => {
-  const title = similarity(query.title, candidate.title);
-  const artist = similarity(query.artist, candidate.artist);
-  const album = query.album && candidate.album ? similarity(query.album, candidate.album) : 0.5;
-  const duration = durationScore(query.durationSeconds, candidate.durationSeconds);
-  const score = title * 0.45 + artist * 0.3 + album * 0.1 + duration * 0.15;
+const candidateVersionFlags = (candidate: Omit<LyricsSearchCandidate, 'id' | 'score'>): LyricsVersionFlags => {
+  const flags = extractLyricsVersionFlags(candidate.title, candidate.album, candidate.artist);
+  if (candidate.instrumental) {
+    flags.instrumental = true;
+  }
 
-  return Math.max(0, Math.min(1, Number(score.toFixed(4))));
+  return flags;
 };
+
+const scoreLyricsVersion = (queryFlags: LyricsVersionFlags, candidateFlags: LyricsVersionFlags): number => {
+  if (
+    (queryFlags.instrumental || queryFlags.karaoke || queryFlags.offVocal) &&
+    !(candidateFlags.instrumental || candidateFlags.karaoke || candidateFlags.offVocal)
+  ) {
+    return 0.1;
+  }
+
+  if (
+    queryFlags.cover !== candidateFlags.cover ||
+    queryFlags.live !== candidateFlags.live ||
+    queryFlags.remix !== candidateFlags.remix ||
+    queryFlags.tvSize !== candidateFlags.tvSize ||
+    queryFlags.shortVersion !== candidateFlags.shortVersion
+  ) {
+    if (queryFlags.cover && !candidateFlags.cover) {
+      return 0.72;
+    }
+
+    return 0.35;
+  }
+
+  return 1;
+};
+
+const addReason = (reasons: string[], condition: boolean, reason: string): void => {
+  if (condition && !reasons.includes(reason)) {
+    reasons.push(reason);
+  }
+};
+
+export const evaluateLyricsCandidate = (
+  query: LyricsQuery | NormalizedLyricsQuery,
+  candidate: Omit<LyricsSearchCandidate, 'id' | 'score'> & { score?: number },
+  options: LyricsScoringOptions = {},
+): LyricsMatchDecision => {
+  const normalized = 'versionFlags' in query ? query : buildNormalizedLyricsQuery(query);
+  const titleScore = similarity(normalized.rawTitle, candidate.title);
+  const artistScore = similarity(normalized.rawArtist, candidate.artist);
+  const albumScore = normalized.rawAlbum && candidate.album ? similarity(normalized.rawAlbum, candidate.album) : 0.5;
+  const durationScore = scoreLyricsDuration(normalized.durationSeconds, candidate.durationSeconds);
+  const flags = candidateVersionFlags(candidate);
+  const versionScore = scoreLyricsVersion(normalized.versionFlags, flags);
+  const hasSynced = candidate.hasSynced || candidate.instrumental;
+  const weights = hasSynced
+    ? { title: 0.34, artist: 0.22, album: 0.08, duration: 0.28, version: 0.08 }
+    : { title: 0.38, artist: 0.24, album: 0.1, duration: 0.18, version: 0.1 };
+  const providerPriorityBonus = options.providerPriorityBonus ?? 0;
+  const rawScore =
+    titleScore * weights.title +
+    artistScore * weights.artist +
+    albumScore * weights.album +
+    durationScore * weights.duration +
+    versionScore * weights.version +
+    providerPriorityBonus;
+  const delta = getDurationDelta(normalized.durationSeconds, candidate.durationSeconds);
+  const versionConflict = hasLyricsVersionConflict(normalized.versionFlags, flags);
+  const risk = getVersionRisk(normalized.versionFlags, flags);
+  const reasons: string[] = [];
+  let candidateOnly = false;
+  let rejected = false;
+
+  addReason(reasons, titleScore >= 0.98, 'title_exact');
+  addReason(reasons, titleScore >= 0.82 && titleScore < 0.98, 'title_similar');
+  addReason(reasons, artistScore >= 0.98, 'artist_exact');
+  addReason(reasons, artistScore < 0.75, 'artist_mismatch');
+  addReason(reasons, albumScore >= 0.82, 'album_match');
+  addReason(reasons, delta !== null && delta <= 1, 'duration_exact');
+  addReason(reasons, delta !== null && delta > 1 && delta <= 5, 'duration_close');
+  addReason(reasons, delta !== null && delta > 10, 'duration_mismatch');
+  addReason(reasons, versionScore >= 0.9, 'version_match');
+  addReason(reasons, versionConflict, 'version_conflict');
+  addReason(reasons, normalized.coverIntent, 'cover_intent');
+  addReason(reasons, hasSynced && delta !== null && delta <= 5, 'synced_duration_safe');
+
+  if (normalized.coverIntent) {
+    candidateOnly = true;
+    addReason(reasons, true, 'candidate_only_cover');
+  }
+
+  if (delta !== null && delta > 10 && hasSynced) {
+    candidateOnly = true;
+    addReason(reasons, true, 'candidate_only_duration');
+  }
+
+  if (delta !== null && delta > 20 && hasSynced) {
+    rejected = true;
+  }
+
+  if (versionConflict) {
+    candidateOnly = true;
+  }
+
+  if ((normalized.versionFlags.instrumental || normalized.versionFlags.karaoke || normalized.versionFlags.offVocal) && versionScore <= 0.1) {
+    candidateOnly = true;
+    rejected = true;
+  }
+
+  if (options.rejectedByUser) {
+    rejected = true;
+    addReason(reasons, true, 'rejected_by_user');
+  }
+
+  const score = Math.max(0, Math.min(1, Number(rawScore.toFixed(4))));
+  const autoAcceptScore = options.autoAcceptScore ?? 0.7;
+  const hasRequiredIdentity = Boolean(normalized.identityTitle && normalized.identityArtist);
+  const autoAccept = hasRequiredIdentity && !rejected && score > autoAcceptScore;
+  const effectiveRisk: LyricsMatchRisk = autoAccept
+    ? 'low'
+    : rejected || risk === 'high' || (hasSynced && delta !== null && delta > 20)
+      ? 'high'
+      : candidateOnly || risk === 'medium'
+        ? 'medium'
+        : 'low';
+
+  return {
+    score,
+    autoAccept,
+    candidateOnly: candidateOnly || (!autoAccept && !rejected),
+    rejected,
+    risk: effectiveRisk,
+    reasons,
+    providerPriorityBonus,
+    titleScore,
+    artistScore,
+    albumScore,
+    durationScore,
+    versionScore,
+  };
+};
+
+export const scoreLyricsCandidate = (query: LyricsQuery, candidate: Omit<LyricsSearchCandidate, 'id' | 'score'>): number =>
+  evaluateLyricsCandidate(query, candidate).score;
 
 export const canAutoAcceptLyricsCandidate = (
   query: LyricsQuery,
   candidate: LyricsSearchCandidate,
-  threshold = 0.82,
-): boolean => Boolean(normalizeText(query.title) && normalizeText(query.artist) && candidate.score >= threshold);
+  threshold = 0.7,
+): boolean => evaluateLyricsCandidate(query, candidate, { autoAcceptScore: threshold }).autoAccept;

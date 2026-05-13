@@ -34,9 +34,25 @@ const settings = (patch: Partial<AppSettings> = {}): AppSettings => ({
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
   lyricsNetworkEnabled: true,
   lyricsPreferredProvider: 'lrclib',
+  lyricsEnabledProviders: ['local', 'lrclib'],
   lyricsAutoSearch: true,
-  lyricsAutoAcceptScore: 0.82,
+  lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
+  lyricsEnabled: true,
+  lyricsRomanizationEnabled: true,
+  lyricsFontSizePx: 36,
+  lyricsColor: '#314054',
+  lyricsBackgroundMode: 'theme',
+  lyricsCustomWallpaperPath: null,
+  lyricsCoverOpacityPercent: 100,
+  lyricsCoverBlurPx: 10,
+  lyricsCoverBrightnessPercent: 100,
+  lyricsBackgroundScalePercent: 100,
+  mvEnabledProviders: ['bilibili', 'youtube'],
+  mvProviderOrder: ['bilibili', 'youtube'],
+  mvAutoSearch: true,
+  mvMaxQuality: '1080p',
+  mvAllow60fps: true,
   channelBalance: defaultChannelBalanceSettings,
   playerVolume: 1,
   playbackSpeed: 1,
@@ -207,6 +223,46 @@ describe('LyricsService', () => {
 
     expect(lyrics?.kind).toBe('synced');
     expect(lyrics?.lines).toEqual([{ timeMs: 1000, text: 'Line' }]);
+  });
+
+  it('fills missing romanization for Japanese provider lyrics before caching', async () => {
+    const { service } = createHarness({
+      onlineProvider: {
+        getLyrics: vi.fn(async () =>
+          trackLyrics({
+            lines: [{ timeMs: 1000, text: 'さくら' }],
+            plainText: 'さくら',
+            syncedText: '[00:01.00]さくら',
+          }),
+        ),
+        searchCandidates: vi.fn(async () => []),
+      },
+    });
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+    const cached = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.lines[0].romanization).toBe('sakura');
+    expect(cached?.lines[0].romanization).toBe('sakura');
+  });
+
+  it('does not romanize non-Japanese provider lyrics', async () => {
+    const { service } = createHarness({
+      onlineProvider: {
+        getLyrics: vi.fn(async () =>
+          trackLyrics({
+            lines: [{ timeMs: 1000, text: 'Hello world' }],
+            plainText: 'Hello world',
+            syncedText: '[00:01.00]Hello world',
+          }),
+        ),
+        searchCandidates: vi.fn(async () => []),
+      },
+    });
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.lines[0]).toEqual({ timeMs: 1000, text: 'Hello world' });
   });
 
   it('returns provider plain lyrics', async () => {

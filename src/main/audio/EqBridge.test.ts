@@ -12,6 +12,27 @@ const createBridge = (): EqBridge => {
   return new EqBridge(dir);
 };
 
+const expectedBuiltInCurves: Record<string, { preampDb: number; gains: number[] }> = {
+  flat: { preampDb: 0, gains: Array(10).fill(0) as number[] },
+  'bass-boost': { preampDb: -8, gains: [7.5, 6.8, 5, 2.3, 0.5, -0.4, -1, -1.6, -2.2, -2.8] },
+  'vocal-clear': { preampDb: -6, gains: [-6, -5, -3, 0.5, 2.8, 4.5, 3.8, 2, -0.8, -2.8] },
+  'treble-sparkle': { preampDb: -7, gains: [-3, -2.5, -1.8, -0.8, 0, 0.8, 2.8, 4.8, 6.2, 5.5] },
+  loudness: { preampDb: -8, gains: [7.5, 6.8, 4.4, 1.2, -1.6, -1.8, 0.6, 2.8, 4.6, 5.2] },
+  night: { preampDb: -2, gains: [-6.5, -5.8, -3.6, -1.2, 0, 1.2, 0.6, -1.8, -4.5, -6.5] },
+  'headphone-warm': { preampDb: -6, gains: [5, 5.3, 4, 2, 0.5, -0.4, -1.1, -1.8, -2.6, -3.5] },
+  'anime-jpop': { preampDb: -6, gains: [3, 2.3, 0.5, -1.8, -2.2, 1.2, 3.8, 5.5, 4.6, 2.2] },
+  rock: { preampDb: -6, gains: [5.5, 4.6, 1.8, -2, -3, -0.6, 2.2, 4.5, 3.8, 2] },
+  classical: { preampDb: -4, gains: [1.8, 1.4, 0.3, -0.4, -1, -0.5, 1, 2.8, 3.5, 2.2] },
+  'harman-target': { preampDb: -6, gains: [6, 5.8, 4.5, 2, 0.5, 0, 2.5, 3.5, 2, 0.5] },
+  'harman-in-ear': { preampDb: -8, gains: [8, 7, 5.5, 2.5, 0, -0.5, 2.5, 4, 3, 1.5] },
+  'diffuse-field': { preampDb: -7, gains: [-5.5, -4.8, -2.8, -0.8, 0.6, 2, 5.5, 6.2, 3.8, 0.8] },
+  'bk-room-curve': { preampDb: -6, gains: [5.5, 4.8, 3.4, 1.7, 0.5, -0.8, -2, -3.2, -4.4, -5.4] },
+  'studio-neutral': { preampDb: -2, gains: [-1.5, -1.8, -1, -0.2, 0.2, 1.1, 2, 1.6, 0.2, -1.2] },
+  'classic-smiley': { preampDb: -8, gains: [7, 6, 3, -2.8, -4.5, -3.2, 1, 4, 6.2, 7] },
+  'vinyl-warmth': { preampDb: -6, gains: [5, 4.4, 2.8, 1, 0, -0.7, -1.6, -2.8, -4, -5.2] },
+  'broadcast-voice': { preampDb: -6, gains: [-8, -6.5, -3.4, 1.5, 4, 5.5, 4.4, 1.5, -2.5, -5.5] },
+};
+
 afterEach(() => {
   tempDirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }));
 });
@@ -78,10 +99,10 @@ describe('EqBridge protocol validation', () => {
 
     expect(harman).toMatchObject({
       name: 'Harman Target',
-      preampDb: -5,
+      preampDb: -6,
       readonly: true,
     });
-    expect(harman?.bands.map((band) => band.gainDb)).toEqual([5, 4.5, 3.2, 1.2, 0, 0, 1.2, 2.2, 1.2, 0.4]);
+    expect(harman?.bands.map((band) => band.gainDb)).toEqual(expectedBuiltInCurves['harman-target'].gains);
     expect(classicSmiley).toMatchObject({
       name: 'Classic Smiley',
       readonly: true,
@@ -92,8 +113,30 @@ describe('EqBridge protocol validation', () => {
     expect(bridge.getState()).toMatchObject({
       presetId: 'harman-target',
       presetName: 'Harman Target',
-      preampDb: -5,
+      preampDb: -6,
     });
+  });
+
+  it('keeps every built-in preset locked to intentional 10-band curve data', () => {
+    const bridge = createBridge();
+    const builtInPresets = bridge.listPresets().filter((preset) => preset.readonly);
+
+    expect(builtInPresets).toHaveLength(Object.keys(expectedBuiltInCurves).length);
+    for (const preset of builtInPresets) {
+      const expected = expectedBuiltInCurves[preset.id];
+      expect(expected, preset.name).toBeDefined();
+      expect(preset.preampDb, preset.name).toBe(expected.preampDb);
+      expect(preset.bands).toHaveLength(10);
+      expect(preset.bands.map((band) => band.gainDb), preset.name).toEqual(expected.gains);
+
+      if (preset.id === 'flat') {
+        continue;
+      }
+
+      const gains = preset.bands.map((band) => band.gainDb);
+      expect(Math.max(...gains) - Math.min(...gains), preset.name).toBeGreaterThanOrEqual(3.5);
+      expect(gains.filter((gainDb) => Math.abs(gainDb) >= 1).length, preset.name).toBeGreaterThanOrEqual(6);
+    }
   });
 
   it('clamps channel balance parameters before updating state', async () => {

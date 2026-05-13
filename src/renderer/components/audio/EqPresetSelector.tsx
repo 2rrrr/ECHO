@@ -14,7 +14,16 @@ export const EqPresetSelector = ({ presets, value, onChange }: EqPresetSelectorP
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<PresetCategory | 'all' | 'built-in'>('all');
+  const [menuOpen, setMenuOpen] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
+  const filterOptions: Array<{ value: PresetCategory | 'all' | 'built-in'; label: string }> = [
+    { value: 'all', label: t('settings.eq.preset.filter.all') },
+    { value: 'built-in', label: t('settings.eq.preset.filter.builtIn') },
+    { value: 'user', label: t('settings.eq.preset.filter.user') },
+    { value: 'target', label: t('settings.eq.preset.filter.target') },
+    { value: 'genre', label: t('settings.eq.preset.filter.genre') },
+    { value: 'utility', label: t('settings.eq.preset.filter.utility') },
+  ];
   const visiblePresets = useMemo(
     () =>
       presets.filter((preset) => {
@@ -30,11 +39,18 @@ export const EqPresetSelector = ({ presets, value, onChange }: EqPresetSelectorP
     [filter, normalizedQuery, presets],
   );
   const selectedPreset = presets.find((preset) => preset.id === value);
+  const selectedLabel = value === 'custom'
+    ? t('settings.eq.preset.modified')
+    : selectedPreset?.name ?? t('settings.eq.preset.selectorAria');
   const safeVisiblePresets = selectedPreset && !visiblePresets.some((preset) => preset.id === selectedPreset.id)
     ? [selectedPreset, ...visiblePresets]
     : visiblePresets;
   const builtInPresets = safeVisiblePresets.filter((preset) => preset.readonly);
   const userPresets = safeVisiblePresets.filter((preset) => !preset.readonly);
+  const choosePreset = (presetId: string): void => {
+    onChange(presetId);
+    setMenuOpen(false);
+  };
 
   return (
     <div className="eq-preset-browser">
@@ -47,41 +63,76 @@ export const EqPresetSelector = ({ presets, value, onChange }: EqPresetSelectorP
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
       </label>
-      <label className="eq-preset-selector eq-preset-filter">
-        <select aria-label={t('settings.eq.preset.filterAria')} value={filter} onChange={(event) => setFilter(event.currentTarget.value as PresetCategory | 'all' | 'built-in')}>
-          <option value="all">{t('settings.eq.preset.filter.all')}</option>
-          <option value="built-in">{t('settings.eq.preset.filter.builtIn')}</option>
-          <option value="user">{t('settings.eq.preset.filter.user')}</option>
-          <option value="target">{t('settings.eq.preset.filter.target')}</option>
-          <option value="genre">{t('settings.eq.preset.filter.genre')}</option>
-          <option value="utility">{t('settings.eq.preset.filter.utility')}</option>
-        </select>
-        <ChevronDown size={16} aria-hidden="true" />
-      </label>
-      <label className="eq-preset-selector">
-        <select aria-label={t('settings.eq.preset.selectorAria')} value={value} onChange={(event) => onChange(event.currentTarget.value)}>
+      <div className="eq-preset-filter" role="group" aria-label={t('settings.eq.preset.filterAria')}>
+        {filterOptions.map((option) => (
+          <button
+            className="eq-preset-filter-chip"
+            data-active={filter === option.value}
+            type="button"
+            key={option.value}
+            onClick={() => setFilter(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <div className="eq-preset-selector">
+        <button
+          className="eq-preset-trigger"
+          type="button"
+          aria-label={t('settings.eq.preset.selectorAria')}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((current) => !current)}
+        >
+          <span>{selectedLabel}</span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </button>
+        {menuOpen ? (
+        <div className="eq-preset-menu" role="listbox" aria-label={t('settings.eq.preset.selectorAria')}>
           {builtInPresets.length > 0 ? (
-            <optgroup label={t('settings.eq.preset.builtIn')}>
+            <section>
+              <span className="eq-preset-menu-heading">{t('settings.eq.preset.builtIn')}</span>
               {builtInPresets.map((preset) => (
-                <option value={preset.id} key={preset.id}>
+                <button
+                  className="eq-preset-option"
+                  data-selected={preset.id === value}
+                  type="button"
+                  role="option"
+                  aria-selected={preset.id === value}
+                  key={preset.id}
+                  onClick={() => choosePreset(preset.id)}
+                >
                   {preset.name}
-                </option>
+                </button>
               ))}
-            </optgroup>
+            </section>
           ) : null}
           {userPresets.length > 0 ? (
-            <optgroup label={t('settings.eq.preset.user')}>
+            <section>
+              <span className="eq-preset-menu-heading">{t('settings.eq.preset.user')}</span>
               {userPresets.map((preset) => (
-                <option value={preset.id} key={preset.id}>
+                <button
+                  className="eq-preset-option"
+                  data-selected={preset.id === value}
+                  type="button"
+                  role="option"
+                  aria-selected={preset.id === value}
+                  key={preset.id}
+                  onClick={() => choosePreset(preset.id)}
+                >
                   {preset.name}
-                </option>
+                </button>
               ))}
-            </optgroup>
+            </section>
           ) : null}
-          {value === 'custom' ? <option value="custom">{t('settings.eq.preset.modified')}</option> : null}
-        </select>
-        <ChevronDown size={16} aria-hidden="true" />
-      </label>
+          {value === 'custom' ? (
+            <button className="eq-preset-option" data-selected="true" type="button" role="option" aria-selected="true" onClick={() => setMenuOpen(false)}>
+              {t('settings.eq.preset.modified')}
+            </button>
+          ) : null}
+        </div>
+        ) : null}
+      </div>
     </div>
   );
 };

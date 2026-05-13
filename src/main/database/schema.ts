@@ -312,6 +312,13 @@ CREATE TABLE IF NOT EXISTS lyrics_candidates (
   has_synced INTEGER NOT NULL DEFAULT 0,
   has_plain INTEGER NOT NULL DEFAULT 0,
   score REAL NOT NULL,
+  risk TEXT,
+  reasons_json TEXT,
+  title_score REAL,
+  artist_score REAL,
+  album_score REAL,
+  duration_score REAL,
+  version_score REAL,
   source_label TEXT NOT NULL,
   raw_json TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
@@ -345,6 +352,59 @@ CREATE TABLE IF NOT EXISTS duplicate_track_members (
   PRIMARY KEY(group_id, track_id)
 );
 
+CREATE TABLE IF NOT EXISTS track_videos (
+  id TEXT PRIMARY KEY,
+  track_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  source_id TEXT,
+  title TEXT,
+  artist TEXT,
+  url TEXT,
+  provider_url TEXT,
+  thumbnail_url TEXT,
+  file_path TEXT,
+  mime_type TEXT,
+  duration_seconds REAL,
+  width INTEGER,
+  height INTEGER,
+  selected_quality_id TEXT,
+  quality_label TEXT,
+  fps REAL,
+  raw_provider_json TEXT,
+  score REAL NOT NULL DEFAULT 0,
+  selected INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS track_video_streams (
+  id TEXT PRIMARY KEY,
+  video_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  variant_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  quality_tier TEXT NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  fps REAL,
+  codec TEXT,
+  container TEXT,
+  mime_type TEXT,
+  protocol TEXT NOT NULL,
+  url TEXT,
+  headers_json TEXT NOT NULL DEFAULT '{}',
+  playable_in_app INTEGER NOT NULL DEFAULT 0,
+  requires_account INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT,
+  raw_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (video_id) REFERENCES track_videos(id) ON DELETE CASCADE,
+  UNIQUE(video_id, variant_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
 CREATE INDEX IF NOT EXISTS idx_tracks_folder_id ON tracks(folder_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
@@ -370,6 +430,12 @@ CREATE INDEX IF NOT EXISTS idx_duplicate_members_track_id ON duplicate_track_mem
 CREATE INDEX IF NOT EXISTS idx_duplicate_members_group_rank ON duplicate_track_members(group_id, rank);
 CREATE INDEX IF NOT EXISTS idx_duplicate_groups_representative ON duplicate_track_groups(representative_track_id);
 CREATE INDEX IF NOT EXISTS idx_duplicate_members_hidden ON duplicate_track_members(hidden);
+CREATE INDEX IF NOT EXISTS idx_track_videos_track_id ON track_videos(track_id);
+CREATE INDEX IF NOT EXISTS idx_track_videos_track_selected ON track_videos(track_id, selected);
+CREATE INDEX IF NOT EXISTS idx_track_videos_provider_source ON track_videos(provider, source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_track_videos_one_selected ON track_videos(track_id) WHERE selected = 1;
+CREATE INDEX IF NOT EXISTS idx_track_video_streams_video_id ON track_video_streams(video_id);
+CREATE INDEX IF NOT EXISTS idx_track_video_streams_provider ON track_video_streams(provider, variant_id);
 CREATE INDEX IF NOT EXISTS idx_playback_history_started_at ON playback_history(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_playback_history_track_id ON playback_history(track_id);
 CREATE INDEX IF NOT EXISTS idx_playback_history_completed ON playback_history(completed);

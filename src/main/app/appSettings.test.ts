@@ -26,9 +26,25 @@ describe('app settings normalization', () => {
     expect(settings.hideToTrayOnClose).toBe(true);
     expect(settings.networkMetadataProviders).toEqual(['qq-music']);
     expect(settings.lyricsNetworkEnabled).toBe(true);
+    expect(settings.lyricsEnabledProviders).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
     expect(settings.lyricsAutoSearch).toBe(true);
-    expect(settings.lyricsAutoAcceptScore).toBe(0.82);
+    expect(settings.lyricsAutoAcceptScore).toBe(0.7);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
+    expect(settings.lyricsEnabled).toBe(true);
+    expect(settings.lyricsRomanizationEnabled).toBe(true);
+    expect(settings.lyricsFontSizePx).toBe(36);
+    expect(settings.lyricsColor).toBe('#314054');
+    expect(settings.lyricsBackgroundMode).toBe('theme');
+    expect(settings.lyricsCustomWallpaperPath).toBeNull();
+    expect(settings.lyricsCoverOpacityPercent).toBe(100);
+    expect(settings.lyricsCoverBlurPx).toBe(10);
+    expect(settings.lyricsCoverBrightnessPercent).toBe(100);
+    expect(settings.lyricsBackgroundScalePercent).toBe(100);
+    expect(settings.mvEnabledProviders).toEqual(['bilibili', 'youtube']);
+    expect(settings.mvProviderOrder).toEqual(['bilibili', 'youtube']);
+    expect(settings.mvAutoSearch).toBe(true);
+    expect(settings.mvMaxQuality).toBe('1080p');
+    expect(settings.mvAllow60fps).toBe(true);
   });
 
   it('normalizes an empty coverCacheDir to null', async () => {
@@ -124,16 +140,65 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         lyricsNetworkEnabled: false,
+        lyricsEnabledProviders: ['local', 'qqmusic', 'bad-provider'] as never,
+        lyricsProviderTimeoutMs: 50,
+        lyricsTotalMatchTimeoutMs: 99999,
+        lyricsCoverAutoAcceptScore: 2,
         lyricsAutoSearch: false,
         lyricsAutoAcceptScore: 2,
         lyricsDefaultOffsetMs: -24000,
+        lyricsEnabled: false,
+        lyricsRomanizationEnabled: false,
+        lyricsFontSizePx: 999,
+        lyricsColor: 'red',
+        lyricsBackgroundMode: 'album' as never,
+        lyricsCustomWallpaperPath: 'D:\\Outside\\wallpaper.png',
+        lyricsCoverOpacityPercent: -10,
+        lyricsCoverBlurPx: 999,
+        lyricsCoverBrightnessPercent: 12,
+        lyricsBackgroundScalePercent: 999,
       }),
     ).toMatchObject({
       lyricsNetworkEnabled: false,
       lyricsPreferredProvider: 'lrclib',
+      lyricsEnabledProviders: ['local', 'qqmusic'],
+      lyricsProviderTimeoutMs: 1000,
+      lyricsTotalMatchTimeoutMs: 15000,
+      lyricsCoverAutoAcceptScore: 1,
       lyricsAutoSearch: false,
-      lyricsAutoAcceptScore: 1,
+      lyricsAutoAcceptScore: 0.7,
       lyricsDefaultOffsetMs: -10000,
+      lyricsEnabled: false,
+      lyricsRomanizationEnabled: false,
+      lyricsFontSizePx: 56,
+      lyricsColor: '#314054',
+      lyricsBackgroundMode: 'theme',
+      lyricsCustomWallpaperPath: null,
+      lyricsCoverOpacityPercent: 0,
+      lyricsCoverBlurPx: 60,
+      lyricsCoverBrightnessPercent: 40,
+      lyricsBackgroundScalePercent: 180,
+    });
+
+    expect(
+      normalizeSettings({
+        lyricsFontSizePx: 12,
+        lyricsColor: '#ff3366',
+        lyricsBackgroundMode: 'cover',
+        lyricsCoverOpacityPercent: 64.4,
+        lyricsCoverBlurPx: 12.5,
+        lyricsCoverBrightnessPercent: 118.6,
+        lyricsBackgroundScalePercent: 55,
+      }),
+    ).toMatchObject({
+      lyricsFontSizePx: 22,
+      lyricsColor: '#FF3366',
+      lyricsBackgroundMode: 'cover',
+      lyricsCoverOpacityPercent: 64,
+      lyricsCoverBlurPx: 13,
+      lyricsCoverBrightnessPercent: 119,
+      lyricsBackgroundScalePercent: 70,
+      lyricsRomanizationEnabled: true,
     });
   });
 
@@ -169,6 +234,36 @@ describe('app settings normalization', () => {
       monoMode: 'right',
       invertLeft: true,
       constantPower: false,
+    });
+  });
+
+  it('normalizes MV network settings', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(
+      normalizeSettings({
+        mvEnabledProviders: ['youtube', 'qqmusic', 'youtube'] as never,
+        mvProviderOrder: ['youtube'] as never,
+        mvAutoSearch: false,
+        mvMaxQuality: 'max',
+        mvAllow60fps: false,
+      }),
+    ).toMatchObject({
+      mvEnabledProviders: ['youtube'],
+      mvProviderOrder: ['youtube', 'bilibili'],
+      mvAutoSearch: false,
+      mvMaxQuality: 'max',
+      mvAllow60fps: false,
+    });
+
+    expect(
+      normalizeSettings({
+        mvMaxQuality: '8k' as never,
+      }),
+    ).toMatchObject({
+      mvAutoSearch: true,
+      mvMaxQuality: '1080p',
+      mvAllow60fps: true,
     });
   });
 });

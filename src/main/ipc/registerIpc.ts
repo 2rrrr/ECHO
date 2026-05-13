@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { basename, extname, resolve } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
@@ -6,7 +7,7 @@ import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../../shared/types/coverCache';
 import type { FontFileAsset } from '../../preload/apiTypes';
-import { defaultSettings, getAppSettings, setAppSettings } from '../app/appSettings';
+import { defaultSettings, getAppSettings, getLyricsWallpaperDirectory, setAppSettings } from '../app/appSettings';
 import { destroyTray, ensureTray } from '../app/tray';
 import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
@@ -19,6 +20,7 @@ import { registerDiscordPresenceIpc } from './discordPresenceIpc';
 import { registerLastFmIpc } from './lastFmIpc';
 import { registerLibraryIpc } from './libraryIpc';
 import { registerLyricsIpc } from './lyricsIpc';
+import { registerMvIpc } from './mvIpc';
 import { registerPlaybackIpc } from './playbackIpc';
 
 const fontMimeTypes: Record<string, string> = {
@@ -27,6 +29,8 @@ const fontMimeTypes: Record<string, string> = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
 };
+
+const lyricsWallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
 const requireFontPath = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -59,6 +63,36 @@ const loadFontFile = (fontPathInput: unknown): FontFileAsset => {
     family: toFontFamily(fontPath),
     dataUrl: `data:${fontMimeTypes[extension]};base64,${content.toString('base64')}`,
   };
+};
+
+const requireLyricsWallpaperPath = (value: unknown): string => {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('wallpaper path must be a non-empty string');
+  }
+
+  const wallpaperPath = resolve(value.trim());
+  const extension = extname(wallpaperPath).toLowerCase();
+
+  if (!lyricsWallpaperExtensions.has(extension)) {
+    throw new Error('selected file is not a supported image');
+  }
+
+  if (!existsSync(wallpaperPath)) {
+    throw new Error('selected wallpaper file does not exist');
+  }
+
+  return wallpaperPath;
+};
+
+const copyLyricsWallpaper = (wallpaperPathInput: unknown): string => {
+  const wallpaperPath = requireLyricsWallpaperPath(wallpaperPathInput);
+  const wallpaperDirectory = getLyricsWallpaperDirectory();
+  const extension = extname(wallpaperPath).toLowerCase();
+  const targetPath = resolve(wallpaperDirectory, `${randomUUID()}${extension}`);
+
+  mkdirSync(wallpaperDirectory, { recursive: true });
+  copyFileSync(wallpaperPath, targetPath);
+  return targetPath;
 };
 
 const normalizeCoverCacheRequest = (value: unknown): SetCoverCacheDirectoryRequest => {
@@ -137,6 +171,15 @@ export const registerIpc = (): void => {
 
     return result.canceled ? null : loadFontFile(result.filePaths[0]);
   });
+  ipcMain.handle(IpcChannels.AppChooseLyricsWallpaper, async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose lyrics wallpaper',
+      properties: ['openFile'],
+      filters: [{ name: 'Image files', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+    });
+
+    return result.canceled || !result.filePaths[0] ? null : copyLyricsWallpaper(result.filePaths[0]);
+  });
   ipcMain.handle(IpcChannels.AppLoadFontFile, (_event: IpcMainInvokeEvent, fontPath: unknown): FontFileAsset => loadFontFile(fontPath));
   ipcMain.handle(IpcChannels.AppChooseCacheDirectory, async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({
@@ -184,6 +227,7 @@ export const registerIpc = (): void => {
   registerLastFmIpc();
   registerLibraryIpc();
   registerLyricsIpc();
+  registerMvIpc();
   registerPlaybackIpc();
   registerAudioIpc();
 };

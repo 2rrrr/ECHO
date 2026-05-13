@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { LyricsQuery, LyricsSearchCandidate, TrackLyrics } from '../../shared/types/lyrics';
+import type { LyricsProvider, LyricsProviderCapability, LyricsProviderResult, LyricsProviderSearchRequest } from './LyricsProvider';
 import { detectLyricsKind, parsePlainLyrics, parseSyncedLyrics } from './lyricsParser';
 import { scoreLyricsCandidate } from './lyricsScoring';
 
@@ -15,7 +16,7 @@ export type LrclibRecord = {
 };
 
 const apiRoot = 'https://lrclib.net/api';
-const timeoutMs = 8000;
+const defaultTimeoutMs = 8000;
 const userAgent = 'ECHO-Next/1.0.1 (https://github.com/Moekotori/ECHO-Next; contact email)';
 
 const textOrEmpty = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
@@ -63,9 +64,11 @@ const buildUrl = (pathName: string, query: LyricsQuery, includeDuration: boolean
   return url.toString();
 };
 
-const fetchJson = async (url: string): Promise<unknown | null> => {
+const fetchJson = async (url: string, timeoutMs = defaultTimeoutMs, signal?: AbortSignal): Promise<unknown | null> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const abort = (): void => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
 
   try {
     const response = await fetch(url, {
@@ -84,6 +87,7 @@ const fetchJson = async (url: string): Promise<unknown | null> => {
   } catch {
     return null;
   } finally {
+    signal?.removeEventListener('abort', abort);
     clearTimeout(timer);
   }
 };
@@ -130,7 +134,77 @@ export const mapLrclibRecordToTrackLyrics = (
   };
 };
 
-export class LrclibProvider {
+const recordToResult = (record: LrclibRecord): LyricsProviderResult => ({
+  provider: 'lrclib',
+  providerLyricsId: record.id == null ? null : String(record.id),
+  title: record.trackName ?? '',
+  artist: record.artistName ?? '',
+  album: record.albumName ?? null,
+  durationSeconds: record.duration ?? null,
+  instrumental: record.instrumental === true,
+  plainLyrics: record.plainLyrics ?? null,
+  syncedLyrics: record.syncedLyrics ?? null,
+  sourceUrl: record.id == null ? null : `https://lrclib.net/api/get/${String(record.id)}`,
+  raw: record,
+});
+
+export class LrclibProvider implements LyricsProvider {
+  readonly id = 'lrclib' as const;
+  readonly label = 'LRCLIB';
+  readonly priority = 700;
+  readonly capabilities: LyricsProviderCapability = {
+    synced: true,
+    plain: true,
+    translation: false,
+    romanization: false,
+    byDuration: true,
+    byIsrc: false,
+    byMusicBrainzId: false,
+    needsAccount: false,
+  };
+
+  async search(request: LyricsProviderSearchRequest): Promise<LyricsProviderResult[]> {
+    const results: LyricsProviderResult[] = [];
+    const seen = new Set<string>();
+
+    for (const variant of request.normalized.searchVariants) {
+      if (request.signal?.aborted) {
+        break;
+      }
+
+      const variantQuery: LyricsQuery = {
+        ...request.query,
+        title: variant.title,
+        artist: variant.artist,
+        album: variant.album,
+        filePath: null,
+      };
+      const json = await fetchJson(buildUrl('/search', variantQuery, false), request.timeoutMs, request.signal);
+      if (!Array.isArray(json)) {
+        continue;
+      }
+
+      for (const record of json.map(mapRecord).filter((item): item is LrclibRecord => Boolean(item))) {
+        const result = recordToResult(record);
+        if (!result.title) {
+          result.title = request.query.title;
+        }
+
+        if (!result.artist) {
+          result.artist = request.query.artist;
+        }
+
+        const key = result.providerLyricsId ?? `${result.title}|${result.artist}|${result.album}|${result.durationSeconds}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push(result);
+        }
+      }
+    }
+
+    return results;
+  }
+
   async getLyrics(query: LyricsQuery): Promise<TrackLyrics | null> {
     const json = await fetchJson(buildUrl('/get', query, true));
     const record = mapRecord(json);

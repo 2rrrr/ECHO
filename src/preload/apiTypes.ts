@@ -54,6 +54,7 @@ import type { DiscordPresenceStatus } from '../shared/types/discordPresence';
 import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { LyricsSearchCandidate, TrackLyrics } from '../shared/types/lyrics';
+import type { MvMatchCandidate, MvResolvedStreams, MvSettings, TrackVideo } from '../shared/types/mv';
 
 export type FontFileAsset = {
   path: string;
@@ -71,6 +72,7 @@ export type EchoApi = {
     setSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
     resetSettings: () => Promise<AppSettings>;
     chooseFontFile: () => Promise<FontFileAsset | null>;
+    chooseLyricsWallpaper: () => Promise<string | null>;
     loadFontFile: (path: string) => Promise<FontFileAsset>;
     chooseCacheDirectory: () => Promise<string | null>;
     getDefaultCacheDirectory: () => Promise<string>;
@@ -182,6 +184,21 @@ export type EchoApi = {
     rejectCandidate: (candidateId: string) => Promise<void>;
     setOffset: (trackId: string, offsetMs: number) => Promise<TrackLyrics | null>;
     clearCache: (trackId: string) => Promise<void>;
+  };
+  mv: {
+    getSelected: (trackId: string) => Promise<TrackVideo | null>;
+    getSettings: () => Promise<MvSettings>;
+    setSettings: (patch: Partial<MvSettings>) => Promise<MvSettings>;
+    findLocalCandidates: (trackId: string) => Promise<MvMatchCandidate[]>;
+    searchNetworkCandidates: (trackId: string) => Promise<MvMatchCandidate[]>;
+    getCandidates: (trackId: string) => Promise<TrackVideo[]>;
+    resolveStreams: (videoId: string) => Promise<MvResolvedStreams>;
+    setQuality: (videoId: string, qualityId: string) => Promise<TrackVideo>;
+    chooseLocalVideo: (trackId: string) => Promise<TrackVideo | null>;
+    bindLocalVideo: (trackId: string, filePath: string) => Promise<TrackVideo>;
+    selectVideo: (trackId: string, videoId: string) => Promise<TrackVideo>;
+    clearSelected: (trackId: string) => Promise<void>;
+    openExternal: (videoId: string) => Promise<void>;
   };
   smtc: {
     onCommand: (handler: (command: SmtcCommand) => void) => () => void;

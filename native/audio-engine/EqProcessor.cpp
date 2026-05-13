@@ -7,6 +7,11 @@ namespace echo
 {
 namespace
 {
+bool nearlyEqual(float left, float right)
+{
+    return std::abs(left - right) <= 0.00001f;
+}
+
 float dbToGain(float db)
 {
     return std::pow(10.0f, db / 20.0f);
@@ -61,11 +66,7 @@ void EqProcessor::reset()
         smoothedBandGains[band] = targetBandGains[band];
         targetBandFrequencies[band] = atomicBandFrequenciesHz[band].load(std::memory_order_acquire);
         smoothedBandFrequencies[band] = targetBandFrequencies[band];
-        coefficients[band] = makePeakingCoefficients(
-            currentSampleRate,
-            smoothedBandFrequencies[band],
-            smoothedBandGains[band],
-            1.0f);
+        updateBandCoefficient(band);
     }
 }
 
@@ -86,13 +87,16 @@ void EqProcessor::processBlock(juce::AudioBuffer<float>& buffer, int startSample
 
         for (int band = 0; band < eqBandCount; ++band)
         {
-            smoothedBandGains[band] = moveTowards(smoothedBandGains[band], targetBandGains[band], bandGainSteps[band]);
-            smoothedBandFrequencies[band] = moveTowards(smoothedBandFrequencies[band], targetBandFrequencies[band], bandFrequencySteps[band]);
-            coefficients[band] = makePeakingCoefficients(
-                currentSampleRate,
-                smoothedBandFrequencies[band],
-                smoothedBandGains[band],
-                1.0f);
+            const float previousGain = smoothedBandGains[band];
+            const float previousFrequency = smoothedBandFrequencies[band];
+            smoothedBandGains[band] = moveTowards(previousGain, targetBandGains[band], bandGainSteps[band]);
+            smoothedBandFrequencies[band] = moveTowards(previousFrequency, targetBandFrequencies[band], bandFrequencySteps[band]);
+
+            if (! nearlyEqual(previousGain, smoothedBandGains[band])
+                || ! nearlyEqual(previousFrequency, smoothedBandFrequencies[band]))
+            {
+                updateBandCoefficient(band);
+            }
         }
 
         const float preampGain = dbToGain(smoothedPreampDb);
@@ -194,10 +198,30 @@ bool EqProcessor::hasClippingRisk() const
     return clippingRisk.load(std::memory_order_acquire);
 }
 
+#if defined(ECHO_AUDIO_ENGINE_TESTS) && ECHO_AUDIO_ENGINE_TESTS
+uint64_t EqProcessor::getCoefficientUpdateCountForTests() const
+{
+    return coefficientUpdateCount;
+}
+#endif
+
 void EqProcessor::updateSmoothingSteps()
 {
     gainSmoothingSamples = std::max(1, static_cast<int>(currentSampleRate * 0.025));
     bypassSmoothingSamples = std::max(1, static_cast<int>(currentSampleRate * 0.015));
+}
+
+void EqProcessor::updateBandCoefficient(int bandIndex)
+{
+    coefficients[static_cast<size_t>(bandIndex)] = makePeakingCoefficients(
+        currentSampleRate,
+        smoothedBandFrequencies[static_cast<size_t>(bandIndex)],
+        smoothedBandGains[static_cast<size_t>(bandIndex)],
+        1.0f);
+
+#if defined(ECHO_AUDIO_ENGINE_TESTS) && ECHO_AUDIO_ENGINE_TESTS
+    ++coefficientUpdateCount;
+#endif
 }
 
 void EqProcessor::updateTargetSnapshot()

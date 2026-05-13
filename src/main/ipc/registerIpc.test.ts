@@ -87,6 +87,10 @@ vi.mock('./lyricsIpc', () => ({
   registerLyricsIpc: vi.fn(),
 }));
 
+vi.mock('./mvIpc', () => ({
+  registerMvIpc: vi.fn(),
+}));
+
 vi.mock('./playbackIpc', () => ({
   registerPlaybackIpc: vi.fn(),
 }));
@@ -181,5 +185,19 @@ describe('app IPC cover cache directory', () => {
     expect(ensureCoverCacheDirectoryMock).toHaveBeenCalledWith('D:\\Echo\\cover-cache');
     expect(setAppSettingsMock).toHaveBeenCalledWith(expect.objectContaining({ coverCacheDir: null, hideToTrayOnClose: false }));
     expect(service.setCoverCacheDir).toHaveBeenCalledWith('D:\\Echo\\cover-cache');
+  });
+
+  it('uses an image-only picker for lyrics wallpaper selection', async () => {
+    showOpenDialogMock.mockResolvedValue({ canceled: true, filePaths: [] });
+
+    const result = await handlers[IpcChannels.AppChooseLyricsWallpaper]!();
+
+    expect(result).toBeNull();
+    expect(showOpenDialogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: [{ name: 'Image files', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+        properties: ['openFile'],
+      }),
+    );
   });
 });

@@ -88,6 +88,10 @@ const renderEqPanel = (status: AudioStatus | null = audioStatus): ReturnType<typ
     </I18nProvider>,
   );
 
+const showAdvancedEqTools = async (): Promise<void> => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Advanced' }));
+};
+
 beforeEach(() => {
   window.localStorage.setItem('echo-next.locale', 'en-US');
   const currentState = eqState({
@@ -133,7 +137,20 @@ describe('EqPanel', () => {
     expect(screen.getByText('Bit-perfect')).toBeTruthy();
   });
 
-  it('lets EQ curve nodes update gain while standard frequency snap is locked', async () => {
+  it('hides advanced EQ workbench controls until explicitly enabled', async () => {
+    renderEqPanel();
+
+    expect(await screen.findByRole('button', { name: 'Advanced' })).toBeTruthy();
+    expect(screen.queryByLabelText('Unlock frequency')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Store A' })).toBeNull();
+
+    await showAdvancedEqTools();
+
+    expect(await screen.findByLabelText('Unlock frequency')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Store A' })).toBeTruthy();
+  });
+
+  it('lets EQ curve nodes update gain and snapped frequency while standard frequency snap is locked', async () => {
     renderEqPanel();
 
     const curve = await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
@@ -155,14 +172,15 @@ describe('EqPanel', () => {
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1 });
 
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
-    expect(window.echo.eq.setBandFrequency).not.toHaveBeenCalled();
+    await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 500 }));
 
-    fireEvent.click(screen.getAllByText(/^Reset \d/)[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset selected' }));
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0 }));
   });
 
   it('only edits band frequency when free-frequency mode is unlocked', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     const curve = await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
     curve.getBoundingClientRect = vi.fn(() => ({
@@ -183,7 +201,7 @@ describe('EqPanel', () => {
     fireEvent.pointerMove(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
 
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.6 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.7 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: expect.any(Number) }));
   });
 
@@ -230,6 +248,7 @@ describe('EqPanel', () => {
 
   it('undoes and redoes EQ curve edits through existing IPC calls', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     const curve = await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
     curve.getBoundingClientRect = vi.fn(() => ({
@@ -258,6 +277,7 @@ describe('EqPanel', () => {
 
   it('temporarily disables EQ while holding the bypass button', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     const bypass = await screen.findByRole('button', { name: 'Hold to Bypass EQ' });
     fireEvent.pointerDown(bypass);
@@ -267,6 +287,7 @@ describe('EqPanel', () => {
 
   it('captures and restores local A/B EQ slots through existing IPC calls', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Store A' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply A' }));
@@ -277,6 +298,7 @@ describe('EqPanel', () => {
 
   it('applies loudness-matched A/B restore through preamp compensation', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Store A' }));
     fireEvent.click(screen.getByRole('button', { name: /Apply safe preamp/i }));
@@ -291,7 +313,8 @@ describe('EqPanel', () => {
   it('selects presets, resets to Flat, and prevents built-in preset deletion', async () => {
     renderEqPanel();
 
-    fireEvent.change(await screen.findByLabelText('EQ preset'), { target: { value: 'rock' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'EQ preset' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Rock' }));
     fireEvent.click(screen.getByRole('button', { name: 'Reset EQ' }));
 
     await waitFor(() => expect(window.echo.eq.setPreset).toHaveBeenCalledWith('rock'));
@@ -303,7 +326,8 @@ describe('EqPanel', () => {
   it('allows overwriting current user presets without deleting built-ins', async () => {
     renderEqPanel();
 
-    fireEvent.change(await screen.findByLabelText('EQ preset'), { target: { value: 'user-bright' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'EQ preset' }));
+    fireEvent.click(screen.getByRole('option', { name: 'User Bright' }));
 
     await waitFor(() => expect(window.echo.eq.setPreset).toHaveBeenCalledWith('user-bright'));
     await waitFor(() => expect((screen.getByRole('button', { name: 'Overwrite' }) as HTMLButtonElement).disabled).toBe(false));
@@ -316,7 +340,8 @@ describe('EqPanel', () => {
     renderEqPanel();
 
     fireEvent.change(await screen.findByLabelText('Search presets'), { target: { value: 'Harman' } });
-    fireEvent.change(screen.getByLabelText('Preset filter'), { target: { value: 'target' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Target curves' }));
+    fireEvent.click(screen.getByRole('button', { name: 'EQ preset' }));
 
     expect(screen.getByRole('option', { name: 'Harman Target' })).toBeTruthy();
   });

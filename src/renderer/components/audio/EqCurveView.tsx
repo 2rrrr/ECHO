@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { EqBand } from '../../../shared/types/eq';
-import { eqMaxFrequencyHz, eqMaxGainDb, eqMinFrequencyHz, eqMinGainDb } from '../../../shared/types/eq';
+import { eqFrequenciesHz, eqMaxFrequencyHz, eqMaxGainDb, eqMinFrequencyHz, eqMinGainDb } from '../../../shared/types/eq';
 import { useI18n } from '../../i18n/I18nProvider';
 import { clamp, computeEqCurvePoints, formatDb, formatFrequencyLabel, resolveBandFrequency } from './eqPanelUtils';
 
@@ -17,15 +17,21 @@ type EqCurveViewProps = {
   onBandFrequencyCommit: (index: number, frequencyHz: number) => void;
 };
 
+type DragPoint = {
+  rawFrequencyHz: number;
+  frequencyHz: number;
+  gainDb: number;
+};
+
 const width = 920;
-const height = 260;
-const paddingLeft = 54;
-const paddingRight = 36;
-const paddingTop = 24;
-const paddingBottom = 36;
+const height = 360;
+const paddingLeft = 62;
+const paddingRight = 56;
+const paddingTop = 30;
+const paddingBottom = 42;
 const plotWidth = width - paddingLeft - paddingRight;
 const plotHeight = height - paddingTop - paddingBottom;
-const axisGains = [12, 6, 0, -6, -12];
+const axisGains = [12, 9, 6, 3, 0, -3, -6, -9, -12];
 
 const toSvgPoint = (point: { x: number; y: number }): { x: number; y: number } => ({
   x: paddingLeft + point.x * plotWidth,
@@ -95,12 +101,16 @@ export const EqCurveView = ({
   const [activeBand, setActiveBand] = useState<number | null>(null);
   const [hoverBand, setHoverBand] = useState<number | null>(null);
   const [fineEdit, setFineEdit] = useState(false);
-  const points = computeEqCurvePoints(bands).map(toSvgPoint);
+  const [dragPreview, setDragPreview] = useState<{ index: number; band: EqBand } | null>(null);
+  const displayBands = dragPreview
+    ? bands.map((band, index) => (index === dragPreview.index ? dragPreview.band : band))
+    : bands;
+  const points = computeEqCurvePoints(displayBands).map(toSvgPoint);
   const path = makeSmoothPath(points);
   const zeroY = gainToY(0);
   const fillPath = path ? `${path} L ${paddingLeft + plotWidth} ${zeroY.toFixed(1)} L ${paddingLeft} ${zeroY.toFixed(1)} Z` : '';
   const readoutBandIndex = activeBand ?? hoverBand ?? selectedBandIndex;
-  const selectedBand = bands[readoutBandIndex];
+  const selectedBand = displayBands[readoutBandIndex];
   const selectedPoint = selectedBand ? bandToSvgPoint(selectedBand) : null;
   const readoutModeLabel = fineEdit
     ? t('settings.eq.curve.fineEdit')
@@ -113,21 +123,32 @@ export const EqCurveView = ({
     return Math.round(gainDb / step) * step;
   };
 
-  const pointFromEvent = (event: ReactPointerEvent<SVGElement>): { frequencyHz: number; gainDb: number } => {
+  const pointFromEvent = (event: ReactPointerEvent<SVGElement>): DragPoint => {
     const rect = svgRef.current?.getBoundingClientRect();
     const x = rect && rect.width > 0 ? (event.clientX - rect.left) * (width / rect.width) : paddingLeft;
     const y = rect && rect.height > 0 ? (event.clientY - rect.top) * (height / rect.height) : zeroY;
+    const rawFrequencyHz = xToFrequency(x);
     setFineEdit(event.shiftKey);
     return {
-      frequencyHz: resolveBandFrequency(xToFrequency(x), frequencyUnlocked),
+      rawFrequencyHz,
+      frequencyHz: resolveBandFrequency(rawFrequencyHz, frequencyUnlocked),
       gainDb: quantizeGain(yToGain(y), event.shiftKey),
     };
   };
 
-  const updateBandFromEvent = (event: ReactPointerEvent<SVGElement>, index: number): { frequencyHz: number; gainDb: number } => {
+  const updateBandFromEvent = (event: ReactPointerEvent<SVGElement>, index: number): DragPoint => {
     const point = pointFromEvent(event);
+    const previewFrequencyHz = frequencyUnlocked ? point.frequencyHz : point.rawFrequencyHz;
+    setDragPreview({
+      index,
+      band: {
+        ...(bands[index] ?? { frequencyHz: point.frequencyHz, gainDb: 0, q: 1 }),
+        frequencyHz: previewFrequencyHz,
+        gainDb: point.gainDb,
+      },
+    });
     onBandChange(index, point.gainDb);
-    if (frequencyUnlocked) {
+    if (frequencyUnlocked && point.frequencyHz !== bands[index]?.frequencyHz) {
       onBandFrequencyChange(index, point.frequencyHz);
     }
     return point;
@@ -156,10 +177,11 @@ export const EqCurveView = ({
 
     const point = updateBandFromEvent(event, activeBand);
     onBandCommit(activeBand, point.gainDb);
-    if (frequencyUnlocked) {
+    if (point.frequencyHz !== bands[activeBand]?.frequencyHz) {
       onBandFrequencyCommit(activeBand, point.frequencyHz);
     }
     setActiveBand(null);
+    setDragPreview(null);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<SVGGElement>, index: number): void => {
@@ -179,6 +201,16 @@ export const EqCurveView = ({
     }
 
     if (!frequencyUnlocked) {
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const currentFrequency = bands[index].frequencyHz;
+      const currentIndex = eqFrequenciesHz.reduce((nearestIndex, candidate, candidateIndex) => {
+        const currentDistance = Math.abs(Math.log2(currentFrequency / eqFrequenciesHz[nearestIndex]));
+        const nextDistance = Math.abs(Math.log2(currentFrequency / candidate));
+        return nextDistance < currentDistance ? candidateIndex : nearestIndex;
+      }, 0);
+      const frequencyHz = eqFrequenciesHz[clamp(currentIndex + direction, 0, eqFrequenciesHz.length - 1)] ?? currentFrequency;
+      onBandFrequencyChange(index, frequencyHz);
+      onBandFrequencyCommit(index, frequencyHz);
       return;
     }
 
@@ -220,9 +252,9 @@ export const EqCurveView = ({
           const y = gainToY(gainDb);
           return (
             <g key={gainDb}>
-              <line className="eq-grid-line" x1={paddingLeft} x2={paddingLeft + plotWidth} y1={y} y2={y} />
+              <line className="eq-grid-line" data-major={gainDb % 6 === 0} x1={paddingLeft} x2={paddingLeft + plotWidth} y1={y} y2={y} />
               <text className="eq-y-label" x={width - paddingRight + 10} y={y + 4}>
-                {gainDb > 0 ? `+${gainDb}` : gainDb}
+                {`${gainDb > 0 ? '+' : ''}${gainDb} dB`}
               </text>
             </g>
           );
@@ -233,7 +265,7 @@ export const EqCurveView = ({
         <path className="eq-curve-stroke" d={path} />
         <path className="eq-curve-hit-area" d={path} />
 
-        {bands.map((band, index) => {
+        {displayBands.map((band, index) => {
           const point = bandToSvgPoint(band);
           const selected = selectedBandIndex === index;
           return (
@@ -262,7 +294,7 @@ export const EqCurveView = ({
           );
         })}
 
-        {bands.map((band, index) => {
+        {displayBands.map((band, index) => {
           const point = bandToSvgPoint(band);
           return (
             <text className="eq-x-label" x={point.x} y={height - 14} key={`${band.frequencyHz}-${index}-label`}>

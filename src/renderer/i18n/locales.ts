@@ -234,6 +234,51 @@ export type TranslationKey =
   | 'route.lyrics.label'
   | 'route.lyricsSettings.description'
   | 'route.lyricsSettings.label'
+  | 'route.mvSettings.description'
+  | 'route.mvSettings.label'
+  | 'mvSettings.action.chooseFile'
+  | 'mvSettings.action.close'
+  | 'mvSettings.action.dragReorder'
+  | 'mvSettings.action.dragSource'
+  | 'mvSettings.action.findLocal'
+  | 'mvSettings.action.openExternal'
+  | 'mvSettings.action.refresh'
+  | 'mvSettings.action.removeSelected'
+  | 'mvSettings.action.searchNetwork'
+  | 'mvSettings.aria.candidates'
+  | 'mvSettings.aria.drawer'
+  | 'mvSettings.aria.engineStatus'
+  | 'mvSettings.aria.maxQuality'
+  | 'mvSettings.aria.maxQualityOptions'
+  | 'mvSettings.aria.networkSources'
+  | 'mvSettings.aria.selectedQuality'
+  | 'mvSettings.aria.selectedQualityOptions'
+  | 'mvSettings.badge.credentialsMain'
+  | 'mvSettings.badge.proxyOnly'
+  | 'mvSettings.binding.selectedMv'
+  | 'mvSettings.binding.title'
+  | 'mvSettings.candidate.external'
+  | 'mvSettings.candidate.inApp'
+  | 'mvSettings.engine.network'
+  | 'mvSettings.engine.quality'
+  | 'mvSettings.engine.selected'
+  | 'mvSettings.engine.title'
+  | 'mvSettings.error.noActiveTrackBinding'
+  | 'mvSettings.error.noActiveTrackMatching'
+  | 'mvSettings.error.noActiveTrackNetworkSearch'
+  | 'mvSettings.error.noLocalCandidates'
+  | 'mvSettings.error.noNetworkCandidates'
+  | 'mvSettings.network.autoApply'
+  | 'mvSettings.network.maxQuality'
+  | 'mvSettings.network.title'
+  | 'mvSettings.provider.local'
+  | 'mvSettings.quality.max'
+  | 'mvSettings.status.auto'
+  | 'mvSettings.status.noActiveTrack'
+  | 'mvSettings.status.none'
+  | 'mvSettings.status.off'
+  | 'mvSettings.status.on'
+  | 'mvSettings.title'
   | 'route.playlists.description'
   | 'route.playlists.label'
   | 'route.queue.description'
@@ -356,6 +401,7 @@ export type TranslationKey =
   | 'settings.eq.action.freqFineUp'
   | 'settings.eq.action.freqUp'
   | 'settings.eq.action.holdBypass'
+  | 'settings.eq.action.hideAdvanced'
   | 'settings.eq.action.applyA'
   | 'settings.eq.action.applyB'
   | 'settings.eq.action.applySafePreamp'
@@ -372,6 +418,7 @@ export type TranslationKey =
   | 'settings.eq.action.revertUserPreset'
   | 'settings.eq.action.save'
   | 'settings.eq.action.saveAs'
+  | 'settings.eq.action.showAdvanced'
   | 'settings.eq.action.storeA'
   | 'settings.eq.action.storeB'
   | 'settings.eq.action.toggleBypassOff'
@@ -776,6 +823,51 @@ const zhCN: TranslationMap = {
   'route.lyrics.label': '歌词',
   'route.lyricsSettings.description': '歌词偏好设置。',
   'route.lyricsSettings.label': '歌词设置',
+  'route.mvSettings.description': 'MV 绑定与本地匹配设置。',
+  'route.mvSettings.label': 'MV 设置',
+  'mvSettings.action.chooseFile': '选择文件',
+  'mvSettings.action.close': '关闭 MV 设置',
+  'mvSettings.action.dragReorder': '拖拽调整优先级',
+  'mvSettings.action.dragSource': '拖拽 {provider} 调整优先级',
+  'mvSettings.action.findLocal': '查找本地',
+  'mvSettings.action.openExternal': '在外部打开已选 MV',
+  'mvSettings.action.refresh': '刷新',
+  'mvSettings.action.removeSelected': '移除已选 MV',
+  'mvSettings.action.searchNetwork': '搜索网络 MV',
+  'mvSettings.aria.candidates': 'MV 候选列表',
+  'mvSettings.aria.drawer': 'MV 设置',
+  'mvSettings.aria.engineStatus': 'MV 引擎状态',
+  'mvSettings.aria.maxQuality': '最高画质 {quality}',
+  'mvSettings.aria.maxQualityOptions': '最高画质选项',
+  'mvSettings.aria.networkSources': '网络来源优先级',
+  'mvSettings.aria.selectedQuality': '已选 MV 画质 {quality}',
+  'mvSettings.aria.selectedQualityOptions': '已选 MV 画质选项',
+  'mvSettings.badge.credentialsMain': '凭据保留在主进程',
+  'mvSettings.badge.proxyOnly': '仅代理访问',
+  'mvSettings.binding.selectedMv': '已选 MV',
+  'mvSettings.binding.title': 'MV来源',
+  'mvSettings.candidate.external': '外部',
+  'mvSettings.candidate.inApp': '应用内',
+  'mvSettings.engine.network': '网络',
+  'mvSettings.engine.quality': '画质',
+  'mvSettings.engine.selected': '已选',
+  'mvSettings.engine.title': 'MV 引擎',
+  'mvSettings.error.noActiveTrackBinding': '没有可用于 MV 绑定的当前曲库歌曲',
+  'mvSettings.error.noActiveTrackMatching': '没有可用于 MV 匹配的当前曲库歌曲',
+  'mvSettings.error.noActiveTrackNetworkSearch': '没有可用于网络 MV 搜索的当前曲库歌曲',
+  'mvSettings.error.noLocalCandidates': '没有找到本地 MV 候选',
+  'mvSettings.error.noNetworkCandidates': '没有找到网络 MV 候选',
+  'mvSettings.network.autoApply': '自动搜索网络MV',
+  'mvSettings.network.maxQuality': '最高画质',
+  'mvSettings.network.title': '网络来源',
+  'mvSettings.provider.local': '本地',
+  'mvSettings.quality.max': '最高',
+  'mvSettings.status.auto': '自动',
+  'mvSettings.status.noActiveTrack': '没有当前歌曲',
+  'mvSettings.status.none': '无',
+  'mvSettings.status.off': '关闭',
+  'mvSettings.status.on': '开启',
+  'mvSettings.title': 'MV 设置',
   'route.playlists.description': '用户歌单。',
   'route.playlists.label': '歌单',
   'route.queue.description': '播放队列。',
@@ -898,6 +990,7 @@ const zhCN: TranslationMap = {
   'settings.eq.action.freqFineUp': '细 +',
   'settings.eq.action.freqUp': '频率 +',
   'settings.eq.action.holdBypass': '按住旁路 EQ',
+  'settings.eq.action.hideAdvanced': '隐藏高级',
   'settings.eq.action.applyA': '应用 A',
   'settings.eq.action.applyB': '应用 B',
   'settings.eq.action.applySafePreamp': '应用安全前级',
@@ -914,6 +1007,7 @@ const zhCN: TranslationMap = {
   'settings.eq.action.revertUserPreset': '还原用户预设',
   'settings.eq.action.save': '保存',
   'settings.eq.action.saveAs': '另存为',
+  'settings.eq.action.showAdvanced': '高级',
   'settings.eq.action.storeA': '存入 A',
   'settings.eq.action.storeB': '存入 B',
   'settings.eq.action.toggleBypassOff': '关闭旁路',
@@ -1235,6 +1329,51 @@ const zhTW: TranslationMap = {
   'route.lyrics.description': '歌詞與沉浸播放。',
   'route.lyrics.label': '歌詞',
   'route.lyricsSettings.label': '歌詞設定',
+  'route.mvSettings.description': 'MV 綁定與本地匹配設定。',
+  'route.mvSettings.label': 'MV 設定',
+  'mvSettings.action.chooseFile': '選擇檔案',
+  'mvSettings.action.close': '關閉 MV 設定',
+  'mvSettings.action.dragReorder': '拖曳調整優先級',
+  'mvSettings.action.dragSource': '拖曳 {provider} 調整優先級',
+  'mvSettings.action.findLocal': '尋找本地',
+  'mvSettings.action.openExternal': '在外部打開已選 MV',
+  'mvSettings.action.refresh': '重新整理',
+  'mvSettings.action.removeSelected': '移除已選 MV',
+  'mvSettings.action.searchNetwork': '搜尋網路 MV',
+  'mvSettings.aria.candidates': 'MV 候選列表',
+  'mvSettings.aria.drawer': 'MV 設定',
+  'mvSettings.aria.engineStatus': 'MV 引擎狀態',
+  'mvSettings.aria.maxQuality': '最高畫質 {quality}',
+  'mvSettings.aria.maxQualityOptions': '最高畫質選項',
+  'mvSettings.aria.networkSources': '網路來源優先級',
+  'mvSettings.aria.selectedQuality': '已選 MV 畫質 {quality}',
+  'mvSettings.aria.selectedQualityOptions': '已選 MV 畫質選項',
+  'mvSettings.badge.credentialsMain': '憑證保留在主行程',
+  'mvSettings.badge.proxyOnly': '僅代理存取',
+  'mvSettings.binding.selectedMv': '已選 MV',
+  'mvSettings.binding.title': 'MV 來源',
+  'mvSettings.candidate.external': '外部',
+  'mvSettings.candidate.inApp': '應用內',
+  'mvSettings.engine.network': '網路',
+  'mvSettings.engine.quality': '畫質',
+  'mvSettings.engine.selected': '已選',
+  'mvSettings.engine.title': 'MV 引擎',
+  'mvSettings.error.noActiveTrackBinding': '沒有可用於 MV 綁定的目前曲庫歌曲',
+  'mvSettings.error.noActiveTrackMatching': '沒有可用於 MV 匹配的目前曲庫歌曲',
+  'mvSettings.error.noActiveTrackNetworkSearch': '沒有可用於網路 MV 搜尋的目前曲庫歌曲',
+  'mvSettings.error.noLocalCandidates': '沒有找到本地 MV 候選',
+  'mvSettings.error.noNetworkCandidates': '沒有找到網路 MV 候選',
+  'mvSettings.network.autoApply': '自動搜尋網路 MV',
+  'mvSettings.network.maxQuality': '最高畫質',
+  'mvSettings.network.title': '網路來源',
+  'mvSettings.provider.local': '本地',
+  'mvSettings.quality.max': '最高',
+  'mvSettings.status.auto': '自動',
+  'mvSettings.status.noActiveTrack': '沒有目前歌曲',
+  'mvSettings.status.none': '無',
+  'mvSettings.status.off': '關閉',
+  'mvSettings.status.on': '開啟',
+  'mvSettings.title': 'MV 設定',
   'route.playlists.label': '播放清單',
   'route.queue.label': '佇列',
   'queue.action.clear': '清空佇列',
@@ -1366,6 +1505,8 @@ const zhTW: TranslationMap = {
   'settings.integrations.mobile.title': '手機遙控',
   'settings.remote.library.title': '遠端音樂庫',
   'settings.remote.library.description': '本階段禁止網路硬碟 / 遠端 / 串流，只保留設定分組佔位。',
+  'settings.eq.action.hideAdvanced': '隱藏進階',
+  'settings.eq.action.showAdvanced': '進階',
   'settings.eq.ab.summary': '{preset} / 峰值 {peak} / 輸出 {output} / 前級 {preamp}',
   'settings.eq.level.clips': '削波 {count}',
   'settings.eq.level.estimatedOutputPeak': '估算輸出峰值',
@@ -1567,6 +1708,51 @@ const jaJP: TranslationMap = {
   'route.lyrics.label': '歌詞',
   'route.lyricsSettings.description': '歌詞の設定。',
   'route.lyricsSettings.label': '歌詞設定',
+  'route.mvSettings.description': 'MV の紐付けとローカル検索設定。',
+  'route.mvSettings.label': 'MV 設定',
+  'mvSettings.action.chooseFile': 'ファイルを選択',
+  'mvSettings.action.close': 'MV 設定を閉じる',
+  'mvSettings.action.dragReorder': 'ドラッグして優先度を変更',
+  'mvSettings.action.dragSource': '{provider} をドラッグして優先度を変更',
+  'mvSettings.action.findLocal': 'ローカル検索',
+  'mvSettings.action.openExternal': '選択した MV を外部で開く',
+  'mvSettings.action.refresh': '更新',
+  'mvSettings.action.removeSelected': '選択した MV を削除',
+  'mvSettings.action.searchNetwork': 'ネットワーク MV を検索',
+  'mvSettings.aria.candidates': 'MV 候補',
+  'mvSettings.aria.drawer': 'MV 設定',
+  'mvSettings.aria.engineStatus': 'MV エンジン状態',
+  'mvSettings.aria.maxQuality': '最大画質 {quality}',
+  'mvSettings.aria.maxQualityOptions': '最大画質オプション',
+  'mvSettings.aria.networkSources': 'ネットワークソース優先度',
+  'mvSettings.aria.selectedQuality': '選択中 MV 画質 {quality}',
+  'mvSettings.aria.selectedQualityOptions': '選択中 MV 画質オプション',
+  'mvSettings.badge.credentialsMain': '認証情報はメインに保持',
+  'mvSettings.badge.proxyOnly': 'プロキシのみ',
+  'mvSettings.binding.selectedMv': '選択中の MV',
+  'mvSettings.binding.title': 'MV ソース',
+  'mvSettings.candidate.external': '外部',
+  'mvSettings.candidate.inApp': 'アプリ内',
+  'mvSettings.engine.network': 'ネットワーク',
+  'mvSettings.engine.quality': '画質',
+  'mvSettings.engine.selected': '選択中',
+  'mvSettings.engine.title': 'MV エンジン',
+  'mvSettings.error.noActiveTrackBinding': 'MV の紐付けに使えるライブラリ曲が選択されていません',
+  'mvSettings.error.noActiveTrackMatching': 'MV 検索に使えるライブラリ曲が選択されていません',
+  'mvSettings.error.noActiveTrackNetworkSearch': 'ネットワーク MV 検索に使えるライブラリ曲が選択されていません',
+  'mvSettings.error.noLocalCandidates': 'ローカル MV 候補が見つかりません',
+  'mvSettings.error.noNetworkCandidates': 'ネットワーク MV 候補が見つかりません',
+  'mvSettings.network.autoApply': 'ネットワーク MV を自動検索',
+  'mvSettings.network.maxQuality': '最大画質',
+  'mvSettings.network.title': 'ネットワークソース',
+  'mvSettings.provider.local': 'ローカル',
+  'mvSettings.quality.max': '最大',
+  'mvSettings.status.auto': '自動',
+  'mvSettings.status.noActiveTrack': '再生中の曲なし',
+  'mvSettings.status.none': 'なし',
+  'mvSettings.status.off': 'オフ',
+  'mvSettings.status.on': 'オン',
+  'mvSettings.title': 'MV 設定',
   'route.playlists.description': 'ユーザープレイリスト。',
   'route.playlists.label': 'プレイリスト',
   'route.queue.description': '再生キュー。',
@@ -1670,6 +1856,8 @@ const jaJP: TranslationMap = {
   'settings.eq.error.bridgeDeletePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを削除してください。',
   'settings.eq.error.bridgeSavePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを保存してください。',
   'settings.eq.error.presetName': 'プリセット名を入力してください。',
+  'settings.eq.action.hideAdvanced': '詳細を隠す',
+  'settings.eq.action.showAdvanced': '詳細',
   'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
   'settings.eq.level.clips': 'クリップ {count}',
   'settings.eq.level.estimatedOutputPeak': '推定出力ピーク',
@@ -1962,6 +2150,51 @@ const enUS: TranslationMap = {
   'route.lyrics.label': 'Lyrics',
   'route.lyricsSettings.description': 'Lyrics preferences.',
   'route.lyricsSettings.label': 'Lyrics Settings',
+  'route.mvSettings.description': 'MV binding and local matching settings.',
+  'route.mvSettings.label': 'MV Settings',
+  'mvSettings.action.chooseFile': 'Choose file',
+  'mvSettings.action.close': 'Close MV settings',
+  'mvSettings.action.dragReorder': 'Drag to set priority',
+  'mvSettings.action.dragSource': 'Drag {provider} to set priority',
+  'mvSettings.action.findLocal': 'Find local',
+  'mvSettings.action.openExternal': 'Open selected MV externally',
+  'mvSettings.action.refresh': 'Refresh',
+  'mvSettings.action.removeSelected': 'Remove selected MV',
+  'mvSettings.action.searchNetwork': 'Search network MV',
+  'mvSettings.aria.candidates': 'MV candidates',
+  'mvSettings.aria.drawer': 'MV settings',
+  'mvSettings.aria.engineStatus': 'MV engine status',
+  'mvSettings.aria.maxQuality': 'Max quality {quality}',
+  'mvSettings.aria.maxQualityOptions': 'Max quality options',
+  'mvSettings.aria.networkSources': 'Network source priority',
+  'mvSettings.aria.selectedQuality': 'Selected MV quality {quality}',
+  'mvSettings.aria.selectedQualityOptions': 'Selected MV quality options',
+  'mvSettings.badge.credentialsMain': 'Credentials stay in main',
+  'mvSettings.badge.proxyOnly': 'Proxy only',
+  'mvSettings.binding.selectedMv': 'Selected MV',
+  'mvSettings.binding.title': 'MV Source',
+  'mvSettings.candidate.external': 'External',
+  'mvSettings.candidate.inApp': 'In-app',
+  'mvSettings.engine.network': 'Network',
+  'mvSettings.engine.quality': 'Quality',
+  'mvSettings.engine.selected': 'Selected',
+  'mvSettings.engine.title': 'MV Engine',
+  'mvSettings.error.noActiveTrackBinding': 'No active library track for MV binding',
+  'mvSettings.error.noActiveTrackMatching': 'No active library track for MV matching',
+  'mvSettings.error.noActiveTrackNetworkSearch': 'No active library track for network MV search',
+  'mvSettings.error.noLocalCandidates': 'No local MV candidates found',
+  'mvSettings.error.noNetworkCandidates': 'No network MV candidates found',
+  'mvSettings.network.autoApply': 'Auto search network MV',
+  'mvSettings.network.maxQuality': 'Max quality',
+  'mvSettings.network.title': 'Network Sources',
+  'mvSettings.provider.local': 'Local',
+  'mvSettings.quality.max': 'Max',
+  'mvSettings.status.auto': 'Auto',
+  'mvSettings.status.noActiveTrack': 'No active track',
+  'mvSettings.status.none': 'None',
+  'mvSettings.status.off': 'Off',
+  'mvSettings.status.on': 'On',
+  'mvSettings.title': 'MV Settings',
   'route.playlists.description': 'User playlists.',
   'route.playlists.label': 'Playlists',
   'route.queue.description': 'Playback queue.',
@@ -2034,6 +2267,7 @@ const enUS: TranslationMap = {
   'settings.eq.action.freqFineUp': 'Fine +',
   'settings.eq.action.freqUp': 'Freq +',
   'settings.eq.action.holdBypass': 'Hold to Bypass EQ',
+  'settings.eq.action.hideAdvanced': 'Hide advanced',
   'settings.eq.action.applyA': 'Apply A',
   'settings.eq.action.applyB': 'Apply B',
   'settings.eq.action.applySafePreamp': 'Apply safe preamp',
@@ -2050,6 +2284,7 @@ const enUS: TranslationMap = {
   'settings.eq.action.revertUserPreset': 'Revert user preset',
   'settings.eq.action.save': 'Save',
   'settings.eq.action.saveAs': 'Save as',
+  'settings.eq.action.showAdvanced': 'Advanced',
   'settings.eq.action.storeA': 'Store A',
   'settings.eq.action.storeB': 'Store B',
   'settings.eq.action.toggleBypassOff': 'Disable bypass',

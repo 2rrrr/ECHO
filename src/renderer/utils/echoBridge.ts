@@ -16,4 +16,6 @@ export const getLibraryBridge = (): Window['echo']['library'] | null => getEchoB
 
 export const getLastFmBridge = (): Window['echo']['lastfm'] | null => getEchoBridge()?.lastfm ?? null;
 
+export const getMvBridge = (): Window['echo']['mv'] | null => getEchoBridge()?.mv ?? null;
+
 export const getPlaybackBridge = (): Window['echo']['playback'] | null => getEchoBridge()?.playback ?? null;

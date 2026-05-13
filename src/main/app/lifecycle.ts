@@ -4,6 +4,7 @@ import { requestAppQuit } from './tray';
 import { getMainWindow } from './windowManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
 import { registerCoverProtocolHandler } from '../protocol/coverProtocol';
+import { registerVideoProtocolHandler } from '../protocol/videoProtocol';
 import { disposeSmtcIntegration, initializeSmtcIntegration } from '../integrations/smtc/SmtcStatusSync';
 import { disposeDiscordPresenceIntegration, initializeDiscordPresenceIntegration } from '../integrations/discord/DiscordPresenceStatusSync';
 import { disposeLastFmIntegration, initializeLastFmIntegration } from '../integrations/lastfm/LastFmStatusSync';
@@ -12,6 +13,7 @@ export const registerAppLifecycle = (): void => {
   app.whenReady().then(() => {
     getCrashReportService().initialize();
     registerCoverProtocolHandler();
+    registerVideoProtocolHandler();
     void initializeSmtcIntegration();
     void initializeDiscordPresenceIntegration();
     initializeLastFmIntegration();

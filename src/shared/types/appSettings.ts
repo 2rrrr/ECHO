@@ -1,7 +1,10 @@
 import type { ChannelBalanceState, PlaybackSpeedMode } from './audio';
 import type { DuplicateTrackMode } from './library';
+import type { LyricsProviderId } from './lyrics';
+import type { MvMaxQuality, NetworkMvProviderId } from './mv';
 
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
+export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
 
 export type AppSettings = {
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
@@ -12,9 +15,28 @@ export type AppSettings = {
   networkMetadataProviders: Array<'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music'>;
   lyricsNetworkEnabled: boolean;
   lyricsPreferredProvider: 'lrclib';
+  lyricsEnabledProviders?: LyricsProviderId[];
+  lyricsProviderTimeoutMs?: number;
+  lyricsTotalMatchTimeoutMs?: number;
+  lyricsCoverAutoAcceptScore?: number;
   lyricsAutoSearch: boolean;
   lyricsAutoAcceptScore: number;
   lyricsDefaultOffsetMs: number;
+  lyricsEnabled: boolean;
+  lyricsRomanizationEnabled: boolean;
+  lyricsFontSizePx: number;
+  lyricsColor: string;
+  lyricsBackgroundMode: LyricsBackgroundMode;
+  lyricsCustomWallpaperPath: string | null;
+  lyricsCoverOpacityPercent: number;
+  lyricsCoverBlurPx: number;
+  lyricsCoverBrightnessPercent: number;
+  lyricsBackgroundScalePercent: number;
+  mvEnabledProviders: NetworkMvProviderId[];
+  mvProviderOrder: NetworkMvProviderId[];
+  mvAutoSearch: boolean;
+  mvMaxQuality: MvMaxQuality;
+  mvAllow60fps: boolean;
   channelBalance: ChannelBalanceState;
   playerVolume: number;
   playbackSpeed: number;

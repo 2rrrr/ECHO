@@ -66,6 +66,12 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryClassifyImportPaths, ['D:\\Music']);
   });
 
+  it('exposes lyrics wallpaper picker through IPC', async () => {
+    await exposedApi!.app.chooseLyricsWallpaper();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppChooseLyricsWallpaper);
+  });
+
   it('exposes duplicate track APIs through IPC', async () => {
     await exposedApi!.library.refreshDuplicateTracks('strict');
     await exposedApi!.library.getDuplicateTrackVersions('track-1');
@@ -101,5 +107,35 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsRejectCandidate, 'candidate-1');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsSetOffset, 'track-1', 500);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsClearCache, 'track-1');
+  });
+
+  it('exposes MV APIs through IPC', async () => {
+    await exposedApi!.mv.getSelected('track-1');
+    await exposedApi!.mv.getSettings();
+    await exposedApi!.mv.setSettings({ maxQuality: '2160p' });
+    await exposedApi!.mv.findLocalCandidates('track-1');
+    await exposedApi!.mv.searchNetworkCandidates('track-1');
+    await exposedApi!.mv.getCandidates('track-1');
+    await exposedApi!.mv.resolveStreams('video-1');
+    await exposedApi!.mv.setQuality('video-1', 'auto');
+    await exposedApi!.mv.chooseLocalVideo('track-1');
+    await exposedApi!.mv.bindLocalVideo('track-1', 'D:\\Music\\Song.mp4');
+    await exposedApi!.mv.selectVideo('track-1', 'video-1');
+    await exposedApi!.mv.clearSelected('track-1');
+    await exposedApi!.mv.openExternal('video-1');
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvGetSelected, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvGetSettings);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvSetSettings, { maxQuality: '2160p' });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvFindLocalCandidates, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvSearchNetworkCandidates, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvGetCandidates, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvResolveStreams, 'video-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvSetQuality, 'video-1', 'auto');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvChooseLocalVideo, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvBindLocalVideo, 'track-1', 'D:\\Music\\Song.mp4');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvSelectVideo, 'track-1', 'video-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvClearSelected, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvOpenExternal, 'video-1');
   });
 });

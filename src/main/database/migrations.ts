@@ -472,6 +472,94 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 16,
+    apply: (database) => {
+      addColumnIfMissing(database, 'lyrics_candidates', 'risk', 'risk TEXT');
+      addColumnIfMissing(database, 'lyrics_candidates', 'reasons_json', 'reasons_json TEXT');
+      addColumnIfMissing(database, 'lyrics_candidates', 'title_score', 'title_score REAL');
+      addColumnIfMissing(database, 'lyrics_candidates', 'artist_score', 'artist_score REAL');
+      addColumnIfMissing(database, 'lyrics_candidates', 'album_score', 'album_score REAL');
+      addColumnIfMissing(database, 'lyrics_candidates', 'duration_score', 'duration_score REAL');
+      addColumnIfMissing(database, 'lyrics_candidates', 'version_score', 'version_score REAL');
+    },
+  },
+  {
+    id: 17,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS track_videos (
+          id TEXT PRIMARY KEY,
+          track_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          source_id TEXT,
+          title TEXT,
+          artist TEXT,
+          url TEXT,
+          file_path TEXT,
+          mime_type TEXT,
+          duration_seconds REAL,
+          width INTEGER,
+          height INTEGER,
+          score REAL NOT NULL DEFAULT 0,
+          selected INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_track_videos_track_id ON track_videos(track_id);
+        CREATE INDEX IF NOT EXISTS idx_track_videos_track_selected ON track_videos(track_id, selected);
+        CREATE INDEX IF NOT EXISTS idx_track_videos_provider_source ON track_videos(provider, source_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_track_videos_one_selected
+          ON track_videos(track_id)
+          WHERE selected = 1;
+      `);
+    },
+  },
+  {
+    id: 18,
+    apply: (database) => {
+      addColumnIfMissing(database, 'track_videos', 'provider_url', 'provider_url TEXT');
+      addColumnIfMissing(database, 'track_videos', 'thumbnail_url', 'thumbnail_url TEXT');
+      addColumnIfMissing(database, 'track_videos', 'selected_quality_id', 'selected_quality_id TEXT');
+      addColumnIfMissing(database, 'track_videos', 'quality_label', 'quality_label TEXT');
+      addColumnIfMissing(database, 'track_videos', 'fps', 'fps REAL');
+      addColumnIfMissing(database, 'track_videos', 'raw_provider_json', 'raw_provider_json TEXT');
+
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS track_video_streams (
+          id TEXT PRIMARY KEY,
+          video_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          variant_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          quality_tier TEXT NOT NULL,
+          width INTEGER,
+          height INTEGER,
+          fps REAL,
+          codec TEXT,
+          container TEXT,
+          mime_type TEXT,
+          protocol TEXT NOT NULL,
+          url TEXT,
+          headers_json TEXT NOT NULL DEFAULT '{}',
+          playable_in_app INTEGER NOT NULL DEFAULT 0,
+          requires_account INTEGER NOT NULL DEFAULT 0,
+          expires_at TEXT,
+          raw_json TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (video_id) REFERENCES track_videos(id) ON DELETE CASCADE,
+          UNIQUE(video_id, variant_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_track_video_streams_video_id ON track_video_streams(video_id);
+        CREATE INDEX IF NOT EXISTS idx_track_video_streams_provider ON track_video_streams(provider, variant_id);
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {
