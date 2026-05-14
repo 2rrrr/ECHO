@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IpcChannels } from '../shared/constants/ipcChannels';
 import type { EchoApi } from './apiTypes';
 import type { SmtcCommand } from '../shared/types/smtc';
+import type { UpdateStatus } from '../shared/types/updates';
 
 const sanitizePathList = (paths: unknown): string[] =>
   Array.isArray(paths) ? paths.filter((path): path is string => typeof path === 'string') : [];
@@ -43,6 +44,13 @@ const echoApi: EchoApi = {
     setCoverCacheDirectory: (request) => ipcRenderer.invoke(IpcChannels.AppSetCoverCacheDirectory, request),
     getUpdateStatus: () => ipcRenderer.invoke(IpcChannels.AppGetUpdateStatus),
     checkForUpdates: () => ipcRenderer.invoke(IpcChannels.AppCheckForUpdates),
+    onUpdateStatus: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status as UpdateStatus);
+      };
+      ipcRenderer.on(IpcChannels.AppUpdateStatusChanged, listener);
+      return () => ipcRenderer.off(IpcChannels.AppUpdateStatusChanged, listener);
+    },
     openRepository: () => ipcRenderer.invoke(IpcChannels.AppOpenRepository),
   },
   library: {
@@ -186,6 +194,7 @@ const echoApi: EchoApi = {
     search: (request) => ipcRenderer.invoke(IpcChannels.StreamingSearch, request),
     getTrack: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetTrack, request),
     resolvePlayback: (request) => ipcRenderer.invoke(IpcChannels.StreamingResolvePlayback, request),
+    analyzeBpm: (request) => ipcRenderer.invoke(IpcChannels.StreamingAnalyzeBpm, request),
     getLyrics: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetLyrics, request),
     getMv: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetMv, request),
     getProviders: () => ipcRenderer.invoke(IpcChannels.StreamingGetProviders),

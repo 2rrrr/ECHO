@@ -412,6 +412,47 @@
   overflow-wrap: anywhere;
 }
 
+html[data-theme="dark"] .folders-sidebar,
+html[data-theme="dark"] .folders-main,
+html[data-theme="dark"] .folders-actions-panel {
+  border-color: var(--color-border);
+}
+
+html[data-theme="dark"] .folder-root-button,
+html[data-theme="dark"] .folder-tree-node,
+html[data-theme="dark"] .folder-metrics span,
+html[data-theme="dark"] .folder-toggle,
+html[data-theme="dark"] .folder-sort-select,
+html[data-theme="dark"] .folder-import-box input,
+html[data-theme="dark"] .folder-import-box,
+html[data-theme="dark"] .folder-action-grid,
+html[data-theme="dark"] .folder-import-box button,
+html[data-theme="dark"] .folder-action-grid button,
+html[data-theme="dark"] .folder-scan-card {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: rgba(27, 33, 42, 0.72);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+html[data-theme="dark"] .folder-root-button:hover,
+html[data-theme="dark"] .folder-tree-node:hover,
+html[data-theme="dark"] .folder-root-button[data-active='true'],
+html[data-theme="dark"] .folder-tree-node[data-active='true'],
+html[data-theme="dark"] .folder-import-box button:hover,
+html[data-theme="dark"] .folder-action-grid button:hover {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border-strong);
+  background: rgba(39, 48, 61, 0.88);
+}
+
+html[data-theme="dark"] .folder-root-button[data-active='true'],
+html[data-theme="dark"] .folder-tree-node[data-active='true'],
+html[data-theme="dark"] .folder-scan-card[data-running='true'] {
+  border-color: rgba(100, 181, 255, 0.24);
+  background: rgba(100, 181, 255, 0.12);
+}
+
 @media (max-width: 1180px) {
   .folders-workbench {
     grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);

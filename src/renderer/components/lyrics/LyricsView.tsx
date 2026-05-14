@@ -7,6 +7,7 @@ type LyricScrollMode = 'animated' | 'instant' | 'recenter';
 const lyricsLayoutSettingKeys = new Set([
   'lyricsFontSizePx',
   'lyricsSecondaryFontSizePx',
+  'lyricsLineSpacingPercent',
   'lyricsRomanizationEnabled',
   'lyricsTranslationEnabled',
   'lyricsContextOpacityPercent',

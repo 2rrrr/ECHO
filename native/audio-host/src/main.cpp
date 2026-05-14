@@ -349,7 +349,7 @@ int getDeviceBufferSize(const Options& options)
     if (options.bufferSize > 0)
         return options.bufferSize;
 
-    return 512;
+    return 256;
 }
 
 std::vector<int> buildBufferSizeAttempts(const Options& options)
@@ -365,7 +365,7 @@ std::vector<int> buildBufferSizeAttempts(const Options& options)
     const int requestedBufferSize = getDeviceBufferSize(options);
     add(requestedBufferSize);
 
-    for (const auto fallbackSize : { 512, 1024, 2048, 4096, 8192 })
+    for (const auto fallbackSize : { 256, 512, 1024, 2048, 4096, 8192 })
     {
         if (fallbackSize > requestedBufferSize)
             add(fallbackSize);

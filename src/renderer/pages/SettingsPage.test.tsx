@@ -6,6 +6,7 @@ import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadSettings } from '../../shared/types/downloads';
 
 const settings: AppSettings = {
+  appearanceTheme: 'light',
   albumMergeStrategy: 'standard',
   artistWallAlbumArtwork: false,
   coverCacheDir: null,
@@ -33,7 +34,10 @@ const settings: AppSettings = {
   lyricsPlayerBarDrawerEnabled: false,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
-  lyricsFontSizePx: 36,
+  lyricsFontSizePx: 40,
+  lyricsSecondaryFontSizePx: 22,
+  lyricsLineSpacingPercent: 110,
+  lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -195,10 +199,52 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.localStorage.clear();
+  delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.themeMode;
   delete (window as { echo?: Window['echo'] }).echo;
 });
 
 describe('SettingsPage', () => {
+  it('saves the dark theme from Settings and marks the selected chip', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.appearance.label')[0]);
+    const darkButton = screen.getByRole('button', { name: /settings\.appearance\.theme\.dark/ });
+    fireEvent.click(darkButton);
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceTheme: 'dark' }));
+    expect(darkButton.className).toContain('active');
+    expect(document.documentElement.dataset.themeMode).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('saves the system theme from Settings and marks the selected chip', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.appearance.label')[0]);
+    const systemButton = screen.getByRole('button', { name: /settings\.appearance\.theme\.followSystem/ });
+    fireEvent.click(systemButton);
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceTheme: 'system' }));
+    expect(systemButton.className).toContain('active');
+    expect(document.documentElement.dataset.themeMode).toBe('system');
+  });
+
   it('saves the artist wall album artwork setting and announces settings changes', async () => {
     const settingsChanged = vi.fn();
     Element.prototype.scrollIntoView = vi.fn();
@@ -256,7 +302,6 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     fireEvent.click(screen.getAllByText('route.lyricsSettings.label')[0]);
     expect(screen.queryByText('Lyrics Engine')).toBeNull();
-    expect(screen.queryByRole('searchbox')).toBeNull();
     fireEvent.click(await screen.findByRole('checkbox', { name: /底栏抽屉/ }));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));

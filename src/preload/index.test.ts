@@ -124,12 +124,20 @@ describe('preload SMTC API', () => {
   });
 
   it('exposes app update helpers through IPC', async () => {
+    const handler = vi.fn();
     await exposedApi!.app.getUpdateStatus();
     await exposedApi!.app.checkForUpdates();
+    const unsubscribe = exposedApi!.app.onUpdateStatus(handler);
+    const listener = listeners.get(IpcChannels.AppUpdateStatusChanged);
+    const status = { state: 'downloading', downloadPercent: 42 };
+    listener?.({}, status);
+    unsubscribe();
     await exposedApi!.app.openRepository();
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppGetUpdateStatus);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppCheckForUpdates);
+    expect(handler).toHaveBeenCalledWith(status);
+    expect(listeners.has(IpcChannels.AppUpdateStatusChanged)).toBe(false);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppOpenRepository);
   });
 

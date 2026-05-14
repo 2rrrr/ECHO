@@ -182,10 +182,10 @@ void testCoefficientUpdatesStopInSteadyState()
 void testHostBufferFallbackAttempts()
 {
     const auto shared = parseOptions({ "echo-audio-host" });
-    requireVectorEquals(buildBufferSizeAttempts(shared), { 512, 1024, 2048, 4096, 8192 }, "shared buffer fallback chain");
+    requireVectorEquals(buildBufferSizeAttempts(shared), { 256, 512, 1024, 2048, 4096, 8192 }, "shared buffer fallback chain");
 
     const auto asio = parseOptions({ "echo-audio-host", "-asio" });
-    requireVectorEquals(buildBufferSizeAttempts(asio), { 512, 1024, 2048, 4096, 8192 }, "ASIO buffer fallback chain");
+    requireVectorEquals(buildBufferSizeAttempts(asio), { 256, 512, 1024, 2048, 4096, 8192 }, "ASIO buffer fallback chain");
 
     const auto balanced = parseOptions({ "echo-audio-host", "-exclusive", "-buffer", "2048" });
     requireVectorEquals(buildBufferSizeAttempts(balanced), { 2048, 4096, 8192 }, "exclusive requested buffer fallback chain");

@@ -108,9 +108,12 @@ export const loadPersistedAppearancePreferences = async (): Promise<AppearancePr
 export const applyAppearancePreferences = (preferences: AppearancePreferences): void => {
   const normalized = normalizePreferences(preferences);
   const root = document.documentElement;
-  const textLightness = clamp(54 - normalized.textDepth * 0.42, 12, 40);
-  const mutedLightness = clamp(textLightness + 20, 38, 62);
-  const subtleLightness = clamp(textLightness + 34, 52, 74);
+  const isDarkTheme = root.dataset.theme === 'dark';
+  const textLightness = isDarkTheme
+    ? clamp(66 + normalized.textDepth * 0.28, 78, 94)
+    : clamp(54 - normalized.textDepth * 0.42, 12, 40);
+  const mutedLightness = isDarkTheme ? clamp(textLightness - 18, 58, 76) : clamp(textLightness + 20, 38, 62);
+  const subtleLightness = isDarkTheme ? clamp(textLightness - 34, 42, 58) : clamp(textLightness + 34, 52, 74);
   const fontStack = [
     serializeFontList(normalized.mainFontFamily),
     serializeFontList(normalized.chineseFontFamily),
@@ -128,10 +131,13 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences): 
   root.style.setProperty('--echo-font-family', fontStack);
   root.style.setProperty('--echo-base-font-size', `${normalized.baseFontSize}px`);
   root.style.setProperty('--echo-ui-line-height', normalized.lineHeight.toFixed(2));
-  root.style.setProperty('--color-text', `hsl(214 30% ${textLightness.toFixed(1)}%)`);
-  root.style.setProperty('--color-muted', `hsl(214 18% ${mutedLightness.toFixed(1)}%)`);
-  root.style.setProperty('--color-subtle', `hsl(214 14% ${subtleLightness.toFixed(1)}%)`);
-  root.style.setProperty('--echo-heading-text', `hsl(214 30% ${Math.max(textLightness - 3, 12).toFixed(1)}%)`);
+  root.style.setProperty('--color-text', `hsl(214 ${isDarkTheme ? 24 : 30}% ${textLightness.toFixed(1)}%)`);
+  root.style.setProperty('--color-muted', `hsl(214 ${isDarkTheme ? 14 : 18}% ${mutedLightness.toFixed(1)}%)`);
+  root.style.setProperty('--color-subtle', `hsl(214 ${isDarkTheme ? 10 : 14}% ${subtleLightness.toFixed(1)}%)`);
+  root.style.setProperty(
+    '--echo-heading-text',
+    `hsl(214 ${isDarkTheme ? 28 : 30}% ${(isDarkTheme ? Math.min(textLightness + 6, 96) : Math.max(textLightness - 3, 12)).toFixed(1)}%)`,
+  );
 };
 
 const loadedFontFaces = new Map<AppearanceFontSlot, FontFace>();

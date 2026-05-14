@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountService } from './AccountService';
 
 const tempDirs: string[] = [];
@@ -17,6 +17,7 @@ const createService = (): { service: AccountService; storagePath: string } => {
 };
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -105,5 +106,41 @@ describe('AccountService', () => {
     expect(safe).not.toContain('SESSDATA=secret');
     expect(safe).not.toContain('csrf-secret');
     expect(safe).toContain('[redacted]');
+  });
+
+  it('checks Bilibili cookies against the real login status API', async () => {
+    const { service } = createService();
+    service.saveCookie('bilibili', 'SESSDATA=expired; DedeUserID=1; bili_jct=csrf');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ code: -101, data: { isLogin: false } }), { headers: { 'Content-Type': 'application/json' } })),
+    );
+
+    const status = await service.checkAccount('bilibili');
+
+    expect(status.connected).toBe(false);
+    expect(status.error).toContain('invalid or expired');
+  });
+
+  it('keeps Bilibili connected after a successful login check', async () => {
+    const { service } = createService();
+    service.saveCookie('bilibili', 'SESSDATA=valid; DedeUserID=1; bili_jct=csrf');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ code: 0, data: { isLogin: true, uname: 'Moe', face: 'https://i.example/avatar.jpg', mid: 1 } }), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    const status = await service.checkAccount('bilibili');
+
+    expect(status).toMatchObject({
+      provider: 'bilibili',
+      connected: true,
+      displayName: 'Moe',
+      error: null,
+    });
   });
 });

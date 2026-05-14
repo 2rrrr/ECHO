@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   ArrowLeft,
+  FastForward,
   Disc3,
   Music2,
+  Rewind,
+  RotateCcw,
 } from "lucide-react";
 import type { AudioStatus } from "../../shared/types/audio";
 import type { AppSettings } from "../../shared/types/appSettings";
@@ -49,6 +52,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsAutoAcceptScore"
   | "lyricsGlobalSyncOffsetMs"
   | "lyricsSecondaryFontSizePx"
+  | "lyricsLineSpacingPercent"
   | "lyricsContextOpacityPercent"
   | "lyricsCoverOpacityPercent"
   | "lyricsCoverBlurPx"
@@ -63,7 +67,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
-  lyricsFontSizePx: 36,
+  lyricsFontSizePx: 40,
   lyricsColor: "#314054",
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
@@ -72,8 +76,9 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
   lyricsGlobalSyncOffsetMs: 0,
-  lyricsSecondaryFontSizePx: 18,
-  lyricsContextOpacityPercent: 38,
+  lyricsSecondaryFontSizePx: 22,
+  lyricsLineSpacingPercent: 110,
+  lyricsContextOpacityPercent: 49,
   lyricsCoverOpacityPercent: 100,
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
@@ -167,6 +172,11 @@ const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null)
   window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
 };
 
+type PlaybackSeekedDetail = {
+  positionSeconds?: number;
+  trackId?: string | null;
+};
+
 const isWindowApproximatelyMaximized = (): boolean => {
   const widthDelta = Math.abs(window.outerWidth - window.screen.availWidth);
   const heightDelta = Math.abs(window.outerHeight - window.screen.availHeight);
@@ -184,6 +194,13 @@ const formatDuration = (durationSeconds: number | null): string => {
 };
 
 const formatScore = (score: number): string => `${Math.round(score * 100)}%`;
+const formatOffset = (offsetMs: number): string => {
+  if (offsetMs === 0) {
+    return "0ms";
+  }
+
+  return `${offsetMs > 0 ? "+" : ""}${offsetMs}ms`;
+};
 
 const riskLabel = (risk: LyricsSearchCandidate["risk"]): string => {
   if (risk === "low") return "精准匹配";
@@ -217,7 +234,7 @@ const sourceFilterKey = (candidate: LyricsSearchCandidate): string =>
 
 const selectAutoApplyCandidate = (
   candidates: LyricsSearchCandidate[],
-  settings: LyricsDisplaySettings,
+  settings: Pick<LyricsDisplaySettings, "lyricsAutoAcceptScore" | "lyricsAutoSearch">,
 ): LyricsSearchCandidate | null => {
   if (!settings.lyricsAutoSearch) {
     return null;
@@ -230,7 +247,7 @@ const selectAutoApplyCandidate = (
   return candidates.find(
     (candidate) =>
       candidate.score >= threshold &&
-      candidate.risk !== "high" &&
+      (candidate.risk ?? "low") === "low" &&
       (candidate.hasSynced || candidate.hasPlain || candidate.instrumental),
   ) ?? null;
 };
@@ -270,6 +287,7 @@ const selectLyricsDisplaySettings = (
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackLyricsDisplaySettings.lyricsSecondaryFontSizePx,
+  lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
   lyricsCoverBlurPx: settings.lyricsCoverBlurPx,
@@ -293,6 +311,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsAutoAcceptScore",
   "lyricsGlobalSyncOffsetMs",
   "lyricsSecondaryFontSizePx",
+  "lyricsLineSpacingPercent",
   "lyricsContextOpacityPercent",
   "lyricsCoverOpacityPercent",
   "lyricsCoverBlurPx",
@@ -359,26 +378,82 @@ const useLyricsDisplayPosition = (
     updatedAtMs: performance.now(),
   }));
   const clockRef = useRef({
+    currentFilePath,
+    currentTrackId,
     durationSeconds: sourceDurationSeconds,
     playbackRate,
     positionSeconds: clampPlaybackPosition(
       sourcePositionSeconds,
       sourceDurationSeconds,
     ),
+    sourcePositionSeconds: clampPlaybackPosition(
+      sourcePositionSeconds,
+      sourceDurationSeconds,
+    ),
     state,
     updatedAtMs: performance.now(),
   });
+  const seekAnchorRef = useRef<{ positionSeconds: number; trackId: string | null; updatedAtMs: number } | null>(null);
 
   useEffect(() => {
-    const nextPositionSeconds = clampPlaybackPosition(
+    const now = performance.now();
+    const previous = clockRef.current;
+    const samePlayback =
+      previous.currentTrackId === currentTrackId &&
+      previous.currentFilePath === currentFilePath;
+    const durationLimit =
+      sourceDurationSeconds && sourceDurationSeconds > 0
+        ? sourceDurationSeconds
+        : Number.POSITIVE_INFINITY;
+    const boundedSourcePosition = Math.min(
+      Math.max(0, sourcePositionSeconds),
+      durationLimit,
+    );
+    let nextPositionSeconds = clampPlaybackPosition(
       sourcePositionSeconds,
       sourceDurationSeconds,
     );
-    const updatedAtMs = performance.now();
+    const updatedAtMs = now;
+    const seekAnchor = seekAnchorRef.current;
+    if (seekAnchor) {
+      if (seekAnchor.trackId && currentTrackId && seekAnchor.trackId !== currentTrackId) {
+        seekAnchorRef.current = null;
+      } else {
+        const elapsedSeconds = Math.max(0, (updatedAtMs - seekAnchor.updatedAtMs) / 1000);
+        const expectedSeekPosition = clampPlaybackPosition(
+          seekAnchor.positionSeconds + (state === "playing" ? elapsedSeconds * playbackRate : 0),
+          sourceDurationSeconds,
+        );
+        const isStaleStatusAfterSeek =
+          elapsedSeconds < 1.5 && Math.abs(nextPositionSeconds - expectedSeekPosition) > 2;
+
+        if (isStaleStatusAfterSeek) {
+          nextPositionSeconds = expectedSeekPosition;
+        } else {
+          seekAnchorRef.current = null;
+        }
+      }
+    }
+
+    if (!seekAnchorRef.current && samePlayback && state === "playing") {
+      const elapsedSeconds = Math.max(0, (now - previous.updatedAtMs) / 1000) * previous.playbackRate;
+      const estimatedPositionSeconds = Math.min(previous.positionSeconds + elapsedSeconds, durationLimit);
+      const sourceJumpedBackward = boundedSourcePosition + 1 < previous.sourcePositionSeconds;
+      const sourceCaughtUp = boundedSourcePosition + 0.35 >= estimatedPositionSeconds;
+      const sourceJumpedForward = boundedSourcePosition > estimatedPositionSeconds + 0.35;
+
+      if (!sourceJumpedBackward && !sourceCaughtUp && !sourceJumpedForward && estimatedPositionSeconds > boundedSourcePosition) {
+        nextPositionSeconds = estimatedPositionSeconds;
+      }
+    }
+
     clockRef.current = {
+      currentFilePath,
+      currentTrackId,
       durationSeconds: sourceDurationSeconds,
       playbackRate,
       positionSeconds: nextPositionSeconds,
+      sourcePositionSeconds: boundedSourcePosition,
       state,
       updatedAtMs,
     };
@@ -423,6 +498,45 @@ const useLyricsDisplayPosition = (
     return () => window.cancelAnimationFrame(frame);
   }, [state]);
 
+  useEffect(() => {
+    const handlePlaybackSeeked = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? (event.detail as PlaybackSeekedDetail | null) : null;
+      const eventTrackId = typeof detail?.trackId === "string" && detail.trackId.trim() ? detail.trackId : null;
+      if (eventTrackId && eventTrackId !== currentTrackId) {
+        return;
+      }
+
+      const positionSeconds = Number(detail?.positionSeconds);
+      if (!Number.isFinite(positionSeconds)) {
+        return;
+      }
+
+      const nextPositionSeconds = clampPlaybackPosition(positionSeconds, sourceDurationSeconds);
+      const updatedAtMs = performance.now();
+      const nextClock = {
+        currentFilePath,
+        currentTrackId,
+        durationSeconds: sourceDurationSeconds,
+        playbackRate,
+        positionSeconds: nextPositionSeconds,
+        sourcePositionSeconds: nextPositionSeconds,
+        state,
+        updatedAtMs,
+      };
+      clockRef.current = nextClock;
+      seekAnchorRef.current = {
+        positionSeconds: nextPositionSeconds,
+        trackId: eventTrackId ?? currentTrackId,
+        updatedAtMs,
+      };
+      setAudioClock(nextClock);
+      setPositionSeconds(nextPositionSeconds);
+    };
+
+    window.addEventListener(playbackSeekedEvent, handlePlaybackSeeked);
+    return () => window.removeEventListener(playbackSeekedEvent, handlePlaybackSeeked);
+  }, [currentFilePath, currentTrackId, playbackRate, sourceDurationSeconds, state]);
+
   return { audioClock, displayPositionSeconds: positionSeconds };
 };
 
@@ -456,7 +570,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const [applyingCandidateId, setApplyingCandidateId] = useState<string | null>(
     null,
   );
+  const [isLyricsOffsetSaving, setIsLyricsOffsetSaving] = useState(false);
   const lyricsRequestRef = useRef(0);
+  const refreshRequestRef = useRef(0);
   const state = audioStatus?.state ?? playbackStatus?.state ?? "idle";
   const pollIntervalMs =
     idlePollingStates.has(state) && seekPreviewSeconds === null ? 1800 : 1000;
@@ -513,8 +629,11 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           : "none",
         "--lyrics-font-size": `${lyricsDisplaySettings.lyricsFontSizePx}px`,
         "--lyrics-secondary-font-size": `${lyricsDisplaySettings.lyricsSecondaryFontSizePx}px`,
+        "--lyrics-line-spacing": (
+          (lyricsDisplaySettings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent ?? 110) / 100
+        ).toFixed(2),
         "--lyrics-context-opacity": (
-          (lyricsDisplaySettings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent ?? 38) / 100
+          (lyricsDisplaySettings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent ?? 49) / 100
         ).toFixed(2),
         "--lyrics-color": lyricsDisplaySettings.lyricsColor,
         "--lyrics-cover-opacity": (
@@ -534,6 +653,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       lyricsDisplaySettings.lyricsBackgroundScalePercent,
       lyricsDisplaySettings.lyricsFontSizePx,
       lyricsDisplaySettings.lyricsSecondaryFontSizePx,
+      lyricsDisplaySettings.lyricsLineSpacingPercent,
       lyricsDisplaySettings.lyricsContextOpacityPercent,
       lyricsWallpaperUrl,
     ],
@@ -600,10 +720,16 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     }
 
     try {
+      const requestId = refreshRequestRef.current + 1;
+      refreshRequestRef.current = requestId;
       const [nextPlaybackStatus, nextAudioStatus] = await Promise.all([
         echo.playback.getStatus(),
         echo.audio.getStatus(),
       ]);
+
+      if (refreshRequestRef.current !== requestId) {
+        return;
+      }
 
       setPlaybackStatus(nextPlaybackStatus);
       setAudioStatus(nextAudioStatus);
@@ -671,6 +797,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     }
 
     return audio.onStatus((nextAudioStatus) => {
+      refreshRequestRef.current += 1;
       setAudioStatus(nextAudioStatus);
       if (nextAudioStatus.currentTrackId) {
         queue.setCurrentTrackId(nextAudioStatus.currentTrackId);
@@ -731,7 +858,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     ): Promise<boolean> => {
       const autoCandidate = selectAutoApplyCandidate(
         nextCandidates,
-        lyricsDisplaySettings,
+        {
+          lyricsAutoAcceptScore: lyricsDisplaySettings.lyricsAutoAcceptScore,
+          lyricsAutoSearch: lyricsDisplaySettings.lyricsAutoSearch,
+        },
       );
       const lyricsApi = window.echo?.lyrics;
       if (!autoCandidate || !trackId || !lyricsApi) {
@@ -771,7 +901,8 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       }
     },
     [
-      lyricsDisplaySettings,
+      lyricsDisplaySettings.lyricsAutoAcceptScore,
+      lyricsDisplaySettings.lyricsAutoSearch,
       trackId,
     ],
   );
@@ -1151,8 +1282,20 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       try {
         setSeekPreviewSeconds(nextSeconds);
         const status = await playback.seek(nextSeconds);
-        setPlaybackStatus(status);
-        dispatchPlaybackSeeked(status.positionMs / 1000, status.currentTrackId ?? trackId ?? null);
+        const nextStatus = {
+          ...status,
+          positionMs: Math.round(nextSeconds * 1000),
+        };
+        setPlaybackStatus(nextStatus);
+        setAudioStatus((current) =>
+          current
+            ? {
+                ...current,
+                positionSeconds: nextSeconds,
+              }
+            : current,
+        );
+        dispatchPlaybackSeeked(nextSeconds, status.currentTrackId ?? trackId ?? null);
         await refreshStatus();
       } catch (seekError) {
         setError(
@@ -1164,6 +1307,80 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     },
     [refreshStatus, trackId],
   );
+
+  const handleLyricsOffsetChange = useCallback(
+    async (nextOffsetMs: number): Promise<void> => {
+      const lyricsApi = window.echo?.lyrics;
+      if (!lyricsApi || !trackId) {
+        setError("Desktop bridge unavailable");
+        return;
+      }
+
+      try {
+        setIsLyricsOffsetSaving(true);
+        const nextLyrics = await lyricsApi.setOffset(trackId, nextOffsetMs);
+        if (!nextLyrics) {
+          setError("Current lyrics cannot be adjusted until a matched lyric is cached");
+          return;
+        }
+
+        setLyrics(trackLyricsToState(nextLyrics, lyrics.offsetMs));
+        dispatchCurrentLyricsProviderChanged(nextLyrics);
+        setError(null);
+      } catch (offsetError) {
+        setError(
+          offsetError instanceof Error ? offsetError.message : String(offsetError),
+        );
+      } finally {
+        setIsLyricsOffsetSaving(false);
+      }
+    },
+    [lyrics.offsetMs, trackId],
+  );
+
+  const lyricsOffsetControls = useMemo(() => {
+    if (!trackId || lyrics.kind !== "synced") {
+      return null;
+    }
+
+    const currentOffsetMs = lyrics.offsetMs;
+    const offsetSteps = [-500, -100, 100, 500];
+    const clampNextOffset = (value: number): number =>
+      Math.max(-10000, Math.min(10000, Math.round(value)));
+
+    return (
+      <section className="lyrics-offset-controls" aria-label="Lyrics sync">
+        <span className="lyrics-offset-value">{formatOffset(currentOffsetMs)}</span>
+        <div className="lyrics-offset-buttons">
+          {offsetSteps.map((step) => {
+            const nextOffsetMs = clampNextOffset(currentOffsetMs + step);
+            const isForward = step > 0;
+            return (
+              <button
+                type="button"
+                key={step}
+                disabled={isLyricsOffsetSaving || nextOffsetMs === currentOffsetMs}
+                title={step > 0 ? `Lyrics earlier ${step}ms` : `Lyrics later ${Math.abs(step)}ms`}
+                onClick={() => void handleLyricsOffsetChange(nextOffsetMs)}
+              >
+                {isForward ? <FastForward size={14} /> : <Rewind size={14} />}
+                <span>{step > 0 ? "+" : ""}{step}ms</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            disabled={isLyricsOffsetSaving || currentOffsetMs === 0}
+            title="Reset lyrics offset"
+            onClick={() => void handleLyricsOffsetChange(0)}
+          >
+            <RotateCcw size={14} />
+            <span>0ms</span>
+          </button>
+        </div>
+      </section>
+    );
+  }, [handleLyricsOffsetChange, isLyricsOffsetSaving, lyrics.kind, lyrics.offsetMs, trackId]);
 
   const lyricsControls = useMemo(() => {
     if (!trackId) {
@@ -1340,6 +1557,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         )}
 
         {lyricsControls}
+        {lyricsOffsetControls}
         {lyricsDisplaySettings.lyricsEnabled ? (
           <LyricsView
             durationMs={(audioStatus?.durationSeconds ?? currentTrack?.duration ?? 0) * 1000}

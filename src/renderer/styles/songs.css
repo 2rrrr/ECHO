@@ -994,14 +994,15 @@
 
 .playlist-detail-header {
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: start;
   gap: 18px;
 }
 
 .playlist-cover {
   position: relative;
   display: grid;
+  grid-row: 1 / span 2;
   width: 132px;
   aspect-ratio: 1;
   overflow: hidden;
@@ -1086,11 +1087,13 @@
 
 .playlist-actions {
   display: flex;
+  grid-column: 2;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
-  min-width: min(100%, 520px);
+  min-width: 0;
+  width: 100%;
 }
 
 .playlist-menu-wrap {
@@ -1211,6 +1214,38 @@
 .playlist-search button:hover {
   color: #245a94;
   background: #edf6ff;
+}
+
+.playlist-quality-control {
+  display: inline-grid;
+  grid-template-columns: 15px auto minmax(82px, auto);
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px 0 11px;
+  color: #2b4b6d;
+  border: 1px solid rgba(47, 109, 168, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 8px 20px rgba(35, 52, 75, 0.06);
+}
+
+.playlist-quality-control span {
+  color: #607086;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.playlist-quality-control select {
+  min-width: 0;
+  color: var(--echo-heading-text);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
 }
 
 .primary-action,
@@ -2369,6 +2404,226 @@
 .album-copy small,
 .artist-copy small {
   color: var(--color-muted);
+}
+
+html[data-theme="dark"] .tool-button,
+html[data-theme="dark"] .duplicate-toggle,
+html[data-theme="dark"] .duplicate-analyze-button,
+html[data-theme="dark"] .search-box,
+html[data-theme="dark"] .sort-button,
+html[data-theme="dark"] .songs-import-hint,
+html[data-theme="dark"] .album-card,
+html[data-theme="dark"] .artist-card {
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  background: rgba(27, 33, 42, 0.78);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+html[data-theme="dark"] .tool-button:hover,
+html[data-theme="dark"] .duplicate-toggle:hover,
+html[data-theme="dark"] .duplicate-analyze-button:hover,
+html[data-theme="dark"] .sort-button:hover,
+html[data-theme="dark"] .album-card:hover,
+html[data-theme="dark"] .artist-card:hover {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border-strong);
+  background: rgba(39, 48, 61, 0.9);
+}
+
+html[data-theme="dark"] .tool-button.danger:hover {
+  color: var(--color-red);
+  background: rgba(255, 105, 97, 0.12);
+}
+
+html[data-theme="dark"] .track-skeleton-cover,
+html[data-theme="dark"] .track-skeleton-copy span,
+html[data-theme="dark"] .track-skeleton-pill {
+  background: linear-gradient(90deg, rgba(45, 54, 67, 0.78), rgba(65, 78, 96, 0.92), rgba(45, 54, 67, 0.78));
+}
+
+html[data-theme="dark"] .track-list::-webkit-scrollbar-thumb {
+  border-color: rgba(16, 19, 24, 0.82);
+  background: rgba(130, 148, 171, 0.46);
+}
+
+html[data-theme="dark"] .track-row {
+  color: var(--color-text);
+}
+
+html[data-theme="dark"] .track-row:hover {
+  border-color: var(--color-border);
+  background: rgba(29, 36, 46, 0.84);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 10px 22px rgba(0, 0, 0, 0.22);
+}
+
+html[data-theme="dark"] .track-row[data-playing="true"] {
+  border-color: rgba(100, 181, 255, 0.24);
+  background:
+    linear-gradient(90deg, rgba(38, 55, 72, 0.9), rgba(29, 36, 46, 0.82)),
+    rgba(29, 36, 46, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(100, 181, 255, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme="dark"] .track-cover[data-empty="true"],
+html[data-theme="dark"] .album-cover[data-empty="true"],
+html[data-theme="dark"] .artist-avatar[data-empty="true"] {
+  color: var(--color-muted);
+  background:
+    linear-gradient(145deg, #252d38, #1b222c),
+    #202732;
+}
+
+html[data-theme="dark"] .album-card {
+  color: var(--color-muted);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .album-card:hover,
+html[data-theme="dark"] .album-card:focus-visible {
+  color: var(--echo-heading-text);
+  border-color: rgba(150, 168, 190, 0.12);
+  background: rgba(27, 33, 42, 0.32);
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .album-cover {
+  color: var(--color-subtle);
+  border-color: rgba(150, 168, 190, 0.18);
+  background:
+    linear-gradient(145deg, #202733, #111821),
+    #151c26;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+}
+
+html[data-theme="dark"] .album-copy strong {
+  color: rgba(238, 244, 252, 0.94);
+}
+
+html[data-theme="dark"] .album-copy span,
+html[data-theme="dark"] .album-copy small {
+  color: rgba(164, 181, 202, 0.82);
+}
+
+html[data-theme="dark"] .playlist-sidebar,
+html[data-theme="dark"] .playlist-detail {
+  border-color: var(--color-border);
+}
+
+html[data-theme="dark"] .playlist-list-item,
+html[data-theme="dark"] .playlist-create-form input,
+html[data-theme="dark"] .playlist-import-box label,
+html[data-theme="dark"] .playlist-import-box .secondary-action,
+html[data-theme="dark"] .playlist-search,
+html[data-theme="dark"] .playlist-quality-control,
+html[data-theme="dark"] .secondary-action,
+html[data-theme="dark"] .playlist-action-menu,
+html[data-theme="dark"] .playlist-action-menu-item,
+html[data-theme="dark"] .playlist-cover-button,
+html[data-theme="dark"] .playlist-cover-reset {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: rgba(24, 30, 39, 0.82);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .playlist-list-item:hover,
+html[data-theme="dark"] .playlist-list-item[data-active="true"],
+html[data-theme="dark"] .playlist-import-box .secondary-action:hover:not(:disabled),
+html[data-theme="dark"] .secondary-action:hover:not(:disabled),
+html[data-theme="dark"] .playlist-action-menu-item:hover,
+html[data-theme="dark"] .playlist-action-menu-item[aria-checked="true"],
+html[data-theme="dark"] .playlist-search button:hover,
+html[data-theme="dark"] .playlist-cover-button:hover,
+html[data-theme="dark"] .playlist-cover-reset:hover {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border-strong);
+  background: rgba(39, 48, 61, 0.94);
+}
+
+html[data-theme="dark"] .playlist-list-item[data-active="true"] {
+  border-color: rgba(100, 181, 255, 0.28);
+  background: rgba(100, 181, 255, 0.14);
+  box-shadow:
+    inset 3px 0 0 rgba(100, 181, 255, 0.82),
+    0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme="dark"] .playlist-list-item strong,
+html[data-theme="dark"] .playlist-detail-copy h2,
+html[data-theme="dark"] .streaming-section span,
+html[data-theme="dark"] .playlist-import-box input,
+html[data-theme="dark"] .playlist-search input,
+html[data-theme="dark"] .playlist-quality-control select,
+html[data-theme="dark"] .playlist-action-menu-item {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .playlist-list-item small,
+html[data-theme="dark"] .playlist-list-item strong em,
+html[data-theme="dark"] .playlist-empty,
+html[data-theme="dark"] .streaming-section h2,
+html[data-theme="dark"] .streaming-section em,
+html[data-theme="dark"] .playlist-detail-copy p,
+html[data-theme="dark"] .playlist-detail-copy small,
+html[data-theme="dark"] .playlist-quality-control,
+html[data-theme="dark"] .playlist-quality-control span,
+html[data-theme="dark"] .playlist-import-box label svg,
+html[data-theme="dark"] .playlist-search,
+html[data-theme="dark"] .playlist-search button,
+html[data-theme="dark"] .playlist-action-menu-section > span,
+html[data-theme="dark"] .playlist-action-menu-item svg {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .playlist-import-box input::placeholder,
+html[data-theme="dark"] .playlist-search input::placeholder,
+html[data-theme="dark"] .playlist-create-form input::placeholder {
+  color: var(--color-subtle);
+}
+
+html[data-theme="dark"] .streaming-section,
+html[data-theme="dark"] .playlist-action-menu-section {
+  border-color: var(--color-border);
+}
+
+html[data-theme="dark"] .playlist-cover {
+  color: var(--color-subtle);
+  border: 1px solid rgba(150, 168, 190, 0.18);
+  background:
+    linear-gradient(145deg, #202733, #111821),
+    #151c26;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme="dark"] .primary-action {
+  border-color: rgba(100, 181, 255, 0.34);
+  background: #2f6f8f;
+}
+
+html[data-theme="dark"] .primary-action:hover:not(:disabled) {
+  background: #3b80a5;
+}
+
+html[data-theme="dark"] .playing-pill,
+html[data-theme="dark"] .duplicate-version-badge {
+  color: var(--color-accent-strong);
+  border-color: rgba(100, 181, 255, 0.22);
+  background: rgba(100, 181, 255, 0.12);
+}
+
+html[data-theme="dark"] .unavailable-pill {
+  color: #e5a5bb;
+  border-color: rgba(229, 165, 187, 0.18);
+  background: rgba(229, 165, 187, 0.1);
 }
 
 .streaming-page {

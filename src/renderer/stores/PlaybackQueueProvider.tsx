@@ -25,6 +25,11 @@ export type QueueItem = {
 
 export type RepeatMode = 'off' | 'one' | 'all';
 
+type PlaybackModeMemory = {
+  isShuffleEnabled: boolean;
+  repeatMode: RepeatMode;
+};
+
 type ReplaceQueueOptions = {
   startTrackId?: string;
   source?: QueueSource;
@@ -63,7 +68,25 @@ type PlaybackQueueContextValue = {
   playNext: () => Promise<PlaybackStatus | null>;
   setCurrentTrackId: (trackId: string | null) => void;
   updateCurrentTrackSnapshot: (
-    patch: Partial<Pick<LibraryTrack, 'duration' | 'coverThumb' | 'title' | 'artist' | 'album' | 'codec' | 'sampleRate' | 'bitDepth' | 'bitrate'>>,
+    patch: Partial<
+      Pick<
+        LibraryTrack,
+        | 'duration'
+        | 'coverThumb'
+        | 'title'
+        | 'artist'
+        | 'album'
+        | 'codec'
+        | 'sampleRate'
+        | 'bitDepth'
+        | 'bitrate'
+        | 'bpm'
+        | 'bpmConfidence'
+        | 'beatOffsetMs'
+        | 'analysisStatus'
+        | 'analysisUpdatedAt'
+      >
+    >,
   ) => void;
   syncPlaybackState: (state: AudioPlaybackState) => void;
   toggleShuffle: () => void;
@@ -83,6 +106,41 @@ type PlaybackHistorySession = {
 const pausedSessionTimeoutMs = 30 * 60 * 1000;
 
 const PlaybackQueueContext = createContext<PlaybackQueueContextValue | null>(null);
+
+const playbackModeMemoryKey = 'echo-next:playback-mode';
+
+const defaultPlaybackModeMemory: PlaybackModeMemory = {
+  isShuffleEnabled: false,
+  repeatMode: 'off',
+};
+
+const isRepeatMode = (value: unknown): value is RepeatMode => value === 'off' || value === 'one' || value === 'all';
+
+const readPlaybackModeMemory = (): PlaybackModeMemory => {
+  if (typeof window === 'undefined') {
+    return defaultPlaybackModeMemory;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(playbackModeMemoryKey);
+    const parsed = raw ? (JSON.parse(raw) as Partial<PlaybackModeMemory>) : {};
+
+    return {
+      isShuffleEnabled: parsed.isShuffleEnabled === true,
+      repeatMode: isRepeatMode(parsed.repeatMode) ? parsed.repeatMode : 'off',
+    };
+  } catch {
+    return defaultPlaybackModeMemory;
+  }
+};
+
+const writePlaybackModeMemory = (memory: PlaybackModeMemory): void => {
+  try {
+    window.localStorage.setItem(playbackModeMemoryKey, JSON.stringify(memory));
+  } catch {
+    // Playback controls should keep working even when browser storage is unavailable.
+  }
+};
 
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
@@ -185,13 +243,14 @@ const isCompletedPlayback = (playedSeconds: number, durationSeconds: number): bo
   durationSeconds > 0 ? playedSeconds >= 30 || playedSeconds >= durationSeconds * 0.5 : playedSeconds >= 30;
 
 export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Element => {
+  const initialPlaybackMode = useMemo(() => readPlaybackModeMemory(), []);
   const [items, setItemsState] = useState<QueueItem[]>([]);
   const [currentQueueId, setCurrentQueueIdState] = useState<string | null>(null);
   const [currentTrackId, setCurrentTrackIdState] = useState<string | null>(null);
   const [lastPlayedTrack, setLastPlayedTrackState] = useState<LibraryTrack | null>(null);
   const [history, setHistoryState] = useState<QueueItem[]>([]);
-  const [isShuffleEnabled, setIsShuffleEnabled] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
+  const [isShuffleEnabled, setIsShuffleEnabled] = useState(initialPlaybackMode.isShuffleEnabled);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(initialPlaybackMode.repeatMode);
 
   const itemsRef = useRef(items);
   const currentQueueIdRef = useRef(currentQueueId);
@@ -236,6 +295,10 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const setRepeatModeInternal = useCallback((mode: RepeatMode): void => {
     repeatModeRef.current = mode;
     setRepeatMode(mode);
+    writePlaybackModeMemory({
+      isShuffleEnabled: isShuffleEnabledRef.current,
+      repeatMode: mode,
+    });
   }, []);
 
   const toggleShuffle = useCallback((): void => {
@@ -244,6 +307,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     setIsShuffleEnabled(next);
     if (next && repeatModeRef.current === 'all') {
       setRepeatModeInternal('off');
+    } else {
+      writePlaybackModeMemory({
+        isShuffleEnabled: next,
+        repeatMode: repeatModeRef.current,
+      });
     }
   }, [setRepeatModeInternal]);
 
@@ -822,7 +890,25 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
   const updateCurrentTrackSnapshot = useCallback(
     (
-      patch: Partial<Pick<LibraryTrack, 'duration' | 'coverThumb' | 'title' | 'artist' | 'album' | 'codec' | 'sampleRate' | 'bitDepth' | 'bitrate'>>,
+      patch: Partial<
+        Pick<
+          LibraryTrack,
+          | 'duration'
+          | 'coverThumb'
+          | 'title'
+          | 'artist'
+          | 'album'
+          | 'codec'
+          | 'sampleRate'
+          | 'bitDepth'
+          | 'bitrate'
+          | 'bpm'
+          | 'bpmConfidence'
+          | 'beatOffsetMs'
+          | 'analysisStatus'
+          | 'analysisUpdatedAt'
+        >
+      >,
     ): void => {
       const queueId = currentQueueIdRef.current;
       const trackId = currentTrackIdRef.current;

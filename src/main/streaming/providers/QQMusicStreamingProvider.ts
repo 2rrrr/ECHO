@@ -64,11 +64,11 @@ const mapSong = (songValue: unknown): StreamingTrack => {
   const album = asRecord(song.album);
   const file = asRecord(song.file);
   const artists = artistRefs(song.singer);
-  const mid = text(song.mid) ?? text(song.songmid) ?? text(file.media_mid) ?? String(song.id ?? text(song.name) ?? '').trim();
-  const title = text(song.name) ?? text(song.title) ?? 'Untitled';
+  const mid = text(song.mid) ?? text(song.songmid) ?? text(file.media_mid) ?? String(song.id ?? song.songid ?? text(song.name) ?? text(song.songname) ?? '').trim();
+  const title = text(song.name) ?? text(song.title) ?? text(song.songname) ?? text(song.songorig) ?? 'Untitled';
   const artist = artists.map((item) => item.name).join(' / ') || 'Unknown Artist';
-  const albumTitle = text(album.name) ?? text(album.title) ?? 'Unknown Album';
-  const albumMid = text(album.mid) ?? text(album.pmid) ?? text(song.albummid);
+  const albumTitle = text(album.name) ?? text(album.title) ?? text(song.albumname) ?? text(song.albumtitle) ?? 'Unknown Album';
+  const albumMid = text(album.mid) ?? text(album.pmid) ?? text(song.albummid) ?? text(song.album_mid);
   const pay = asRecord(song.pay);
   const payPlay = integer(pay.payplay);
   const playable = payPlay !== 1 && song.disabled !== true;

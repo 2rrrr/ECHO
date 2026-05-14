@@ -798,6 +798,10 @@ export const MvPanel = ({
     };
   }, [adaptiveStream, applyVideoPlaybackRate, showImmersiveBackground, syncVideoToAudio, videoMediaUrl]);
 
+  if (!isMvEnabled) {
+    return <section className="lyrics-mv-panel" aria-label="MV" data-mv-enabled="false" />;
+  }
+
   return (
     <>
       {showImmersiveBackground ? (
@@ -853,7 +857,7 @@ export const MvPanel = ({
         </div>
       ) : null}
 
-      <section className="lyrics-mv-panel" aria-label="MV" data-immersive-active={showImmersiveBackground}>
+      <section className="lyrics-mv-panel" aria-label="MV" data-immersive-active={showImmersiveBackground} data-mv-enabled="true">
       <div className="lyrics-mv-ambient" style={coverUrl ? { backgroundImage: `url("${coverUrl}")` } : undefined} />
 
       {showVideo ? (

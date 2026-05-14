@@ -22,6 +22,10 @@ export type BpmAnalyzerResult = {
   beatOffsetMs: number;
 };
 
+export type BpmAnalyzerOptions = {
+  headers?: Record<string, string>;
+};
+
 const sampleRate = 11025;
 const maxAnalyzeSeconds = 90;
 const minAnalyzeSeconds = 20;
@@ -169,13 +173,18 @@ export class BpmAnalyzer {
     this.logger = dependencies.logger ?? defaultLogger;
   }
 
-  async analyze(filePath: string, durationSeconds = maxAnalyzeSeconds): Promise<BpmAnalyzerResult> {
+  async analyze(filePath: string, durationSeconds = maxAnalyzeSeconds, options: BpmAnalyzerOptions = {}): Promise<BpmAnalyzerResult> {
     const analyzeSeconds = Math.max(minAnalyzeSeconds, Math.min(maxAnalyzeSeconds, durationSeconds || maxAnalyzeSeconds));
+    const inputHeaders = Object.entries(options.headers ?? {})
+      .filter(([name, value]) => name.trim() && value.trim())
+      .map(([name, value]) => `${name}: ${value}\r\n`)
+      .join('');
     const args = [
       '-hide_banner',
       '-loglevel',
       'error',
       '-nostdin',
+      ...(inputHeaders ? ['-headers', inputHeaders] : []),
       '-i',
       filePath,
       '-vn',

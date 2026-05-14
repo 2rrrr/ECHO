@@ -6,10 +6,12 @@ import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
 import { PlaylistsPage } from './PlaylistsPage';
 
 vi.mock('../components/library/TrackList', () => ({
-  TrackList: ({ tracks }: { tracks: LibraryTrack[] }) => (
+  TrackList: ({ tracks, onPlay }: { tracks: LibraryTrack[]; onPlay?: (track: LibraryTrack) => void }) => (
     <div data-testid="playlist-track-list">
       {tracks.map((track) => (
-        <span key={track.playlistItemId ?? track.id}>{track.title}</span>
+        <button key={track.playlistItemId ?? track.id} type="button" onClick={() => onPlay?.(track)}>
+          {track.title}
+        </button>
       ))}
     </div>
   ),
@@ -156,5 +158,126 @@ describe('PlaylistsPage actions menu', () => {
       expect(window.echo.library.exportPlaylist).toHaveBeenCalledWith({ playlistId: 'playlist-1', format: 'json' }),
     );
     expect(await screen.findByText('歌单已导出：D:\\Exports\\Road Mix.json')).toBeTruthy();
+  });
+
+  it('shows streaming quality only for remote playlists and sends the selected quality to playback', async () => {
+    const remoteTrackItem = item({
+      mediaType: 'stream_track',
+      mediaId: 'streaming:qqmusic:song-mid',
+      sourceProvider: 'qqmusic',
+      sourceItemId: 'song-mid',
+      titleSnapshot: 'Remote Song',
+      track: null,
+    });
+    const playMediaItem = vi.fn().mockResolvedValue({
+      state: 'playing',
+      currentTrackId: 'streaming:qqmusic:song-mid',
+      positionMs: 0,
+      durationMs: 180000,
+      filePath: null,
+    });
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ sourceProvider: 'qqmusic', sourcePlaylistId: '123' })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([remoteTrackItem])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+        startPlaybackHistory: vi.fn().mockResolvedValue({ historyId: 'history-1' }),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+        playMediaItem,
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    const qualitySelect = await screen.findByLabelText('流媒体音质');
+    expect(qualitySelect).toHaveProperty('value', 'hires');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remote Song' }));
+    await waitFor(() =>
+      expect(playMediaItem).toHaveBeenCalledWith({
+        item: expect.objectContaining({
+          mediaType: 'streaming',
+          provider: 'qqmusic',
+          providerTrackId: 'song-mid',
+          quality: 'hires',
+        }),
+      }),
+    );
+
+    fireEvent.change(qualitySelect, { target: { value: 'standard' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remote Song' }));
+    await waitFor(() =>
+      expect(playMediaItem).toHaveBeenLastCalledWith({
+        item: expect.objectContaining({
+          quality: 'standard',
+        }),
+      }),
+    );
+  });
+
+  it('hides streaming quality for local playlists', async () => {
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist()]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([item()])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    await screen.findByRole('button', { name: 'Song One' });
+    expect(screen.queryByLabelText('流媒体音质')).toBeNull();
+  });
+
+  it('refreshes a remote playlist by re-importing its source playlist', async () => {
+    const remotePlaylist = playlist({
+      sourceProvider: 'qqmusic',
+      sourcePlaylistId: '778899',
+      name: 'QQ Mix',
+    });
+    const importPlaylistFromUrl = vi.fn().mockResolvedValue({
+      playlistId: 'playlist-1',
+      playlistName: 'QQ Mix',
+      importedCount: 2,
+      provider: 'qqmusic',
+      providerPlaylistId: '778899',
+    });
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([remotePlaylist]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([
+          item({
+            mediaType: 'stream_track',
+            mediaId: 'streaming:qqmusic:song-mid',
+            sourceProvider: 'qqmusic',
+            sourceItemId: 'song-mid',
+            titleSnapshot: 'Untitled',
+            track: null,
+          }),
+        ])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+      streaming: {
+        importPlaylistFromUrl,
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '刷新歌单' }));
+
+    await waitFor(() =>
+      expect(importPlaylistFromUrl).toHaveBeenCalledWith('https://y.qq.com/n/ryqq/playlist/778899'),
+    );
+    expect(await screen.findByText('已刷新歌单：QQ Mix，共 2 首')).toBeTruthy();
   });
 });

@@ -124,7 +124,9 @@ describe('MvPanel', () => {
   it('does not load or render MV when MV is disabled', async () => {
     const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, enabled: false });
 
-    expect(await screen.findByText('MV disabled')).toBeTruthy();
+    await waitFor(() => expect(container.querySelector('.lyrics-mv-panel')?.getAttribute('data-mv-enabled')).toBe('false'));
+    expect(screen.queryByText('MV disabled')).toBeNull();
+    expect(container.querySelector('.lyrics-mv-card')).toBeNull();
     expect(container.querySelector('video')).toBeNull();
     expect(window.echo.mv.getSelected).not.toHaveBeenCalled();
     expect(window.echo.mv.searchNetworkCandidates).not.toHaveBeenCalled();

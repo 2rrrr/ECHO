@@ -118,6 +118,23 @@ const qualityHeight: Record<Exclude<MvQualityTier, 'auto'>, number> = {
 
 const maxQualityHeight = (quality: MvSettings['maxQuality']): number => (quality === 'max' ? Number.POSITIVE_INFINITY : qualityHeight[quality]);
 
+const maxBilibiliQnForSettings = (settings: MvSettings): number => {
+  if (settings.maxQuality === 'max') {
+    return 127;
+  }
+  if (settings.maxQuality === '2160p') {
+    return 120;
+  }
+  if (settings.maxQuality === '1440p') {
+    return 112;
+  }
+  if (settings.maxQuality === '1080p') {
+    return settings.allow60fps === false ? 112 : 116;
+  }
+
+  return 64;
+};
+
 const parseJson = (value: string | null): unknown | null => {
   if (!value) {
     return null;
@@ -1108,6 +1125,7 @@ export class MvService {
         .filter((variant) => variant.protocol !== 'external')
         .filter((variant) => variant.playable_in_app === 1)
         .filter((variant) => !variant.height || variant.height <= maxQualityHeight(settings.maxQuality))
+        .filter((variant) => settings.allow60fps !== false || !variant.fps || variant.fps < 55)
         .sort((left, right) => {
           const heightDelta = (right.height ?? 0) - (left.height ?? 0);
           if (heightDelta !== 0) {
@@ -1166,15 +1184,31 @@ export class MvService {
       return false;
     }
 
-    return !variants.some((variant) => {
+    const hasCurrentResolver = variants.some((variant) => {
       const raw = parseJson(variant.raw_json);
       return Boolean(
         raw &&
           typeof raw === 'object' &&
           !Array.isArray(raw) &&
-          (raw as Record<string, unknown>).resolver === 'bilibili-direct-durl-v1',
+          (raw as Record<string, unknown>).resolver === 'bilibili-dash-video-v3',
       );
     });
+
+    if (!hasCurrentResolver) {
+      return true;
+    }
+
+    const highestRequestedQn = variants.reduce((highest, variant) => {
+      const raw = parseJson(variant.raw_json);
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return highest;
+      }
+
+      const requestedQn = Number((raw as Record<string, unknown>).requestedQn);
+      return Number.isFinite(requestedQn) ? Math.max(highest, requestedQn) : highest;
+    }, 0);
+
+    return highestRequestedQn < maxBilibiliQnForSettings(settings);
   }
 
   private chooseAutoCandidate<T extends Pick<TrackVideo | MvMatchCandidate, 'id' | 'provider' | 'playableInApp' | 'score'> & { viewCount?: number | null }>(

@@ -60,6 +60,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isLyricsPlayerDrawerEnabled, setIsLyricsPlayerDrawerEnabled] = useState(false);
   const [isLyricsPlayerDrawerOpen, setIsLyricsPlayerDrawerOpen] = useState(false);
   const [appWallpaperSettings, setAppWallpaperSettings] = useState<AppWallpaperSettings>(defaultAppWallpaperSettings);
+  const [loadedAppWallpaperUrl, setLoadedAppWallpaperUrl] = useState<string | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousRouteIdRef = useRef<AppRouteId>('songs');
@@ -76,6 +77,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     ? `echo-wallpaper://app/custom?path=${encodeURIComponent(appWallpaperSettings.appCustomWallpaperPath)}`
     : null;
   const visibleAppWallpaperUrl = appWallpaperUrl && !isLyricsRoute ? appWallpaperUrl : null;
+  const isAppWallpaperReady = Boolean(visibleAppWallpaperUrl && loadedAppWallpaperUrl === visibleAppWallpaperUrl);
   const appWallpaperStyle = useMemo<CSSProperties>(() => {
     const blurPx = appWallpaperSettings.appWallpaperBlurPx;
     const brightnessPercent = appWallpaperSettings.appWallpaperBrightnessPercent;
@@ -94,10 +96,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     appWallpaperSettings.appWallpaperScalePercent,
   ]);
   const appShellStyle = useMemo(() => {
-    const uiAlpha = visibleAppWallpaperUrl
+    const uiAlpha = isAppWallpaperReady
       ? Math.max(0, Math.min(1, appWallpaperSettings.appWallpaperUiOpacityPercent / 100))
       : 1;
-    const isUnified = visibleAppWallpaperUrl && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled;
+    const isUnified = isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled;
     const scaledAlpha = (value: number): string => (uiAlpha * value).toFixed(3);
     const unifiedAlpha = uiAlpha.toFixed(3);
 
@@ -123,8 +125,16 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [
     appWallpaperSettings.appWallpaperUiOpacityPercent,
     appWallpaperSettings.appWallpaperUnifiedOpacityEnabled,
-    visibleAppWallpaperUrl,
+    isAppWallpaperReady,
   ]);
+
+  useEffect(() => {
+    if (!visibleAppWallpaperUrl) {
+      return;
+    }
+
+    setLoadedAppWallpaperUrl((current) => (current === visibleAppWallpaperUrl ? current : null));
+  }, [visibleAppWallpaperUrl]);
 
   const navigateRoute = useCallback(
     (routeId: AppRouteId): void => {
@@ -451,13 +461,20 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         shouldUseLyricsPlayerDrawer ? 'app-shell--lyrics-player-drawer' : ''
       } ${shouldUseLyricsPlayerDrawer && isLyricsPlayerDrawerOpen ? 'app-shell--lyrics-player-drawer-open' : ''} ${
         visibleAppWallpaperUrl ? 'app-shell--wallpaper' : ''
+      } ${
+        isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
       }`}
-      data-wallpaper-unified-opacity={visibleAppWallpaperUrl && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled ? 'true' : undefined}
+      data-wallpaper-unified-opacity={isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled ? 'true' : undefined}
       style={appShellStyle}
     >
       {visibleAppWallpaperUrl ? (
-        <div className="app-wallpaper-layer" aria-hidden="true">
-          <img src={visibleAppWallpaperUrl} alt="" style={appWallpaperStyle} />
+        <div className="app-wallpaper-layer" aria-hidden="true" data-loaded={isAppWallpaperReady}>
+          <img
+            src={visibleAppWallpaperUrl}
+            alt=""
+            style={appWallpaperStyle}
+            onLoad={() => setLoadedAppWallpaperUrl(visibleAppWallpaperUrl)}
+          />
         </div>
       ) : null}
 

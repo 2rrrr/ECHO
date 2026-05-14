@@ -197,7 +197,52 @@ describe('BilibiliMvProvider', () => {
     });
   });
 
-  it('skips raw Bilibili DASH fragments and falls back to direct MP4 streams', async () => {
+  it('uses the WBI playurl endpoint when Bilibili exposes signing keys', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('/x/web-interface/nav')) {
+        return jsonResponse({
+          data: {
+            wbi_img: {
+              img_url: 'https://i0.hdslb.com/bfs/wbi/abcdefghijklmnopqrstuvwxyzABCDEF.png',
+              sub_url: 'https://i0.hdslb.com/bfs/wbi/0123456789abcdefghijklmnopqrstuvwxyzABCDEF.png',
+            },
+          },
+        });
+      }
+
+      if (url.includes('/x/player/wbi/playurl') && url.includes('qn=80')) {
+        expect(url).toContain('wts=');
+        expect(url).toContain('w_rid=');
+        return jsonResponse({ data: { quality: 80, durl: [{ url: 'https://cdn.example/wbi-1080.mp4' }] } });
+      }
+
+      if (url.includes('/x/player/playurl')) {
+        throw new Error('unsigned playurl endpoint should not be used when WBI keys are available');
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili', cookie: 'SESSDATA=secret' }),
+    });
+
+    const variants = await provider.resolve(video, settings);
+
+    expect(variants[0]).toMatchObject({
+      id: 'bilibili-qn-80',
+      url: 'https://cdn.example/wbi-1080.mp4',
+      rawProviderJson: {
+        endpoint: 'wbi-playurl',
+      },
+    });
+  });
+
+  it('resolves Bilibili DASH video streams so logged-in higher quality is not capped at durl-only 720p', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
         return jsonResponse({ data: { cid: 123 } });
@@ -228,7 +273,18 @@ describe('BilibiliMvProvider', () => {
         return jsonResponse({
           data: {
             quality: 64,
-            durl: [{ url: 'https://cdn.example/720.mp4' }],
+            dash: {
+              video: [
+                {
+                  id: 64,
+                  baseUrl: 'https://upos.example/720-video-only.m4s',
+                  width: 1280,
+                  height: 720,
+                  frameRate: '30',
+                  codecs: 'avc1.640028',
+                },
+              ],
+            },
           },
         });
       }
@@ -242,17 +298,20 @@ describe('BilibiliMvProvider', () => {
 
     const variants = await provider.resolve(video, settings);
 
-    expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-64']);
+    expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-80', 'bilibili-qn-64']);
     expect(variants[0]).toMatchObject({
-      label: '720p',
-      qualityTier: '720p',
-      url: 'https://cdn.example/720.mp4',
+      label: '1080p',
+      qualityTier: '1080p',
+      width: 1920,
+      height: 1080,
+      codec: 'avc1.640032',
+      url: 'https://upos.example/1080-video-only.m4s',
       headers: {
         Cookie: 'SESSDATA=secret',
         Referer: 'https://www.bilibili.com/video/BV1echo',
       },
     });
-    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('fnval=0'), expect.anything());
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('fnval=4048'), expect.anything());
   });
 
   it('resolves unrestricted variants when max quality is selected and keeps 60fps variants', async () => {
@@ -262,15 +321,15 @@ describe('BilibiliMvProvider', () => {
       }
 
       if (url.includes('qn=120')) {
-        return jsonResponse({ data: { durl: [{ url: 'https://cdn.example/4k.mp4' }] } });
+        return jsonResponse({ data: { quality: 120, durl: [{ url: 'https://cdn.example/4k.mp4' }] } });
       }
 
       if (url.includes('qn=116')) {
-        return jsonResponse({ data: { durl: [{ url: 'https://cdn.example/1080-60.mp4' }] } });
+        return jsonResponse({ data: { quality: 116, durl: [{ url: 'https://cdn.example/1080-60.mp4' }] } });
       }
 
       if (url.includes('qn=80')) {
-        return jsonResponse({ data: { durl: [{ url: 'https://cdn.example/1080.mp4' }] } });
+        return jsonResponse({ data: { quality: 80, durl: [{ url: 'https://cdn.example/1080.mp4' }] } });
       }
 
       return jsonResponse({ code: -1 }, 403);
@@ -280,13 +339,86 @@ describe('BilibiliMvProvider', () => {
       getCredentials: () => ({ provider: 'bilibili' }),
     });
 
-    const variants = await provider.resolve(video, { ...settings, maxQuality: 'max', allow60fps: false });
+    const variants = await provider.resolve(video, { ...settings, maxQuality: 'max', allow60fps: true });
 
     expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-120', 'bilibili-qn-116', 'bilibili-qn-80']);
     expect(variants.find((variant) => variant.id === 'bilibili-qn-116')).toMatchObject({
       label: '1080p 60fps',
       fps: 60,
       url: 'https://cdn.example/1080-60.mp4',
+    });
+  });
+
+  it('honors the 60fps setting when resolving Bilibili variants', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('qn=116')) {
+        return jsonResponse({ data: { quality: 116, durl: [{ url: 'https://cdn.example/1080-60.mp4' }] } });
+      }
+
+      if (url.includes('qn=80')) {
+        return jsonResponse({ data: { quality: 80, durl: [{ url: 'https://cdn.example/1080.mp4' }] } });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const variants = await provider.resolve(video, { ...settings, maxQuality: '1080p', allow60fps: false });
+
+    expect(fetchImpl).not.toHaveBeenCalledWith(expect.stringContaining('qn=116'), expect.anything());
+    expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-80']);
+  });
+
+  it('resolves 4K DASH video streams when the MV quality cap allows 2160p', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('qn=120')) {
+        return jsonResponse({
+          data: {
+            quality: 120,
+            dash: {
+              video: [
+                {
+                  id: 120,
+                  baseUrl: 'https://upos.example/4k-video-only.m4s',
+                  width: 3840,
+                  height: 2160,
+                  frameRate: '60',
+                  codecs: 'hev1.1.6.L153.90',
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili', cookie: 'SESSDATA=secret' }),
+    });
+
+    const variants = await provider.resolve(video, { ...settings, maxQuality: '2160p', allow60fps: true });
+
+    expect(variants[0]).toMatchObject({
+      id: 'bilibili-qn-120',
+      label: '4K 60fps',
+      qualityTier: '2160p',
+      width: 3840,
+      height: 2160,
+      fps: 60,
+      url: 'https://upos.example/4k-video-only.m4s',
     });
   });
 
@@ -324,6 +456,34 @@ describe('BilibiliMvProvider', () => {
         requestedQn: 127,
         qn: 80,
       },
+    });
+  });
+
+  it('does not trust a high requested qn as 8K when Bilibili omits the actual quality', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('qn=127')) {
+        return jsonResponse({ data: { durl: [{ url: 'https://cdn.example/no-quality-field.mp4' }] } });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const variants = await provider.resolve(video, { ...settings, maxQuality: 'max' });
+
+    expect(variants[0]).toMatchObject({
+      id: 'bilibili-qn-120',
+      label: '4K',
+      qualityTier: '2160p',
+      height: 2160,
+      url: 'https://cdn.example/no-quality-field.mp4',
     });
   });
 });

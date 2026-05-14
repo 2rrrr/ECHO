@@ -1088,6 +1088,222 @@
   backdrop-filter: none;
 }
 
+html[data-theme="dark"] .eq-panel {
+  color: var(--color-text, #e6eef8);
+}
+
+html[data-theme="dark"] .eq-title-icon,
+html[data-theme="dark"] .eq-enable-pill,
+html[data-theme="dark"] .eq-icon-action,
+html[data-theme="dark"] .eq-preset-tools input,
+html[data-theme="dark"] .eq-preset-tools button,
+html[data-theme="dark"] .eq-soft-button,
+html[data-theme="dark"] .eq-band-chip,
+html[data-theme="dark"] .eq-preset-search,
+html[data-theme="dark"] .eq-preset-filter,
+html[data-theme="dark"] .eq-preset-trigger,
+html[data-theme="dark"] .eq-preset-menu,
+html[data-theme="dark"] .eq-status-card,
+html[data-theme="dark"] .eq-preset-metadata,
+html[data-theme="dark"] .eq-workbench,
+html[data-theme="dark"] .eq-preamp-bar,
+html[data-theme="dark"] .eq-level-meter,
+html[data-theme="dark"] .eq-curve-shell,
+html[data-theme="dark"] .eq-inspector,
+html[data-theme="dark"] .eq-inspector label,
+html[data-theme="dark"] .eq-inspector input[type="number"],
+html[data-theme="dark"] .eq-compare-row,
+html[data-theme="dark"] .channel-balance-panel,
+html[data-theme="dark"] .channel-tool-group,
+html[data-theme="dark"] .channel-calibration-readout span,
+html[data-theme="dark"] .channel-balance-meter,
+html[data-theme="dark"] .channel-balance-readout span {
+  border-color: rgba(150, 168, 190, 0.16);
+  background: rgba(18, 25, 35, 0.82);
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .eq-workbench,
+html[data-theme="dark"] .channel-balance-panel {
+  background:
+    linear-gradient(135deg, rgba(22, 31, 43, 0.92), rgba(13, 19, 29, 0.88)),
+    var(--color-surface, #111821);
+}
+
+html[data-theme="dark"] .eq-curve-shell {
+  background:
+    linear-gradient(180deg, rgba(17, 25, 36, 0.94), rgba(10, 15, 23, 0.92)),
+    #0c121b;
+}
+
+html[data-theme="dark"] .eq-preset-menu {
+  background: rgba(14, 20, 30, 0.98);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
+}
+
+html[data-theme="dark"] .eq-preset-filter {
+  background: rgba(11, 17, 25, 0.78);
+}
+
+html[data-theme="dark"] .eq-preset-filter-chip,
+html[data-theme="dark"] .eq-preset-option,
+html[data-theme="dark"] .eq-preset-trigger,
+html[data-theme="dark"] .eq-preset-search input,
+html[data-theme="dark"] .eq-enable-pill,
+html[data-theme="dark"] .eq-icon-action,
+html[data-theme="dark"] .eq-preset-tools input,
+html[data-theme="dark"] .eq-preset-tools button,
+html[data-theme="dark"] .eq-soft-button,
+html[data-theme="dark"] .eq-band-chip,
+html[data-theme="dark"] .eq-inspector input[type="number"] {
+  color: rgba(226, 236, 248, 0.92);
+}
+
+html[data-theme="dark"] .eq-title-icon,
+html[data-theme="dark"] .eq-preset-trigger svg,
+html[data-theme="dark"] .eq-preset-search,
+html[data-theme="dark"] .eq-status-card span,
+html[data-theme="dark"] .eq-preamp-bar span,
+html[data-theme="dark"] .eq-preset-tools span,
+html[data-theme="dark"] .eq-preset-menu-heading,
+html[data-theme="dark"] .eq-preset-metadata p,
+html[data-theme="dark"] .eq-preset-metadata em,
+html[data-theme="dark"] .eq-level-meter em,
+html[data-theme="dark"] .eq-level-meter p,
+html[data-theme="dark"] .eq-inspector-title span,
+html[data-theme="dark"] .eq-inspector label span,
+html[data-theme="dark"] .eq-inspector em,
+html[data-theme="dark"] .eq-compare-row span,
+html[data-theme="dark"] .eq-compare-toggle,
+html[data-theme="dark"] .channel-tool-group header span,
+html[data-theme="dark"] .channel-tool-group label > span,
+html[data-theme="dark"] .channel-calibration-readout em,
+html[data-theme="dark"] .channel-balance-wide em,
+html[data-theme="dark"] .channel-balance-readout em,
+html[data-theme="dark"] .eq-band-chip strong {
+  color: rgba(164, 181, 202, 0.82);
+}
+
+html[data-theme="dark"] .eq-title-block h2,
+html[data-theme="dark"] .channel-balance-header h3,
+html[data-theme="dark"] .eq-status-card strong,
+html[data-theme="dark"] .eq-preamp-bar strong,
+html[data-theme="dark"] .eq-preset-metadata span,
+html[data-theme="dark"] .eq-inspector-title strong,
+html[data-theme="dark"] .eq-compare-label,
+html[data-theme="dark"] .channel-tool-group header strong,
+html[data-theme="dark"] .channel-tool-group label strong,
+html[data-theme="dark"] .channel-calibration-readout strong,
+html[data-theme="dark"] .channel-balance-readout strong,
+html[data-theme="dark"] .eq-band-chip span {
+  color: rgba(241, 247, 255, 0.94);
+}
+
+html[data-theme="dark"] .eq-enable-pill input {
+  border-color: #7fd8e6;
+}
+
+html[data-theme="dark"] .eq-enable-pill input::before {
+  background: #7fd8e6;
+}
+
+html[data-theme="dark"] .eq-preset-filter-chip[data-active="true"],
+html[data-theme="dark"] .eq-preset-option[data-selected="true"],
+html[data-theme="dark"] .eq-status-card[data-active="true"],
+html[data-theme="dark"] .eq-preset-metadata strong,
+html[data-theme="dark"] .eq-band-chip[data-selected="true"],
+html[data-theme="dark"] .eq-soft-button[data-active="true"] {
+  color: #9ae7ee;
+  border-color: rgba(127, 216, 230, 0.28);
+  background: rgba(28, 84, 96, 0.34);
+}
+
+html[data-theme="dark"] .eq-icon-action:hover,
+html[data-theme="dark"] .eq-soft-button:hover,
+html[data-theme="dark"] .eq-preset-tools button:hover,
+html[data-theme="dark"] .eq-band-chip:hover,
+html[data-theme="dark"] .eq-preset-trigger:hover,
+html[data-theme="dark"] .eq-preset-filter-chip:hover,
+html[data-theme="dark"] .eq-preset-option:hover {
+  color: #b6f4f8;
+  border-color: rgba(127, 216, 230, 0.34);
+  background: rgba(33, 91, 104, 0.28);
+}
+
+html[data-theme="dark"] .eq-status-card[data-risk="true"],
+html[data-theme="dark"] .eq-level-meter[data-risk="true"],
+html[data-theme="dark"] .eq-soft-button[data-risk="true"] {
+  color: #ffd0b2;
+  border-color: rgba(255, 151, 96, 0.32);
+  background: rgba(101, 49, 26, 0.34);
+}
+
+html[data-theme="dark"] .eq-level-meter,
+html[data-theme="dark"] .channel-calibration-readout span,
+html[data-theme="dark"] .channel-balance-readout span {
+  background: rgba(11, 17, 25, 0.66);
+}
+
+html[data-theme="dark"] .eq-preamp-bar input,
+html[data-theme="dark"] .eq-inspector-toggle input,
+html[data-theme="dark"] .eq-compare-toggle input,
+html[data-theme="dark"] .channel-tool-group input[type="range"] {
+  accent-color: #7fd8e6;
+}
+
+html[data-theme="dark"] .eq-grid-line {
+  stroke: rgba(173, 190, 210, 0.12);
+}
+
+html[data-theme="dark"] .eq-grid-line[data-major="true"] {
+  stroke: rgba(173, 190, 210, 0.22);
+}
+
+html[data-theme="dark"] .eq-zero-line {
+  stroke: rgba(220, 232, 246, 0.34);
+}
+
+html[data-theme="dark"] .eq-x-label,
+html[data-theme="dark"] .eq-y-label {
+  fill: rgba(169, 187, 207, 0.86);
+}
+
+html[data-theme="dark"] .eq-curve-node {
+  fill: rgba(12, 18, 27, 0.96);
+  stroke: rgba(190, 207, 226, 0.82);
+}
+
+html[data-theme="dark"] .eq-curve-node-number,
+html[data-theme="dark"] .eq-selected-readout text {
+  fill: rgba(231, 241, 252, 0.94);
+}
+
+html[data-theme="dark"] .eq-curve-node-group[data-active="true"] .eq-curve-node,
+html[data-theme="dark"] .eq-curve-node-group:focus .eq-curve-node {
+  fill: rgba(28, 84, 96, 0.9);
+  stroke: #9ae7ee;
+}
+
+html[data-theme="dark"] .channel-balance-meter {
+  background:
+    linear-gradient(90deg, rgba(127, 216, 230, 0.2), transparent 50%, rgba(255, 183, 111, 0.18)),
+    rgba(11, 17, 25, 0.72);
+}
+
+html[data-theme="dark"] .channel-balance-meter::before {
+  background: rgba(220, 232, 246, 0.28);
+}
+
+html[data-theme="dark"] .channel-balance-meter span {
+  border-color: #7fd8e6;
+  background: #101722;
+}
+
+html[data-theme="dark"] .channel-balance-readout p,
+html[data-theme="dark"] .eq-panel-error {
+  color: #ffb48e;
+}
+
 @media (max-width: 1040px) {
   .eq-header,
   .channel-balance-header {

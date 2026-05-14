@@ -248,6 +248,7 @@ const createHarness = (
     metadataService,
     coverCacheDir,
     appSettings: () => ({
+      appearanceTheme: 'light',
       albumMergeStrategy,
       artistWallAlbumArtwork: false,
       coverCacheDir,
@@ -1169,6 +1170,124 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('sameTitleAndCover album grouping merges same cover when album titles are at least 90 percent similar', async () => {
+    const coverExtractor = new FakeCoverExtractor({ sourceHash: 'same-cover-hash' });
+    const harness = createHarness({ coverExtractor });
+    harness.setAlbumMergeStrategy('sameTitleAndCover');
+    const firstFolder = join(harness.folder, 'disc-a');
+    const secondFolder = join(harness.folder, 'disc-b');
+    mkdirSync(firstFolder, { recursive: true });
+    mkdirSync(secondFolder, { recursive: true });
+    const first = writeAudioFile(firstFolder, 'A.flac');
+    const second = writeAudioFile(secondFolder, 'B.flac');
+    harness.metadataService.overrides.set(
+      first,
+      baseMetadata({
+        title: 'A',
+        artist: 'Artist One',
+        album: 'beatmania IIDX 25 CANNON BALLERS Original Soundtrack',
+        albumArtist: 'Album Artist One',
+      }),
+    );
+    harness.metadataService.overrides.set(
+      second,
+      baseMetadata({
+        title: 'B',
+        artist: 'Artist Two',
+        album: 'beatmania IIDX 25 CANON BALLERS Original Soundtrack',
+        albumArtist: 'Album Artist Two',
+      }),
+    );
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].trackCount).toBe(2);
+    harness.cleanup();
+  });
+
+  it('sameTitleAndCover album grouping merges visually identical cached covers even when original cover hashes differ', async () => {
+    const harness = createHarness({ coverExtractor: new FakeCoverExtractor({ source: 'embedded' }) });
+    harness.setAlbumMergeStrategy('sameTitleAndCover');
+    const firstFolder = join(harness.folder, 'disc-a');
+    const secondFolder = join(harness.folder, 'disc-b');
+    mkdirSync(firstFolder, { recursive: true });
+    mkdirSync(secondFolder, { recursive: true });
+    const first = writeAudioFile(firstFolder, 'A.flac');
+    const second = writeAudioFile(secondFolder, 'B.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', artist: 'Artist One', album: 'KiLLKiSS', albumArtist: 'Ave Mujica' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', artist: 'Artist Two', album: 'KiLLKISS', albumArtist: 'Ave Mujica' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].trackCount).toBe(2);
+    harness.cleanup();
+  });
+
+  it('sameTitleAndCover album grouping merges titles above 95 percent before artist differences', async () => {
+    const harness = createHarness({ coverExtractor: new FakeCoverExtractor() });
+    harness.setAlbumMergeStrategy('sameTitleAndCover');
+    const firstFolder = join(harness.folder, 'disc-a');
+    const secondFolder = join(harness.folder, 'disc-b');
+    mkdirSync(firstFolder, { recursive: true });
+    mkdirSync(secondFolder, { recursive: true });
+    const first = writeAudioFile(firstFolder, 'A.flac');
+    const second = writeAudioFile(secondFolder, 'B.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', artist: 'Artist One', album: 'Fionaredica', albumArtist: 'HITNEX TRAX' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', artist: 'Artist Two', album: 'Fïonaredica', albumArtist: 'Kobaryo' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].trackCount).toBe(2);
+    harness.cleanup();
+  });
+
+  it('sameTitleAndCover album grouping keeps similar titles split below 95 percent when covers differ', async () => {
+    const harness = createHarness({ coverExtractor: new FakeCoverExtractor() });
+    harness.setAlbumMergeStrategy('sameTitleAndCover');
+    const first = writeAudioFile(harness.folder, 'A.flac');
+    const second = writeAudioFile(harness.folder, 'B.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', artist: 'Artist One', album: 'maimai ALL PERFECT COLLECTION', albumArtist: 'SEGA Sound Team' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', artist: 'Artist Two', album: 'maimai でらっくす ベストアルバム', albumArtist: 'SEGA Sound Team' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(2);
+    harness.cleanup();
+  });
+
+  it('sameTitleAndCover album grouping treats full-width and half-width title punctuation as matching', async () => {
+    const coverExtractor = new FakeCoverExtractor({ sourceHash: 'same-cover-hash' });
+    const harness = createHarness({ coverExtractor });
+    harness.setAlbumMergeStrategy('sameTitleAndCover');
+    const firstFolder = join(harness.folder, 'disc-a');
+    const secondFolder = join(harness.folder, 'disc-b');
+    mkdirSync(firstFolder, { recursive: true });
+    mkdirSync(secondFolder, { recursive: true });
+    const first = writeAudioFile(firstFolder, 'A.flac');
+    const second = writeAudioFile(secondFolder, 'B.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', artist: 'Artist One', album: '28／29', albumArtist: 'Airi Suzuki' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', artist: 'Artist Two', album: '28/29', albumArtist: 'Tsunku' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].trackCount).toBe(2);
+    harness.cleanup();
+  });
+
   it('sameTitleAndCover album grouping does not merge same title with different covers', async () => {
     const harness = createHarness({ coverExtractor: new FakeCoverExtractor() });
     harness.setAlbumMergeStrategy('sameTitleAndCover');
@@ -1182,6 +1301,23 @@ describe('Library Core', () => {
     const albums = harness.service.getAlbums({ pageSize: 10 });
 
     expect(albums.total).toBe(2);
+    harness.cleanup();
+  });
+
+  it('sameTitleAndCover album grouping does not split a standard album when track covers differ', async () => {
+    const harness = createHarness({ coverExtractor: new FakeCoverExtractor() });
+    harness.setAlbumMergeStrategy('sameTitleAndCover');
+    const first = writeAudioFile(harness.folder, 'A.flac');
+    const second = writeAudioFile(harness.folder, 'B.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', artist: 'Artist One', album: 'Same Album', albumArtist: 'Same Album Artist' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', artist: 'Artist Two', album: 'Same Album', albumArtist: 'Same Album Artist' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].trackCount).toBe(2);
     harness.cleanup();
   });
 

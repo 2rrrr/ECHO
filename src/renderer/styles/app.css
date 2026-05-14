@@ -1222,6 +1222,48 @@
   gap: 8px;
 }
 
+.settings-update-progress {
+  display: grid;
+  width: min(720px, 100%);
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(69, 118, 158, 0.14);
+  border-radius: 8px;
+  background: rgba(247, 251, 255, 0.78);
+}
+
+.settings-update-progress-label,
+.settings-update-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #52657b;
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.settings-update-progress-label strong {
+  color: #273b53;
+  font-size: 12px;
+}
+
+.settings-update-progress-track {
+  overflow: hidden;
+  height: 7px;
+  border-radius: 999px;
+  background: #dce7f1;
+  box-shadow: inset 0 1px 2px rgba(36, 55, 78, 0.08);
+}
+
+.settings-update-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4d79a3, #4f9a8f);
+  transition: width 220ms ease;
+}
+
 .settings-update-notes em {
   color: #6f7f91;
   font-size: 11px;
@@ -1989,10 +2031,12 @@
 
 .player-now {
   display: flex;
-  max-width: 420px;
+  width: 100%;
+  max-width: 680px;
   min-width: 0;
   align-items: center;
   gap: 12px;
+  overflow: hidden;
 }
 
 .player-cover,
@@ -2099,7 +2143,10 @@
 
 .player-track-copy {
   display: grid;
+  flex: 1 1 0;
+  width: 100%;
   min-width: 0;
+  overflow: hidden;
   gap: 3px;
   -webkit-user-select: none;
   user-select: none;
@@ -2202,7 +2249,9 @@
 }
 
 .player-tags {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;
   max-height: 23px;
   gap: 4px;
   overflow: hidden;
@@ -2243,6 +2292,12 @@
   background: #fff7e3;
 }
 
+.tag-streaming {
+  color: #28615a;
+  border-color: rgba(35, 138, 122, 0.14);
+  background: #eefaf7;
+}
+
 .tag-lossless {
   color: #2a617f;
   border-color: rgba(42, 97, 127, 0.1);
@@ -2264,6 +2319,7 @@
 }
 
 .player-tags .hifi-tag {
+  flex: 0 0 auto;
   max-width: 132px;
   height: 18px;
   padding: 0 6px;
@@ -5352,6 +5408,522 @@
   color: var(--color-muted);
 }
 
+html[data-theme="dark"] .app-shell {
+  background:
+    linear-gradient(180deg, #181d24 0%, var(--color-bg) 64%),
+    var(--color-bg);
+}
+
+html[data-theme="dark"] .app-wallpaper-layer {
+  background: #111820;
+}
+
+html[data-theme="dark"] .app-titlebar {
+  border-color: var(--color-border);
+  background: rgba(17, 20, 26, 0.9);
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .sidebar {
+  border-color: rgba(232, 238, 247, 0.09);
+  background:
+    linear-gradient(180deg, rgba(26, 32, 41, 0.86) 0%, rgba(22, 27, 35, 0.9) 52%, rgba(17, 21, 28, 0.95) 100%),
+    rgba(19, 23, 30, 0.94);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .page-surface {
+  background:
+    linear-gradient(180deg, rgba(24, 29, 37, 0.72), rgba(16, 19, 24, 0.98) 46%),
+    var(--color-bg);
+}
+
+html[data-theme="dark"] .player-bar {
+  border-color: var(--color-border);
+  background: rgba(20, 24, 31, 0.94);
+  box-shadow:
+    0 -8px 24px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .player-bar .icon-button {
+  color: rgba(218, 226, 238, 0.82);
+  border: 1px solid rgba(232, 238, 247, 0.08);
+  background:
+    linear-gradient(180deg, rgba(53, 60, 73, 0.9), rgba(38, 44, 56, 0.92)),
+    rgba(38, 44, 56, 0.9);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .player-bar .icon-button:hover {
+  color: #ffffff;
+  border-color: rgba(139, 211, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(69, 79, 96, 0.96), rgba(46, 55, 70, 0.96)),
+    rgba(46, 55, 70, 0.96);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .player-bar .icon-button:disabled {
+  color: rgba(196, 204, 216, 0.34);
+  border-color: rgba(232, 238, 247, 0.05);
+  background: rgba(54, 59, 70, 0.42);
+  box-shadow: none;
+  opacity: 1;
+}
+
+html[data-theme="dark"] .player-bar .icon-button.is-soft-active {
+  color: #b8ecff;
+  border-color: rgba(100, 181, 255, 0.28);
+  background:
+    linear-gradient(180deg, rgba(31, 93, 120, 0.72), rgba(25, 70, 96, 0.78)),
+    rgba(24, 75, 104, 0.82);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(100, 181, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .player-bar .play-button {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, #2c333f, #141922),
+    #141922;
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .player-bar .play-button:hover {
+  background:
+    linear-gradient(180deg, #374052, #181f2b),
+    #181f2b;
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(139, 211, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme="dark"] .progress-row {
+  color: rgba(204, 214, 228, 0.72);
+}
+
+html[data-theme="dark"] .progress-track {
+  height: 5px;
+  background: rgba(232, 238, 247, 0.12);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.42),
+    0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"] .progress-fill {
+  background: linear-gradient(90deg, #7fd8e6, #d8e6f8);
+  box-shadow: 0 0 14px rgba(127, 216, 230, 0.22);
+}
+
+html[data-theme="dark"] .progress-thumb {
+  border-color: rgba(12, 18, 26, 0.96);
+  background: #d8e6f8;
+  box-shadow:
+    0 5px 14px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+html[data-theme="dark"] .app-titlebar-brand,
+html[data-theme="dark"] .brand-name,
+html[data-theme="dark"] .nav-item[data-active="true"],
+html[data-theme="dark"] .settings-nav-item.active,
+html[data-theme="dark"] .songs-title-group h1 {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .app-titlebar-brand span,
+html[data-theme="dark"] .sidebar-folder,
+html[data-theme="dark"] .nav-item,
+html[data-theme="dark"] .nav-item svg,
+html[data-theme="dark"] .titlebar-action,
+html[data-theme="dark"] .window-control,
+html[data-theme="dark"] .songs-title-group span {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .titlebar-action:hover,
+html[data-theme="dark"] .window-control:hover,
+html[data-theme="dark"] .nav-item:hover,
+html[data-theme="dark"] .settings-nav-item:hover {
+  color: var(--echo-heading-text);
+  background: rgba(255, 255, 255, 0.065);
+}
+
+html[data-theme="dark"] .titlebar-action[data-active="true"],
+html[data-theme="dark"] .titlebar-action[data-drawer-open="true"] {
+  color: var(--color-accent-strong);
+  background: var(--color-accent-soft);
+}
+
+html[data-theme="dark"] .nav-item[data-active="true"],
+html[data-theme="dark"] .settings-nav-item.active {
+  border-color: rgba(100, 181, 255, 0.2);
+  background:
+    radial-gradient(circle at 18px 50%, rgba(100, 181, 255, 0.15), transparent 42px),
+    linear-gradient(180deg, rgba(42, 51, 64, 0.84), rgba(29, 36, 46, 0.84)),
+    rgba(29, 36, 46, 0.9);
+  box-shadow: inset 3px 0 0 rgba(100, 181, 255, 0.78);
+}
+
+html[data-theme="dark"] .utility-nav,
+html[data-theme="dark"] .sidebar-meta,
+html[data-theme="dark"] .section-title,
+html[data-theme="dark"] .setting-row {
+  border-color: var(--color-border);
+}
+
+html[data-theme="dark"] .utility-nav::before {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .page-surface:has(.settings-page) {
+  background:
+    linear-gradient(180deg, rgba(23, 28, 36, 0.94), rgba(15, 18, 24, 0.98)),
+    var(--color-bg);
+}
+
+html[data-theme="dark"] .settings-search,
+html[data-theme="dark"] .settings-font-picker-button,
+html[data-theme="dark"] .settings-select-field select,
+html[data-theme="dark"] .settings-range-field span,
+html[data-theme="dark"] .settings-font-modal,
+html[data-theme="dark"] .settings-font-search,
+html[data-theme="dark"] .settings-font-file-button,
+html[data-theme="dark"] .settings-font-option,
+html[data-theme="dark"] .settings-wallpaper-path,
+html[data-theme="dark"] .settings-wallpaper-control,
+html[data-theme="dark"] .settings-status-grid span,
+html[data-theme="dark"] .settings-cache-path,
+html[data-theme="dark"] .settings-cache-confirm,
+html[data-theme="dark"] .settings-cache-result,
+html[data-theme="dark"] .settings-inline-toggle,
+html[data-theme="dark"] .library-folder-row,
+html[data-theme="dark"] .settings-account-row,
+html[data-theme="dark"] .settings-account-cookie-field input,
+html[data-theme="dark"] .settings-account-browser-field select,
+html[data-theme="dark"] .settings-page .audio-field input,
+html[data-theme="dark"] .settings-page .audio-field select,
+html[data-theme="dark"] .settings-page .audio-command-button,
+html[data-theme="dark"] .settings-page .audio-icon-command,
+html[data-theme="dark"] .list-filter-chip,
+html[data-theme="dark"] .settings-action-button,
+html[data-theme="dark"] .settings-danger-button,
+html[data-theme="dark"] .settings-icon-button,
+html[data-theme="dark"] .chrome-notice,
+html[data-theme="dark"] .chrome-notice-actions button {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: rgba(27, 33, 42, 0.78);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .settings-wallpaper-control > span {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .settings-wallpaper-control .settings-range-field input {
+  accent-color: var(--color-accent);
+}
+
+html[data-theme="dark"] .settings-status-grid em,
+html[data-theme="dark"] .settings-cache-path em,
+html[data-theme="dark"] .settings-cache-confirm em,
+html[data-theme="dark"] .settings-cache-result em,
+html[data-theme="dark"] .library-folder-row span,
+html[data-theme="dark"] .library-folder-row small {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .settings-status-grid strong,
+html[data-theme="dark"] .settings-cache-path strong,
+html[data-theme="dark"] .settings-cache-confirm strong,
+html[data-theme="dark"] .settings-cache-result strong,
+html[data-theme="dark"] .library-folder-row strong {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .settings-cache-confirm p,
+html[data-theme="dark"] .settings-cache-result p {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .settings-update-progress {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: rgba(24, 30, 39, 0.78);
+}
+
+html[data-theme="dark"] .settings-update-progress-label,
+html[data-theme="dark"] .settings-update-progress-meta {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .settings-update-progress-label strong {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .settings-update-progress-track {
+  background: rgba(232, 238, 247, 0.12);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.36);
+}
+
+html[data-theme="dark"] .settings-update-progress-track span {
+  background: linear-gradient(90deg, #7fd8e6, #46c0a9);
+}
+
+html[data-theme="dark"] .settings-account-panel {
+  border-color: var(--color-border);
+}
+
+html[data-theme="dark"] .settings-account-cookie-field input,
+html[data-theme="dark"] .settings-account-browser-field select {
+  color: var(--color-text);
+}
+
+html[data-theme="dark"] .settings-account-cookie-field input::placeholder {
+  color: var(--color-subtle);
+}
+
+html[data-theme="dark"] .settings-account-summary p,
+html[data-theme="dark"] .settings-account-browser-field span,
+html[data-theme="dark"] .settings-account-meta,
+html[data-theme="dark"] .settings-account-meta span {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .settings-account-summary h3,
+html[data-theme="dark"] .settings-account-panel-header h3 {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .settings-account-row .list-filter-chip.active {
+  color: #ffffff;
+  border-color: rgba(100, 181, 255, 0.34);
+  background: #2f6f8f;
+}
+
+html[data-theme="dark"] .settings-account-badge-error.active {
+  background: #8f424b;
+}
+
+html[data-theme="dark"] .settings-search input,
+html[data-theme="dark"] .settings-font-search input {
+  color: var(--color-text);
+}
+
+html[data-theme="dark"] .settings-search input::placeholder,
+html[data-theme="dark"] .settings-font-search input::placeholder {
+  color: var(--color-subtle);
+}
+
+html[data-theme="dark"] .setting-row:hover {
+  background: linear-gradient(90deg, rgba(51, 65, 82, 0.36), transparent 82%);
+}
+
+html[data-theme="dark"] .list-filter-chip:hover,
+html[data-theme="dark"] .settings-action-button:hover,
+html[data-theme="dark"] .settings-icon-button:hover,
+html[data-theme="dark"] .settings-font-picker-button:hover,
+html[data-theme="dark"] .settings-font-option:hover {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border-strong);
+  background: rgba(39, 48, 61, 0.9);
+}
+
+html[data-theme="dark"] .list-filter-chip.active,
+html[data-theme="dark"] .settings-font-option.active {
+  color: #ffffff;
+  border-color: rgba(100, 181, 255, 0.34);
+  background: #2f6f8f;
+  box-shadow: 0 8px 18px rgba(12, 26, 38, 0.34);
+}
+
+html[data-theme="dark"] .toggle-btn {
+  border-color: rgba(232, 238, 247, 0.16);
+  background: #252c37;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.32),
+    0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"] .toggle-btn span {
+  background: #c8d1dc;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .toggle-btn.active {
+  border-color: rgba(100, 181, 255, 0.38);
+  background: #28779d;
+  box-shadow:
+    0 8px 18px rgba(11, 34, 50, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .toggle-btn.active span {
+  background: #ffffff;
+}
+
+html[data-theme="dark"] .app-shell--wallpaper[data-wallpaper-unified-opacity="true"]::before {
+  background: rgb(18 22 29 / var(--app-wallpaper-ui-unified-alpha));
+}
+
+html[data-theme="dark"] .app-shell--wallpaper .app-titlebar,
+html[data-theme="dark"] .app-shell--wallpaper .sidebar,
+html[data-theme="dark"] .app-shell--wallpaper .page-surface,
+html[data-theme="dark"] .app-shell--wallpaper .player-bar {
+  border-color: rgb(232 238 247 / var(--app-wallpaper-ui-border-alpha));
+}
+
+html[data-theme="dark"] .app-shell--wallpaper .settings-wallpaper-path,
+html[data-theme="dark"] .app-shell--wallpaper .settings-wallpaper-control,
+html[data-theme="dark"] .app-shell--wallpaper .settings-page .audio-command-button,
+html[data-theme="dark"] .app-shell--wallpaper .settings-page .audio-icon-command,
+html[data-theme="dark"] .app-shell--wallpaper .settings-page .audio-field input,
+html[data-theme="dark"] .app-shell--wallpaper .settings-page .audio-field select {
+  border-color: rgb(232 238 247 / var(--app-wallpaper-ui-border-alpha));
+  background: rgba(27, 33, 42, 0.82);
+}
+
+html[data-theme="dark"] .page-surface:has(.downloads-page) {
+  background:
+    radial-gradient(circle at 68% 12%, rgba(44, 118, 145, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(18, 23, 31, 0.94), rgba(10, 13, 18, 0.98)),
+    var(--color-bg);
+}
+
+html[data-theme="dark"] .downloads-panel,
+html[data-theme="dark"] .download-search-result,
+html[data-theme="dark"] .download-job-row,
+html[data-theme="dark"] .download-output-path,
+html[data-theme="dark"] .download-tool-pill,
+html[data-theme="dark"] .downloads-section-title > span,
+html[data-theme="dark"] .download-search-scope,
+html[data-theme="dark"] .downloads-url-box input,
+html[data-theme="dark"] .downloads-search-box,
+html[data-theme="dark"] .download-setting-field select,
+html[data-theme="dark"] .downloads-action-button,
+html[data-theme="dark"] .download-icon-button,
+html[data-theme="dark"] .download-search-thumb,
+html[data-theme="dark"] .download-job-icon,
+html[data-theme="dark"] .download-provider-chip {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: rgba(24, 30, 39, 0.82);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .downloads-panel {
+  background:
+    linear-gradient(180deg, rgba(25, 31, 40, 0.86), rgba(17, 22, 30, 0.86)),
+    rgba(17, 22, 30, 0.86);
+}
+
+html[data-theme="dark"] .downloads-queue-panel {
+  background:
+    linear-gradient(180deg, rgba(25, 31, 40, 0.86), rgba(13, 17, 23, 0.92)),
+    rgba(13, 17, 23, 0.92);
+}
+
+html[data-theme="dark"] .downloads-search-box input,
+html[data-theme="dark"] .downloads-url-box input,
+html[data-theme="dark"] .download-setting-field select {
+  color: var(--color-text);
+}
+
+html[data-theme="dark"] .downloads-search-box input::placeholder,
+html[data-theme="dark"] .downloads-url-box input::placeholder {
+  color: var(--color-subtle);
+}
+
+html[data-theme="dark"] .downloads-section-title,
+html[data-theme="dark"] .downloads-section-title > span,
+html[data-theme="dark"] .download-search-scope button,
+html[data-theme="dark"] .download-search-copy span,
+html[data-theme="dark"] .download-search-copy small,
+html[data-theme="dark"] .download-search-copy em,
+html[data-theme="dark"] .download-job-copy span,
+html[data-theme="dark"] .download-job-copy small,
+html[data-theme="dark"] .download-job-meta,
+html[data-theme="dark"] .download-setting-field span,
+html[data-theme="dark"] .download-toggle-row span,
+html[data-theme="dark"] .download-output-path em,
+html[data-theme="dark"] .download-tool-pill em {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .downloads-section-title h2,
+html[data-theme="dark"] .download-search-copy strong,
+html[data-theme="dark"] .download-job-copy strong,
+html[data-theme="dark"] .download-output-path strong,
+html[data-theme="dark"] .download-tool-pill strong {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .download-search-scope button:hover,
+html[data-theme="dark"] .download-search-scope button.active,
+html[data-theme="dark"] .downloads-action-button:hover,
+html[data-theme="dark"] .download-icon-button:hover {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border-strong);
+  background: rgba(39, 48, 61, 0.92);
+}
+
+html[data-theme="dark"] .download-search-scope button.active {
+  color: #ffffff;
+  background: #2f6f8f;
+}
+
+html[data-theme="dark"] .download-tool-pill {
+  color: #ffb4a0;
+}
+
+html[data-theme="dark"] .download-tool-pill[data-ready="true"] {
+  color: #9ae7ee;
+}
+
+html[data-theme="dark"] .download-progress-track {
+  background: rgba(232, 238, 247, 0.12);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.36);
+}
+
+html[data-theme="dark"] .download-progress-track span {
+  background: linear-gradient(90deg, #7fd8e6, #46c0a9);
+}
+
+html[data-theme="dark"] .downloads-page .empty-state {
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  background: rgba(24, 30, 39, 0.78);
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .downloads-page .empty-state h2,
+html[data-theme="dark"] .downloads-page .empty-state strong {
+  color: var(--echo-heading-text);
+}
+
 .history-page {
   display: grid;
   min-height: 0;
@@ -5630,6 +6202,96 @@
   color: var(--color-muted);
   font-size: 12px;
   font-weight: 720;
+}
+
+html[data-theme="dark"] .page-surface:has(.history-page) {
+  background:
+    radial-gradient(circle at 64% 8%, rgba(44, 118, 145, 0.1), transparent 34%),
+    linear-gradient(180deg, rgba(18, 23, 31, 0.94), rgba(9, 12, 17, 0.98)),
+    var(--color-bg);
+}
+
+html[data-theme="dark"] .history-search,
+html[data-theme="dark"] .history-filter-tabs button,
+html[data-theme="dark"] .history-danger-button,
+html[data-theme="dark"] .history-load-more,
+html[data-theme="dark"] .history-actions button,
+html[data-theme="dark"] .history-metric,
+html[data-theme="dark"] .history-row,
+html[data-theme="dark"] .history-cover,
+html[data-theme="dark"] .history-play-count,
+html[data-theme="dark"] .history-empty {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: rgba(24, 30, 39, 0.82);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .history-search input {
+  color: var(--color-text);
+}
+
+html[data-theme="dark"] .history-search input::placeholder {
+  color: var(--color-subtle);
+}
+
+html[data-theme="dark"] .history-filter-tabs button:hover,
+html[data-theme="dark"] .history-load-more:hover:not(:disabled),
+html[data-theme="dark"] .history-actions button:hover:not(:disabled) {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border-strong);
+  background: rgba(39, 48, 61, 0.94);
+}
+
+html[data-theme="dark"] .history-filter-tabs button.active {
+  color: #ffffff;
+  border-color: rgba(100, 181, 255, 0.34);
+  background: #2f6f8f;
+  box-shadow: 0 8px 18px rgba(12, 26, 38, 0.34);
+}
+
+html[data-theme="dark"] .history-danger-button,
+html[data-theme="dark"] .history-actions button.danger {
+  color: #ff9b9f;
+}
+
+html[data-theme="dark"] .history-row {
+  background: rgba(20, 26, 35, 0.78);
+}
+
+html[data-theme="dark"] .history-row:hover {
+  border-color: rgba(127, 216, 230, 0.26);
+  background: rgba(30, 39, 51, 0.88);
+}
+
+html[data-theme="dark"] .history-cover {
+  color: var(--color-subtle);
+  background: rgba(12, 17, 24, 0.9);
+}
+
+html[data-theme="dark"] .history-metric span,
+html[data-theme="dark"] .history-copy span,
+html[data-theme="dark"] .history-time,
+html[data-theme="dark"] .history-duration,
+html[data-theme="dark"] .history-source,
+html[data-theme="dark"] .history-day-group h2,
+html[data-theme="dark"] .history-empty,
+html[data-theme="dark"] .history-footer {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .history-metric strong,
+html[data-theme="dark"] .history-copy strong,
+html[data-theme="dark"] .history-empty strong {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .history-play-count {
+  color: #b8ecff;
+  border-color: rgba(100, 181, 255, 0.24);
+  background: rgba(24, 75, 104, 0.34);
 }
 
 .row-action.is-liked,

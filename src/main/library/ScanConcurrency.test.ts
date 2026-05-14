@@ -21,6 +21,7 @@ afterEach(() => {
 });
 
 const testSettings = (patch: Partial<AppSettings> = {}): AppSettings => ({
+  appearanceTheme: 'light',
   albumMergeStrategy: 'standard',
   artistWallAlbumArtwork: false,
   coverCacheDir: null,
@@ -47,7 +48,10 @@ const testSettings = (patch: Partial<AppSettings> = {}): AppSettings => ({
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
-  lyricsFontSizePx: 36,
+  lyricsFontSizePx: 40,
+  lyricsSecondaryFontSizePx: 22,
+  lyricsLineSpacingPercent: 110,
+  lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,

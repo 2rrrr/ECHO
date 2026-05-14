@@ -95,6 +95,7 @@ const makeAudioStatus = (
 const makeAppSettings = (
   overrides: Partial<AppSettings> = {},
 ): AppSettings => ({
+  appearanceTheme: "light",
   albumMergeStrategy: "standard",
   artistWallAlbumArtwork: false,
   coverCacheDir: null,
@@ -121,7 +122,10 @@ const makeAppSettings = (
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
-  lyricsFontSizePx: 36,
+  lyricsFontSizePx: 40,
+  lyricsSecondaryFontSizePx: 22,
+  lyricsLineSpacingPercent: 110,
+  lyricsContextOpacityPercent: 49,
   lyricsColor: "#314054",
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
@@ -464,6 +468,42 @@ describe("LyricsPage", () => {
     );
   });
 
+  it("updates active lyrics immediately when playback seek commits from the progress bar", async () => {
+    const track = makeTrack();
+    const { emitAudioStatus } = mockEcho(track, 0);
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("First line");
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("playback:seeked", {
+          detail: { trackId: "track-1", positionSeconds: 21 },
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Third line"),
+    );
+
+    act(() => {
+      emitAudioStatus(makeAudioStatus(track, 0));
+    });
+
+    expect(
+      container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+    ).toContain("Third line");
+  });
+
   it("advances active lyrics with RAF interpolation between status updates", async () => {
     const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
     let rafCallback: FrameRequestCallback | null = null;
@@ -757,6 +797,47 @@ describe("LyricsPage", () => {
     expect(window.echo.lyrics.getForTrack).toHaveBeenCalledWith("track-1");
   });
 
+  it("saves per-track lyrics offset from the lyrics page controls", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: lyrics,
+          offsetMs: 0,
+        }),
+      ),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: lyrics,
+          offsetMs: 100,
+        }),
+      ),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("First line")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /\+100ms/ }));
+
+    await waitFor(() =>
+      expect(window.echo.lyrics.setOffset).toHaveBeenCalledWith("track-1", 100),
+    );
+    await waitFor(() =>
+      expect(container.querySelector(".lyrics-offset-value")?.textContent).toBe("+100ms"),
+    );
+  });
+
   it("auto-applies a high scoring candidate when the initial lyrics lookup misses", async () => {
     const track = makeTrack();
     mockEcho(track);
@@ -790,6 +871,35 @@ describe("LyricsPage", () => {
       "track-1",
       "candidate-97",
     );
+  });
+
+  it("does not auto-apply medium risk candidates", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([
+        makeLyricsCandidate({ id: "candidate-medium", score: 0.97, risk: "medium" }),
+      ]),
+      applyCandidate: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1"),
+    );
+    expect(window.echo.lyrics.applyCandidate).not.toHaveBeenCalled();
+    expect(await screen.findByText("可能匹配")).toBeTruthy();
   });
 
   it("auto-applies a high scoring candidate after rematching lyrics", async () => {
@@ -1119,6 +1229,7 @@ describe("LyricsPage", () => {
       lyricsCoverBrightnessPercent: 120,
       lyricsBackgroundScalePercent: 132,
       lyricsSecondaryFontSizePx: 24,
+      lyricsLineSpacingPercent: 118,
       lyricsContextOpacityPercent: 64,
     });
 
@@ -1151,6 +1262,7 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-secondary-font-size")).toBe(
       "24px",
     );
+    expect(page.style.getPropertyValue("--lyrics-line-spacing")).toBe("1.18");
     expect(page.style.getPropertyValue("--lyrics-context-opacity")).toBe(
       "0.64",
     );
@@ -1182,6 +1294,7 @@ describe("LyricsPage", () => {
           lyricsCoverBrightnessPercent: 72,
           lyricsBackgroundScalePercent: 86,
           lyricsSecondaryFontSizePx: 22,
+          lyricsLineSpacingPercent: 74,
           lyricsContextOpacityPercent: 24,
         },
       }),
@@ -1203,9 +1316,54 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-secondary-font-size")).toBe(
       "22px",
     );
+    expect(page.style.getPropertyValue("--lyrics-line-spacing")).toBe("0.74");
     expect(page.style.getPropertyValue("--lyrics-context-opacity")).toBe(
       "0.24",
     );
+  });
+
+  it("does not reload or rematch lyrics when visual display settings change", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: [{ timeMs: 0, text: "Stable current lyrics" }],
+          syncedText: "[00:00.00]Stable current lyrics",
+          plainText: "Stable current lyrics",
+        }),
+      ),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Stable current lyrics")).toBeTruthy();
+    expect(window.echo.lyrics.getForTrack).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(
+      new CustomEvent("lyrics:display-settings-changed", {
+        detail: {
+          lyricsFontSizePx: 48,
+          lyricsLineSpacingPercent: 116,
+          lyricsContextOpacityPercent: 70,
+        },
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByText("Stable current lyrics")).toBeTruthy());
+    expect(window.echo.lyrics.getForTrack).toHaveBeenCalledTimes(1);
+    expect(window.echo.lyrics.searchCandidates).not.toHaveBeenCalled();
   });
 
   it("hides romanization and translations immediately from settings change events", async () => {

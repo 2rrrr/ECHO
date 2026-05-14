@@ -237,6 +237,55 @@ describe('China streaming providers', () => {
     });
   });
 
+  it('maps QQ Music playlist song fields to streaming tracks', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          cdlist: [
+            {
+              dissname: 'QQ Playlist',
+              desc: 'Imported from QQ Music',
+              logo: 'https://qpic.y.qq.com/music_cover/playlist.jpg',
+              total_song_num: 1,
+              songlist: [
+                {
+                  songmid: 'playlist-song-mid',
+                  songid: 123,
+                  songname: 'Playlist Song Title',
+                  songorig: 'Original Song Title',
+                  interval: 242,
+                  singer: [{ mid: 'artist-mid', name: 'Playlist Artist' }],
+                  albumname: 'Playlist Album',
+                  albummid: 'playlist-album-mid',
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const playlist = await new QQMusicStreamingProvider().getPlaylist({ providerPlaylistId: '123456', page: 1, pageSize: 10 });
+
+    expect(playlist).toMatchObject({
+      provider: 'qqmusic',
+      providerPlaylistId: '123456',
+      title: 'QQ Playlist',
+      trackCount: 1,
+    });
+    expect(playlist.tracks[0]).toMatchObject({
+      provider: 'qqmusic',
+      providerTrackId: 'playlist-song-mid',
+      stableKey: 'streaming:qqmusic:playlist-song-mid',
+      title: 'Playlist Song Title',
+      artist: 'Playlist Artist',
+      album: 'Playlist Album',
+      duration: 242,
+      coverThumb: remoteImageUrl('https://y.gtimg.cn/music/photo_new/T002R150x150M000playlist-album-mid.jpg', 'https://y.qq.com/'),
+    });
+  });
+
   it('resolves QQ Music playback through vkey without leaking account cookies', async () => {
     vi.stubGlobal(
       'fetch',

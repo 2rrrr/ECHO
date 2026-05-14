@@ -28,6 +28,7 @@ const makeTrack = (index: number): LibraryTrack => ({
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -457,5 +458,47 @@ describe('PlaybackQueueProvider playback modes', () => {
 
     await waitFor(() => expect(screen.getByTestId('shuffle').textContent).toBe('on'));
     expect(screen.getByTestId('repeat').textContent).toBe('off');
+  });
+
+  it('remembers shuffle and repeat mode across provider restarts', async () => {
+    const ModeProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <span data-testid="shuffle">{queue.isShuffleEnabled ? 'on' : 'off'}</span>
+          <span data-testid="repeat">{queue.repeatMode}</span>
+          <button type="button" onClick={queue.toggleShuffle}>
+            shuffle
+          </button>
+          <button type="button" onClick={() => queue.setRepeatMode('one')}>
+            repeat one
+          </button>
+        </div>
+      );
+    };
+
+    const firstRender = render(
+      <PlaybackQueueProvider>
+        <ModeProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'shuffle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'repeat one' }));
+
+    await waitFor(() => expect(screen.getByTestId('shuffle').textContent).toBe('on'));
+    expect(screen.getByTestId('repeat').textContent).toBe('one');
+
+    firstRender.unmount();
+
+    render(
+      <PlaybackQueueProvider>
+        <ModeProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    expect(screen.getByTestId('shuffle').textContent).toBe('on');
+    expect(screen.getByTestId('repeat').textContent).toBe('one');
   });
 });

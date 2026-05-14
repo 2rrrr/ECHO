@@ -52,7 +52,7 @@ const hasUsefulLoginCookie = (cookies: Cookie[], config: LoginConfig): boolean =
   }
 
   const names = new Set(cookies.map((cookie) => cookie.name));
-  return config.requiredCookieNames.some((name) => names.has(name));
+  return config.requiredCookieNames.every((name) => names.has(name));
 };
 
 export const startAccountLoginWindow = async (

@@ -1,3 +1,4 @@
+import { open } from 'node:fs/promises';
 import { basename, dirname, extname } from 'node:path';
 import { parseFile } from 'music-metadata';
 import type { IAudioMetadata } from 'music-metadata';
@@ -7,6 +8,9 @@ import type { MetadataReader } from './MetadataReader';
 
 const unknownArtist = 'Unknown Artist';
 const unknownAlbum = '';
+const waveInfoTagIds = new Set(['IART', 'INAM', 'IPRD', 'IGNR']);
+
+type WaveInfoTags = Partial<Record<'IART' | 'INAM' | 'IPRD' | 'IGNR', string>>;
 
 const cleanText = (value: unknown): string | null => {
   if (typeof value !== 'string') {
@@ -23,6 +27,140 @@ const cleanTextList = (value: unknown): string | null => {
   }
 
   return cleanText(value);
+};
+
+const stripTrailingNulls = (buffer: Buffer): Buffer => {
+  let end = buffer.length;
+  while (end > 0 && buffer[end - 1] === 0) {
+    end -= 1;
+  }
+
+  return buffer.subarray(0, end);
+};
+
+const textQualityScore = (text: string): number => {
+  let score = 0;
+
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (character === '\uFFFD') {
+      score -= 40;
+      continue;
+    }
+
+    if ((codePoint >= 0 && codePoint < 32 && ![9, 10, 13].includes(codePoint)) || (codePoint >= 0x7f && codePoint <= 0x9f)) {
+      score -= 25;
+      continue;
+    }
+
+    if (
+      (codePoint >= 0x3040 && codePoint <= 0x30ff) ||
+      (codePoint >= 0x3400 && codePoint <= 0x9fff) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7af)
+    ) {
+      score += 4;
+      continue;
+    }
+
+    if (codePoint >= 0x20 && codePoint <= 0x7e) {
+      score += 1;
+      continue;
+    }
+
+    score += 0.5;
+  }
+
+  return score;
+};
+
+export const decodeWaveInfoText = (rawValue: Buffer): string | null => {
+  const data = stripTrailingNulls(rawValue);
+  if (data.length === 0) {
+    return null;
+  }
+
+  const candidates = ['utf-8', 'gbk', 'shift_jis', 'big5', 'windows-1252'].flatMap((encoding) => {
+    try {
+      const text = new TextDecoder(encoding).decode(data).trim();
+      return text.length > 0 ? [{ text, score: textQualityScore(text) }] : [];
+    } catch {
+      return [];
+    }
+  });
+
+  candidates.sort((left, right) => right.score - left.score);
+  return candidates[0]?.text ?? null;
+};
+
+const readWaveInfoTags = async (filePath: string): Promise<WaveInfoTags> => {
+  if (extname(filePath).toLowerCase() !== '.wav') {
+    return {};
+  }
+
+  const file = await open(filePath, 'r');
+  try {
+    const header = Buffer.alloc(12);
+    const headerRead = await file.read(header, 0, header.length, 0);
+    if (headerRead.bytesRead < header.length || header.toString('ascii', 0, 4) !== 'RIFF' || header.toString('ascii', 8, 12) !== 'WAVE') {
+      return {};
+    }
+
+    const fileSize = (await file.stat()).size;
+    const tags: WaveInfoTags = {};
+    let position = 12;
+
+    while (position + 8 <= fileSize) {
+      const chunkHeader = Buffer.alloc(8);
+      const chunkHeaderRead = await file.read(chunkHeader, 0, chunkHeader.length, position);
+      if (chunkHeaderRead.bytesRead < chunkHeader.length) {
+        break;
+      }
+
+      const chunkId = chunkHeader.toString('ascii', 0, 4);
+      const chunkSize = chunkHeader.readUInt32LE(4);
+      const chunkDataPosition = position + 8;
+
+      if (chunkId === 'LIST' && chunkSize >= 4) {
+        const listType = Buffer.alloc(4);
+        const listTypeRead = await file.read(listType, 0, listType.length, chunkDataPosition);
+        if (listTypeRead.bytesRead === listType.length && listType.toString('ascii') === 'INFO') {
+          let infoPosition = chunkDataPosition + 4;
+          const infoEnd = Math.min(chunkDataPosition + chunkSize, fileSize);
+
+          while (infoPosition + 8 <= infoEnd) {
+            const infoHeader = Buffer.alloc(8);
+            const infoHeaderRead = await file.read(infoHeader, 0, infoHeader.length, infoPosition);
+            if (infoHeaderRead.bytesRead < infoHeader.length) {
+              break;
+            }
+
+            const infoId = infoHeader.toString('ascii', 0, 4);
+            const infoSize = infoHeader.readUInt32LE(4);
+            const infoDataPosition = infoPosition + 8;
+
+            if (waveInfoTagIds.has(infoId) && infoDataPosition + infoSize <= fileSize) {
+              const value = Buffer.alloc(infoSize);
+              const valueRead = await file.read(value, 0, value.length, infoDataPosition);
+              if (valueRead.bytesRead === value.length) {
+                const decoded = decodeWaveInfoText(value);
+                if (decoded) {
+                  tags[infoId as keyof WaveInfoTags] = decoded;
+                }
+              }
+            }
+
+            infoPosition += 8 + infoSize + (infoSize % 2);
+          }
+        }
+      }
+
+      position += 8 + chunkSize + (chunkSize % 2);
+    }
+
+    return tags;
+  } finally {
+    await file.close();
+  }
 };
 
 const guessFromFilename = (filePath: string): { artist: string | null; title: string } => {
@@ -139,10 +277,12 @@ export class TsMetadataReader implements MetadataReader {
       });
 
       if (!cueTrack) {
-        return this.normalize(filePath, metadata);
+        const waveInfoTags = await readWaveInfoTags(filePath).catch(() => ({}));
+        return this.normalize(filePath, metadata, waveInfoTags);
       }
 
-      const normalized = this.normalize(metadataPath, metadata);
+      const waveInfoTags = await readWaveInfoTags(metadataPath).catch(() => ({}));
+      const normalized = this.normalize(metadataPath, metadata, waveInfoTags);
       const sourceDuration = normalized.fields.duration;
       const cueEndSeconds = cueTrack.endSeconds ?? (sourceDuration > 0 ? sourceDuration : null);
       const duration = cueEndSeconds !== null ? Math.max(0, cueEndSeconds - cueTrack.startSeconds) : 0;
@@ -231,7 +371,7 @@ export class TsMetadataReader implements MetadataReader {
     }
   }
 
-  normalize(filePath: string, metadata: IAudioMetadata): MetadataResult {
+  normalize(filePath: string, metadata: IAudioMetadata, waveInfoTags: WaveInfoTags = {}): MetadataResult {
     const common = metadata.common;
     const format = metadata.format;
     const filenameGuess = guessFromFilename(filePath);
@@ -255,11 +395,11 @@ export class TsMetadataReader implements MetadataReader {
       return value;
     };
 
-    const embeddedTitle = cleanText(common.title);
-    const embeddedArtist = cleanTextList(common.artist ?? common.artists?.[0]);
-    const embeddedAlbum = cleanText(common.album);
+    const embeddedTitle = cleanText(waveInfoTags.INAM) ?? cleanText(common.title);
+    const embeddedArtist = cleanText(waveInfoTags.IART) ?? cleanTextList(common.artist ?? common.artists?.[0]);
+    const embeddedAlbum = cleanText(waveInfoTags.IPRD) ?? cleanText(common.album);
     const embeddedAlbumArtist = cleanTextList(common.albumartist);
-    const embeddedGenre = cleanTextList(common.genre);
+    const embeddedGenre = cleanText(waveInfoTags.IGNR) ?? cleanTextList(common.genre);
     const folderAlbum = folderAlbumFallback(filePath);
 
     const title = pickText('title', embeddedTitle, filenameGuess.title, 'filename_fallback');

@@ -15,6 +15,7 @@ const clampPlaybackRate = (value: number): number => Math.max(0.5, Math.min(2, v
 const formatSpeed = (value: number): string => `${clampPlaybackRate(value).toFixed(2)}x`;
 const speedFromStatus = (status: AudioStatus | null): number => clampPlaybackRate(status?.playbackRate ?? 1);
 const modeFromStatus = (status: AudioStatus | null): PlaybackSpeedMode => status?.playbackSpeedMode ?? 'nightcore';
+const speedsMatch = (left: number, right: number): boolean => Math.abs(left - right) < 0.001;
 
 export const PlayerSpeedControl = ({
   status,
@@ -26,11 +27,26 @@ export const PlayerSpeedControl = ({
   const [playbackRate, setPlaybackRate] = useState(speedFromStatus(status));
   const [mode, setMode] = useState<PlaybackSpeedMode>(modeFromStatus(status));
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingRef = useRef(false);
   const pendingCommitRef = useRef<{ playbackRate: number; mode: PlaybackSpeedMode } | null>(null);
 
   useEffect(() => {
-    setPlaybackRate(speedFromStatus(status));
-    setMode(modeFromStatus(status));
+    const nextPlaybackRate = speedFromStatus(status);
+    const nextMode = modeFromStatus(status);
+    const pendingCommit = pendingCommitRef.current;
+
+    if (pendingCommit) {
+      if (speedsMatch(nextPlaybackRate, pendingCommit.playbackRate) && nextMode === pendingCommit.mode) {
+        pendingCommitRef.current = null;
+      } else {
+        return;
+      }
+    }
+
+    if (!isDraggingRef.current) {
+      setPlaybackRate(nextPlaybackRate);
+    }
+    setMode(nextMode);
   }, [status]);
 
   useEffect(() => {
@@ -104,6 +120,7 @@ export const PlayerSpeedControl = ({
           onStatusChange(nextStatus);
         }
       } catch (error) {
+        pendingCommitRef.current = null;
         onError(error instanceof Error ? error.message : String(error));
       }
     },
@@ -149,12 +166,34 @@ export const PlayerSpeedControl = ({
             max={2}
             min={0.5}
             onChange={(event) => setPlaybackRate(Number(event.currentTarget.value))}
+            onPointerCancel={(event) => {
+              isDraggingRef.current = false;
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+            }}
+            onPointerDown={(event) => {
+              isDraggingRef.current = true;
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerLeave={(event) => {
+              if (isDraggingRef.current && event.buttons === 0) {
+                isDraggingRef.current = false;
+                void commitSpeed(Number(event.currentTarget.value));
+              }
+            }}
             onKeyUp={(event) => {
               if (event.key === 'Enter' || event.key === ' ' || event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
                 void commitSpeed(Number(event.currentTarget.value));
               }
             }}
-            onPointerUp={(event) => void commitSpeed(Number(event.currentTarget.value))}
+            onPointerUp={(event) => {
+              isDraggingRef.current = false;
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+              void commitSpeed(Number(event.currentTarget.value));
+            }}
             step={0.05}
             type="range"
             value={playbackRate}

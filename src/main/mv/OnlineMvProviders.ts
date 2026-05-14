@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { AccountCredentials } from '../../shared/types/accounts';
 import type { LibraryTrack } from '../../shared/types/library';
 import type {
@@ -55,7 +56,12 @@ const bilibiliQualityMap: Record<number, { tier: Exclude<MvQualityTier, 'auto'>;
   127: { tier: '4320p', label: '8K' },
 };
 
-const bilibiliDirectFnval = '0';
+const bilibiliDashFnval = '4048';
+const bilibiliQualityOrder = [127, 126, 125, 120, 116, 112, 80, 64];
+const bilibiliMixinKeyEncTable = [
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16,
+  24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
+];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -179,6 +185,28 @@ const normalizeUrl = (value: unknown): string | null => {
   return raw;
 };
 
+const wbiKeyPart = (value: unknown): string | null => {
+  const raw = text(value);
+  if (!raw) {
+    return null;
+  }
+
+  return raw.split('/').pop()?.split('.')[0] ?? null;
+};
+
+const mixinWbiKey = (rawKey: string): string => bilibiliMixinKeyEncTable.map((index) => rawKey[index]).join('').slice(0, 32);
+
+const sanitizeWbiValue = (value: unknown): string => String(value).replace(/[!'()*]/g, '');
+
+const appendWbiSignature = (url: URL, mixinKey: string): void => {
+  url.searchParams.set('wts', String(Math.round(Date.now() / 1000)));
+  const query = Array.from(url.searchParams.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(sanitizeWbiValue(value))}`)
+    .join('&');
+  url.searchParams.set('w_rid', createHash('md5').update(`${query}${mixinKey}`).digest('hex'));
+};
+
 const firstUrl = (...values: unknown[]): string | null => {
   for (const value of values) {
     const direct = normalizeUrl(value);
@@ -206,6 +234,44 @@ const fpsFromDashStream = (stream: Record<string, unknown>, label: string): numb
 
   return label.includes('60fps') ? 60 : null;
 };
+
+const qualityFromHeight = (
+  height: number | null,
+  fallback: { tier: Exclude<MvQualityTier, 'auto'>; label: string },
+): { tier: Exclude<MvQualityTier, 'auto'>; label: string } => {
+  if (!height) {
+    return fallback;
+  }
+
+  if (height >= 4320) {
+    return bilibiliQualityMap[127];
+  }
+  if (height >= 2160) {
+    return bilibiliQualityMap[120];
+  }
+  if (height >= 1440) {
+    return { tier: '1440p', label: '1440p' };
+  }
+  if (height >= 1080) {
+    return bilibiliQualityMap[80];
+  }
+
+  return bilibiliQualityMap[64];
+};
+
+const bilibiliQualitiesForSettings = (settings: MvSettings): number[] =>
+  bilibiliQualityOrder.filter((qn) => {
+    const quality = bilibiliQualityMap[qn];
+    if (!quality) {
+      return false;
+    }
+
+    if (qn === 116 && settings.allow60fps === false) {
+      return false;
+    }
+
+    return qualityHeight[quality.tier] <= maxQualityHeight(settings.maxQuality);
+  });
 
 const makeQualityVariant = (
   id: string,
@@ -301,6 +367,19 @@ class ProviderBase {
     const cookie = this.credentials(provider).cookie;
     return cookie ? { Cookie: cookie } : {};
   }
+
+  protected async bilibiliWbiMixinKey(headers: Record<string, string>): Promise<string | null> {
+    try {
+      const payload = await withTimeout(this.fetchImpl, 'https://api.bilibili.com/x/web-interface/nav', headers);
+      const data = isRecord(payload) ? payload.data : null;
+      const wbiImg = isRecord(data) ? data.wbi_img : null;
+      const imgKey = wbiKeyPart(isRecord(wbiImg) ? wbiImg.img_url : null);
+      const subKey = wbiKeyPart(isRecord(wbiImg) ? wbiImg.sub_url : null);
+      return imgKey && subKey ? mixinWbiKey(`${imgKey}${subKey}`) : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProvider {
@@ -379,9 +458,10 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       return [externalVariant(this.id, video.providerUrl ?? video.url, 'Bilibili')];
     }
 
-    const qualities = [127, 120, 116, 112, 80, 64];
+    const qualities = bilibiliQualitiesForSettings(settings);
     const variants: ResolvedMvStreamVariant[] = [];
     const expiresAt = new Date(Date.now() + defaultExpiresMs).toISOString();
+    const wbiMixinKey = await this.bilibiliWbiMixinKey(headers);
 
     for (const qn of qualities) {
       const quality = bilibiliQualityMap[qn];
@@ -393,25 +473,38 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
         continue;
       }
 
-      const playUrl = new URL('https://api.bilibili.com/x/player/playurl');
+      const playUrl = new URL(wbiMixinKey ? 'https://api.bilibili.com/x/player/wbi/playurl' : 'https://api.bilibili.com/x/player/playurl');
       playUrl.searchParams.set('bvid', bvid);
       playUrl.searchParams.set('cid', String(cid));
       playUrl.searchParams.set('qn', String(qn));
-      playUrl.searchParams.set('fnval', bilibiliDirectFnval);
+      playUrl.searchParams.set('fnval', bilibiliDashFnval);
       playUrl.searchParams.set('fnver', '0');
       playUrl.searchParams.set('fourk', '1');
+      if (wbiMixinKey) {
+        appendWbiSignature(playUrl, wbiMixinKey);
+      }
 
       try {
         const playPayload = await withTimeout(this.fetchImpl, playUrl.toString(), headers);
         const playData = isRecord(playPayload) ? playPayload.data : null;
-        const actualQn = number(isRecord(playData) ? playData.quality : null) ?? qn;
-        const actualQuality = bilibiliQualityMap[actualQn] ?? quality;
+        const actualQn = number(isRecord(playData) ? playData.quality : null);
+        const actualQuality = actualQn ? bilibiliQualityMap[actualQn] ?? quality : quality;
+        const dash = isRecord(playData) && isRecord(playData.dash) ? playData.dash : null;
+        const dashStreams = asArray(dash?.video)
+          .filter(isRecord)
+          .filter((stream) => {
+            const streamHeight = nullableNumber(stream.height);
+            return !streamHeight || streamHeight <= maxQualityHeight(settings.maxQuality);
+          })
+          .map((stream) => ({ stream, source: 'dash-video' as const }));
         const durl = asArray(isRecord(playData) ? playData.durl : null).find(isRecord);
-        const streamCandidates = durl ? [durl] : [];
+        const streamCandidates = dashStreams.length > 0 ? dashStreams : durl ? [{ stream: durl, source: 'durl' as const }] : [];
 
-        for (const stream of streamCandidates) {
-          const streamQn = number(stream.id) ?? actualQn;
-          const streamQuality = bilibiliQualityMap[streamQn] ?? actualQuality;
+        for (const { stream, source } of streamCandidates) {
+          const streamHeight = nullableNumber(stream.height);
+          const inferredQuality = qualityFromHeight(streamHeight, actualQuality);
+          const streamQn = number(stream.id) ?? actualQn ?? (source === 'durl' && qn > 120 ? 120 : qn);
+          const streamQuality = bilibiliQualityMap[streamQn] ?? inferredQuality;
           const streamUrl = firstUrl(stream.baseUrl, stream.base_url, stream.url, stream.backupUrl, stream.backup_url);
           const streamId = `bilibili-qn-${streamQn}`;
 
@@ -419,14 +512,19 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
             continue;
           }
 
-          const streamHeight = nullableNumber(stream.height) ?? qualityHeight[streamQuality.tier];
+          const variantHeight = streamHeight ?? qualityHeight[streamQuality.tier];
           const streamWidth = nullableNumber(stream.width);
           const variantFps = fpsFromDashStream(stream, streamQuality.label);
+          if (variantFps && variantFps >= 55 && settings.allow60fps === false) {
+            continue;
+          }
+
+          const label = variantFps && variantFps >= 55 && !/\b60\s*fps\b/i.test(streamQuality.label) ? `${streamQuality.label} 60fps` : streamQuality.label;
 
           variants.push({
-            ...makeQualityVariant(streamId, streamQuality.label, streamQuality.tier, {
+            ...makeQualityVariant(streamId, label, streamQuality.tier, {
               width: streamWidth,
-              height: streamHeight,
+              height: variantHeight,
               fps: variantFps,
               codec: text(stream.codecs),
               container: 'mp4',
@@ -444,7 +542,9 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
             },
             rawProviderJson: {
               provider: this.id,
-              resolver: 'bilibili-direct-durl-v1',
+              resolver: 'bilibili-dash-video-v3',
+              source,
+              endpoint: wbiMixinKey ? 'wbi-playurl' : 'playurl',
               requestedQn: qn,
               qn: streamQn,
               cid,

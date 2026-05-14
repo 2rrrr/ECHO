@@ -79,20 +79,20 @@ const sharedStabilityProfiles: Record<
   Pick<NativeOutputStartOptions, 'bufferSizeFrames' | 'fifoCapacityMs' | 'startupPrebufferMs' | 'startupPrebufferTimeoutMs'>
 > = {
   standard: {
-    bufferSizeFrames: 512,
-    fifoCapacityMs: 250,
+    bufferSizeFrames: 256,
+    fifoCapacityMs: 80,
     startupPrebufferMs: 0,
     startupPrebufferTimeoutMs: 0,
   },
   recovery: {
-    bufferSizeFrames: 1024,
-    fifoCapacityMs: 500,
+    bufferSizeFrames: 512,
+    fifoCapacityMs: 160,
     startupPrebufferMs: 0,
     startupPrebufferTimeoutMs: 0,
   },
   emergency: {
-    bufferSizeFrames: 2048,
-    fifoCapacityMs: 750,
+    bufferSizeFrames: 1024,
+    fifoCapacityMs: 320,
     startupPrebufferMs: 0,
     startupPrebufferTimeoutMs: 0,
   },
@@ -110,7 +110,7 @@ const stableSharedProfile: Pick<
 
 const latencyProfiles: Record<AudioLatencyProfile, Pick<NativeOutputStartOptions, 'bufferSizeFrames'>> = {
   lowLatency: {
-    bufferSizeFrames: 512,
+    bufferSizeFrames: 256,
   },
   balanced: {
     bufferSizeFrames: 2048,
@@ -2043,7 +2043,7 @@ export class AudioSession extends EventEmitter {
     return recoveryCount >= 2 ? 'emergency' : 'recovery';
   }
 
-  private outputSettingsForRecoveryCount(recoveryCount: number): AudioOutputSettings {
+  private outputSettingsForRecoveryCount(recoveryCount: number, isSharedOutput: boolean): AudioOutputSettings {
     const output = { ...(this.currentOutputSettings ?? {}) };
 
     if (recoveryCount >= 3) {
@@ -2051,6 +2051,14 @@ export class AudioSession extends EventEmitter {
         ...output,
         latencyProfile: 'stable',
         bufferSizeFrames: latencyProfiles.stable.bufferSizeFrames,
+      };
+    }
+
+    if (isSharedOutput) {
+      return {
+        ...output,
+        latencyProfile: 'lowLatency',
+        bufferSizeFrames: undefined,
       };
     }
 
@@ -2077,16 +2085,21 @@ export class AudioSession extends EventEmitter {
 
     const filePath = this.currentFilePath;
     const trackId = this.currentTrackId;
-    const output = this.outputSettingsForRecoveryCount(recoveryCount);
+    const sharedRecoveryTier = isSharedOutput ? this.tierForRecoveryCount(recoveryCount) : null;
+    const output = this.outputSettingsForRecoveryCount(recoveryCount, isSharedOutput);
     const probe = createProbeHint(this.currentProbe);
     const safePositionSeconds = Math.min(Math.max(0, positionSeconds), this.currentProbe.durationSeconds || Number.POSITIVE_INFINITY);
     const targetBuffer =
       output.latencyProfile === 'stable'
         ? 'stable'
-        : `${normalizePositiveInteger(output.bufferSizeFrames) ?? latencyProfiles.lowLatency.bufferSizeFrames} frames`;
+        : `${
+            sharedRecoveryTier
+              ? sharedStabilityProfiles[sharedRecoveryTier].bufferSizeFrames
+              : normalizePositiveInteger(output.bufferSizeFrames) ?? latencyProfiles.lowLatency.bufferSizeFrames
+          } frames`;
 
-    if (isSharedOutput) {
-      this.sharedStabilityTier = this.tierForRecoveryCount(recoveryCount);
+    if (sharedRecoveryTier) {
+      this.sharedStabilityTier = sharedRecoveryTier;
     }
     this.sharedStabilityRecovering = true;
     this.lastSharedStabilityRecoveryAt = new Date().toISOString();

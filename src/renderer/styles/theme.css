@@ -12,8 +12,8 @@ body,
 
 body {
   overflow: hidden;
-  color: var(--color-text);
-  background: var(--color-bg);
+  color: var(--theme-page-text);
+  background: var(--theme-app-bg);
   font-family: var(--echo-font-family);
   font-size: var(--echo-base-font-size);
   line-height: var(--echo-ui-line-height);
@@ -39,4 +39,19 @@ button:disabled {
 ::selection {
   color: #ffffff;
   background: var(--color-accent);
+}
+
+:where(input, textarea, select) {
+  color: var(--theme-page-text);
+  background: var(--theme-field-bg);
+  border-color: var(--theme-field-border);
+}
+
+:where(input, textarea)::placeholder {
+  color: var(--theme-field-placeholder);
+}
+
+:where(button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
 }

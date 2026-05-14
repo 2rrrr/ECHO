@@ -24,7 +24,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus, PlaybackSpeedMode } from '../../shared/types/audio';
 import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
-import type { AppSettings } from '../../shared/types/appSettings';
+import type { AppSettings, AppThemeMode } from '../../shared/types/appSettings';
 import type { CoverCacheMigrationResult } from '../../shared/types/coverCache';
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
@@ -48,6 +48,7 @@ import {
   updateAppearancePreferences,
   type AppearancePreferences,
 } from '../preferences/appearancePreferences';
+import { updateThemeMode } from '../preferences/themePreferences';
 import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
 import {
   getAccountsBridge,
@@ -197,14 +198,22 @@ const statusRows = (
   { label: 'sampleRateMismatch', value: formatBool(status?.sampleRateMismatch ?? false) },
 ];
 
+const themeModeOptions: Array<{ mode: AppThemeMode; labelKey: TranslationKey }> = [
+  { mode: 'light', labelKey: 'settings.appearance.theme.light' },
+  { mode: 'dark', labelKey: 'settings.appearance.theme.dark' },
+  { mode: 'system', labelKey: 'settings.appearance.theme.followSystem' },
+];
+
 const getUpdateStateLabel = (state: UpdateStatus['state']): string => {
   switch (state) {
     case 'checking':
       return '正在检查';
     case 'available':
       return '发现新版本';
+    case 'downloading':
+      return '下载中';
     case 'downloaded':
-      return '已下载，等待重启';
+      return '下载完成，正在安装';
     case 'not-available':
       return '已是最新';
     case 'error':
@@ -214,6 +223,23 @@ const getUpdateStateLabel = (state: UpdateStatus['state']): string => {
     default:
       return '待检查';
   }
+};
+
+const formatUpdateBytes = (bytes: number | null | undefined): string => {
+  if (!Number.isFinite(bytes) || !bytes || bytes <= 0) {
+    return 'n/a';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 };
 
 const SettingSection = ({ id, activeKey, icon: Icon, title, children }: SettingSectionProps): JSX.Element => (
@@ -692,12 +718,19 @@ export const SettingsPage = (): JSX.Element => {
     const diagnostics = getDiagnosticsBridge();
     void app?.getSettings().then((settings) => {
       setAppSettings(settings);
+      updateThemeMode(settings.appearanceTheme ?? 'light');
       if (settings.appearancePreferences) {
         setAppearancePreferences(updateAppearancePreferences(settings.appearancePreferences));
       }
     }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
+    const unsubscribeUpdateStatus = app?.onUpdateStatus?.((status) => {
+      setUpdateStatus(status);
+      if (status.state === 'downloading' || status.state === 'downloaded') {
+        setUpdateBusy(false);
+      }
+    });
     void app?.getDefaultCacheDirectory().then(setDefaultCacheDirectory).catch(() => undefined);
     void downloads?.getSettings().then(setDownloadSettings).catch(() => undefined);
     void diagnostics?.getLastCrashSummary().then(setLastCrashSummary).catch(() => undefined);
@@ -705,7 +738,10 @@ export const SettingsPage = (): JSX.Element => {
       void refreshStatus();
     }, 1000);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      unsubscribeUpdateStatus?.();
+    };
   }, [refreshAccountStatuses, refreshDevices, refreshDiscordPresenceStatus, refreshDuplicateSummary, refreshLastFmStatus, refreshStatus]);
 
   useEffect(() => {
@@ -716,6 +752,9 @@ export const SettingsPage = (): JSX.Element => {
       }
 
       setAppSettings((current) => (current ? { ...current, ...patch } : current));
+      if (patch.appearanceTheme) {
+        updateThemeMode(patch.appearanceTheme);
+      }
       if (patch.appearancePreferences) {
         setAppearancePreferences(updateAppearancePreferences(patch.appearancePreferences));
       }
@@ -838,6 +877,12 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleAppearanceReset = (): void => {
     handleAppearanceChange(defaultAppearancePreferences);
+  };
+
+  const handleThemeModeChange = (appearanceTheme: AppThemeMode): void => {
+    updateThemeMode(appearanceTheme);
+    setAppSettings((current) => (current ? { ...current, appearanceTheme } : current));
+    patchAppSettings({ appearanceTheme });
   };
 
   const dispatchSettingsChanged = (patch: Partial<AppSettings>): void => {
@@ -1313,6 +1358,13 @@ export const SettingsPage = (): JSX.Element => {
   const pendingResolvedCacheDirectory =
     pendingCacheDirectory === undefined ? null : pendingCacheDirectory ?? defaultCacheDirectory;
   const currentDownloadDirectoryLabel = downloadSettings?.outputDirectory ?? '尚未选择下载文件夹';
+  const updateDownloadPercent = Math.max(0, Math.min(100, Math.round(updateStatus?.downloadPercent ?? 0)));
+  const showUpdateDownloadProgress = updateStatus?.state === 'downloading' || updateStatus?.state === 'downloaded';
+  const updateDownloadSizeLabel =
+    updateStatus?.transferredBytes && updateStatus.totalBytes
+      ? `${formatUpdateBytes(updateStatus.transferredBytes)} / ${formatUpdateBytes(updateStatus.totalBytes)}`
+      : formatUpdateBytes(updateStatus?.totalBytes);
+  const updateDownloadSpeedLabel = updateStatus?.bytesPerSecond ? `${formatUpdateBytes(updateStatus.bytesPerSecond)}/s` : 'n/a';
 
   const handleDownloadDirectoryChoose = async (): Promise<void> => {
     try {
@@ -2072,9 +2124,15 @@ export const SettingsPage = (): JSX.Element => {
             <SettingSection activeKey={activeSection} icon={Palette} id="appearance" title={t('settings.nav.appearance.label')}>
               <SettingRow title={t('settings.appearance.theme.title')} description={t('settings.appearance.theme.description')}>
                 <div className="settings-chip-row">
-                  <ChipButton active>{t('settings.appearance.theme.light')}</ChipButton>
-                  <ChipButton>{t('settings.appearance.theme.dark')}</ChipButton>
-                  <ChipButton>{t('settings.appearance.theme.followSystem')}</ChipButton>
+                  {themeModeOptions.map((option) => (
+                    <ChipButton
+                      active={(appSettings?.appearanceTheme ?? 'light') === option.mode}
+                      key={option.mode}
+                      onClick={() => handleThemeModeChange(option.mode)}
+                    >
+                      {t(option.labelKey)}
+                    </ChipButton>
+                  ))}
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.appearance.density.title')} description={t('settings.appearance.density.description')}>
@@ -2312,7 +2370,7 @@ export const SettingsPage = (): JSX.Element => {
                     </span>
                     <span>
                       <em>宽松合并</em>
-                      <strong>专辑名一致且封面一致时合并，适合合集、角色曲、手游专辑、Vocaloid 合集。</strong>
+                      <strong>专辑名匹配度 95% 以上直接合并；否则封面一致且专辑名匹配度 90% 以上时合并。</strong>
                     </span>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
@@ -2453,7 +2511,7 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title="BPM / Offset 分析"
-                description="默认关闭。开启后扫描结束会低优先级分析缺失 BPM 的歌曲，并把高置信 BPM 写入歌曲标签。"
+                description="默认开启。开启后会在扫描结束和播放歌曲时低优先级分析缺失 BPM，并把高置信 BPM 写入歌曲标签。"
               >
                 <div className="settings-cache-panel">
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
@@ -2478,7 +2536,7 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-status-grid">
                     <span>
                       <em>状态</em>
-                      <strong>{appSettings?.audioAnalysisEnabled ? '已开启' : '默认关闭'}</strong>
+                      <strong>{appSettings?.audioAnalysisEnabled ? '已开启' : '已关闭'}</strong>
                     </span>
                     <span>
                       <em>进度</em>
@@ -2527,7 +2585,7 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title="自动更新"
-                description="启动后自动检查 GitHub Release，下载完成后提示重启安装。"
+                description="启动后自动检查 GitHub Release，下载完成后自动重启安装。"
               >
                 <div className="settings-cache-panel settings-cache-panel--updates">
                   <div className="settings-status-grid settings-status-grid--updates">
@@ -2548,6 +2606,28 @@ export const SettingsPage = (): JSX.Element => {
                       <strong>{updateStatus?.checkedAt ? new Date(updateStatus.checkedAt).toLocaleString() : 'n/a'}</strong>
                     </span>
                   </div>
+                  {showUpdateDownloadProgress ? (
+                    <div className="settings-update-progress" role="status" aria-live="polite">
+                      <div className="settings-update-progress-label">
+                        <span>{updateStatus?.state === 'downloaded' ? '下载完成，准备安装' : '正在下载更新'}</span>
+                        <strong>{updateDownloadPercent}%</strong>
+                      </div>
+                      <div
+                        aria-label={`OTA 更新下载进度 ${updateDownloadPercent}%`}
+                        aria-valuemax={100}
+                        aria-valuemin={0}
+                        aria-valuenow={updateDownloadPercent}
+                        className="settings-update-progress-track"
+                        role="progressbar"
+                      >
+                        <span style={{ width: `${updateDownloadPercent}%` }} />
+                      </div>
+                      <div className="settings-update-progress-meta">
+                        <span>{updateDownloadSizeLabel}</span>
+                        <span>{updateDownloadSpeedLabel}</span>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
                     <div className="settings-inline-toggle">
                       <span>自动检查更新</span>

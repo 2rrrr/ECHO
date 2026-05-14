@@ -7,6 +7,7 @@ import type { MvMaxQuality, NetworkMvProviderId } from './mv';
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
+export type AppThemeMode = 'light' | 'dark' | 'system';
 
 export type AppearancePreferences = {
   mainFontFamily: string;
@@ -30,6 +31,7 @@ export type RememberedAudioOutput = {
 export type AppSettings = {
   appMemoryVersion?: number;
   locale?: AppLocale;
+  appearanceTheme: AppThemeMode;
   appearancePreferences?: AppearancePreferences;
   songsSort?: LibrarySort;
   rememberedAudioOutput?: RememberedAudioOutput;
@@ -68,6 +70,7 @@ export type AppSettings = {
   lyricsTranslationEnabled: boolean;
   lyricsFontSizePx: number;
   lyricsSecondaryFontSizePx?: number;
+  lyricsLineSpacingPercent?: number;
   lyricsContextOpacityPercent?: number;
   lyricsColor: string;
   lyricsBackgroundMode: LyricsBackgroundMode;

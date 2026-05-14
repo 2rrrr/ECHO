@@ -13,6 +13,7 @@ import {
   readAppearancePreferences,
   registerAppearanceFontFile,
 } from './preferences/appearancePreferences';
+import { applyThemeMode, loadPersistedThemeMode, readThemeMode, watchSystemThemeMode } from './preferences/themePreferences';
 import type { AppearancePreferences } from '../shared/types/appSettings';
 import { getAppBridge } from './utils/echoBridge';
 import './styles/tokens.css';
@@ -28,7 +29,9 @@ import './styles/queue.css';
 import './styles/lyrics.css';
 
 const appearancePreferences = readAppearancePreferences();
+const themeMode = readThemeMode();
 const appBridge = getAppBridge();
+applyThemeMode(themeMode);
 applyAppearancePreferences(appearancePreferences);
 
 const loadAppearanceFontFiles = (preferences: AppearancePreferences): void => {
@@ -71,6 +74,8 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 loadAppearanceFontFiles(appearancePreferences);
+watchSystemThemeMode(readThemeMode);
+void loadPersistedThemeMode().catch(() => undefined);
 void loadPersistedAppearancePreferences()
   .then((preferences) => {
     applyAppearancePreferences(preferences);

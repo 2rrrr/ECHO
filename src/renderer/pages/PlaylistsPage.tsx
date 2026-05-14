@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Download, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RotateCcw, Search, Trash2, WifiOff, X } from 'lucide-react';
+import { Check, Download, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, WifiOff, X } from 'lucide-react';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
+import type { StreamingAudioQuality } from '../../shared/types/streaming';
 import { TrackList } from '../components/library/TrackList';
 import { TrackContextMenu, type TrackMenuAction } from '../components/library/TrackContextMenu';
 import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
@@ -20,6 +21,28 @@ const playlistExportOptions: Array<{ value: PlaylistExportFormat; label: string 
   { value: 'm3u8', label: 'M3U8' },
   { value: 'csv', label: 'CSV' },
 ];
+const streamingQualityOptions: Array<{ value: StreamingAudioQuality; label: string }> = [
+  { value: 'hires', label: 'Hi-Res' },
+  { value: 'lossless', label: 'Lossless' },
+  { value: 'high', label: 'High' },
+  { value: 'standard', label: 'Standard' },
+];
+
+const streamingPlaylistUrl = (playlist: LibraryPlaylist): string | null => {
+  if (!playlist.sourcePlaylistId) {
+    return null;
+  }
+
+  if (playlist.sourceProvider === 'netease') {
+    return `https://music.163.com/#/playlist?id=${encodeURIComponent(playlist.sourcePlaylistId)}`;
+  }
+
+  if (playlist.sourceProvider === 'qqmusic') {
+    return `https://y.qq.com/n/ryqq/playlist/${encodeURIComponent(playlist.sourcePlaylistId)}`;
+  }
+
+  return null;
+};
 
 const emptyItemsPage = (): LibraryPage<LibraryPlaylistItem> => ({
   items: [],
@@ -29,7 +52,7 @@ const emptyItemsPage = (): LibraryPage<LibraryPlaylistItem> => ({
   hasMore: false,
 });
 
-const itemToTrack = (item: LibraryPlaylistItem): LibraryTrack => {
+const itemToTrack = (item: LibraryPlaylistItem, streamingQuality?: StreamingAudioQuality): LibraryTrack => {
   if (item.track && !item.unavailable) {
     return {
       ...item.track,
@@ -45,6 +68,7 @@ const itemToTrack = (item: LibraryPlaylistItem): LibraryTrack => {
       path: item.mediaId,
       provider: item.sourceProvider,
       providerTrackId: item.sourceItemId,
+      streamingQuality,
       stableKey: item.mediaId,
       title: item.titleSnapshot ?? 'Streaming track',
       artist: item.artistSnapshot ?? 'Unknown artist',
@@ -106,6 +130,8 @@ export const PlaylistsPage = (): JSX.Element => {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showNewPlaylistForm, setShowNewPlaylistForm] = useState(false);
   const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
+  const [isRefreshingStreamingPlaylist, setIsRefreshingStreamingPlaylist] = useState(false);
+  const [streamingQuality, setStreamingQuality] = useState<StreamingAudioQuality>('hires');
   const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,9 +144,13 @@ export const PlaylistsPage = (): JSX.Element => {
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? playlists[0] ?? null,
     [playlists, selectedPlaylistId],
   );
-  const displayTracks = useMemo(() => itemsPage.items.map(itemToTrack), [itemsPage.items]);
-  const playableTracks = useMemo(() => itemsPage.items.map(itemToTrack).filter((track) => !track.unavailable), [itemsPage.items]);
   const isSelectedPlaylistRemote = Boolean(selectedPlaylist && selectedPlaylist.sourceProvider !== 'local');
+  const selectedStreamingPlaylistUrl = selectedPlaylist ? streamingPlaylistUrl(selectedPlaylist) : null;
+  const displayTracks = useMemo(
+    () => itemsPage.items.map((item) => itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined)),
+    [isSelectedPlaylistRemote, itemsPage.items, streamingQuality],
+  );
+  const playableTracks = useMemo(() => displayTracks.filter((track) => !track.unavailable), [displayTracks]);
   const likedTrackIds = useLikedTrackIds(playableTracks.map((track) => track.id));
   const queueSource = useMemo(
     () => ({ type: 'manual' as const, label: selectedPlaylist ? `Playlist: ${selectedPlaylist.name}` : 'Playlist' }),
@@ -237,6 +267,33 @@ export const PlaylistsPage = (): JSX.Element => {
       await loadItems(selectedPlaylist.id);
     }
   }, [loadItems, loadPlaylists, selectedPlaylist]);
+
+  const handleRefreshStreamingPlaylist = async (): Promise<void> => {
+    const streaming = window.echo?.streaming;
+    if (!streaming?.importPlaylistFromUrl || !selectedPlaylist || !selectedStreamingPlaylistUrl) {
+      await refreshSelected();
+      return;
+    }
+
+    setIsRefreshingStreamingPlaylist(true);
+    setError(null);
+    setStatusMessage('正在刷新网络歌单...');
+    try {
+      const result = await streaming.importPlaylistFromUrl(selectedStreamingPlaylistUrl);
+      await loadPlaylists();
+      setSelectedPlaylistId(result.playlistId);
+      setPlaylistSearchInput('');
+      setPlaylistSearch('');
+      await loadItems(result.playlistId, 1, 'replace', '');
+      setStatusMessage(`已刷新歌单：${result.playlistName}，共 ${result.importedCount} 首`);
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+      setStatusMessage(null);
+    } finally {
+      setIsRefreshingStreamingPlaylist(false);
+    }
+  };
 
   const handleCreatePlaylist = async (nameInput?: string): Promise<void> => {
     const library = window.echo?.library;
@@ -442,7 +499,7 @@ export const PlaylistsPage = (): JSX.Element => {
 
   const handleTrackPlay = async (track: LibraryTrack): Promise<void> => {
     const item = itemsPage.items.find((candidate) => candidate.id === track.playlistItemId);
-    const playableTrack = item ? itemToTrack(item) : null;
+    const playableTrack = item ? itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined) : null;
     if (!playableTrack || playableTrack.unavailable) {
       return;
     }
@@ -459,7 +516,7 @@ export const PlaylistsPage = (): JSX.Element => {
 
   const handleAddTrackToQueue = (track: LibraryTrack): void => {
     const item = itemsPage.items.find((candidate) => candidate.id === track.playlistItemId);
-    const playableTrack = item ? itemToTrack(item) : null;
+    const playableTrack = item ? itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined) : null;
     if (playableTrack && !playableTrack.unavailable) {
       appendToQueue(playableTrack, queueSource);
     }
@@ -732,6 +789,23 @@ export const PlaylistsPage = (): JSX.Element => {
                     </button>
                   ) : null}
                 </form>
+                {isSelectedPlaylistRemote ? (
+                  <label className="playlist-quality-control" title="Streaming quality">
+                    <SlidersHorizontal size={15} />
+                    <span>音质</span>
+                    <select
+                      aria-label="流媒体音质"
+                      value={streamingQuality}
+                      onChange={(event) => setStreamingQuality(event.currentTarget.value as StreamingAudioQuality)}
+                    >
+                      {streamingQualityOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <button className="primary-action" type="button" disabled={playableTracks.length === 0} onClick={() => void handlePlayAll()}>
                   <Play size={16} />
                   <span>播放全部</span>
@@ -744,6 +818,17 @@ export const PlaylistsPage = (): JSX.Element => {
                   <ImagePlus size={16} />
                   <span>更换封面</span>
                 </button>
+                {selectedStreamingPlaylistUrl ? (
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    disabled={isRefreshingStreamingPlaylist}
+                    onClick={() => void handleRefreshStreamingPlaylist()}
+                  >
+                    {isRefreshingStreamingPlaylist ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
+                    <span>刷新歌单</span>
+                  </button>
+                ) : null}
                 {selectedPlaylist.coverId ? (
                   <button className="tool-button" type="button" aria-label="恢复默认封面" title="恢复默认封面" onClick={() => void handleClearPlaylistCover()}>
                     <RotateCcw size={17} />
@@ -834,7 +919,12 @@ export const PlaylistsPage = (): JSX.Element => {
           <div className="list-footer">
             <span>{error ?? statusMessage ?? '正在读取歌单...'}</span>
             {selectedPlaylist && !isLoading ? (
-              <button className="text-action" type="button" onClick={() => void refreshSelected()}>
+              <button
+                className="text-action"
+                type="button"
+                disabled={isRefreshingStreamingPlaylist}
+                onClick={() => void (selectedStreamingPlaylistUrl ? handleRefreshStreamingPlaylist() : refreshSelected())}
+              >
                 刷新
               </button>
             ) : null}

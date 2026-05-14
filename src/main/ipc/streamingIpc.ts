@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
+import { getAppSettings } from '../app/appSettings';
 import type {
   StreamingMediaType,
   StreamingPlaybackRequest,
@@ -125,6 +126,17 @@ export const registerStreamingIpc = (): void => {
       return sanitizePlaybackSource(await getStreamingService().resolvePlayback(normalizePlaybackRequest(request)));
     } catch (error) {
       throw friendlyError(error, 'Streaming playback URL could not be resolved.');
+    }
+  });
+  ipcMain.handle(IpcChannels.StreamingAnalyzeBpm, async (_event, request: unknown) => {
+    try {
+      if (!getAppSettings().audioAnalysisEnabled) {
+        throw new Error('BPM analysis is disabled in Settings');
+      }
+
+      return await getStreamingService().analyzeBpm(normalizePlaybackRequest(request));
+    } catch (error) {
+      throw friendlyError(error, 'Streaming BPM analysis failed.');
     }
   });
   ipcMain.handle(IpcChannels.StreamingGetLyrics, async (_event, request: unknown) => {

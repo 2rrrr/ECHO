@@ -20,6 +20,7 @@ describe('app settings normalization', () => {
     });
 
     expect(settings.coverCacheDir).toBeNull();
+    expect(settings.appearanceTheme).toBe('light');
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.artistWallAlbumArtwork).toBe(false);
     expect(settings.appCustomWallpaperPath).toBeNull();
@@ -31,7 +32,7 @@ describe('app settings normalization', () => {
     expect(settings.scanPerformanceMode).toBe('balanced');
     expect(settings.hideToTrayOnClose).toBe(true);
     expect(settings.networkMetadataProviders).toEqual(['qq-music']);
-    expect(settings.audioAnalysisEnabled).toBe(false);
+    expect(settings.audioAnalysisEnabled).toBe(true);
     expect(settings.lyricsNetworkEnabled).toBe(true);
     expect(settings.lyricsEnabledProviders).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
     expect(settings.lyricsProviderOrder).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
@@ -46,8 +47,10 @@ describe('app settings normalization', () => {
     expect(settings.lyricsPlayerBarDrawerEnabled).toBe(false);
     expect(settings.lyricsRomanizationEnabled).toBe(true);
     expect(settings.lyricsTranslationEnabled).toBe(true);
-    expect(settings.lyricsFontSizePx).toBe(36);
-    expect(settings.lyricsContextOpacityPercent).toBe(38);
+    expect(settings.lyricsFontSizePx).toBe(40);
+    expect(settings.lyricsSecondaryFontSizePx).toBe(22);
+    expect(settings.lyricsLineSpacingPercent).toBe(110);
+    expect(settings.lyricsContextOpacityPercent).toBe(49);
     expect(settings.lyricsColor).toBe('#314054');
     expect(settings.lyricsBackgroundMode).toBe('theme');
     expect(settings.lyricsCustomWallpaperPath).toBeNull();
@@ -76,6 +79,15 @@ describe('app settings normalization', () => {
     const { normalizeSettings } = await import('./appSettings');
 
     expect(normalizeSettings({ coverCacheDir: '   ' }).coverCacheDir).toBeNull();
+  });
+
+  it('normalizes appearance theme modes', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).appearanceTheme).toBe('light');
+    expect(normalizeSettings({ appearanceTheme: 'dark' }).appearanceTheme).toBe('dark');
+    expect(normalizeSettings({ appearanceTheme: 'system' }).appearanceTheme).toBe('system');
+    expect(normalizeSettings({ appearanceTheme: 'midnight' as never }).appearanceTheme).toBe('light');
   });
 
   it('resolves a custom coverCacheDir to an absolute path', async () => {
@@ -211,18 +223,20 @@ describe('app settings normalization', () => {
     });
   });
 
-  it('keeps audio analysis disabled by default', async () => {
+  it('keeps audio analysis enabled by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).audioAnalysisEnabled).toBe(false);
+    expect(normalizeSettings({}).audioAnalysisEnabled).toBe(true);
+    expect(normalizeSettings({ audioAnalysisEnabled: false }).audioAnalysisEnabled).toBe(false);
     expect(normalizeSettings({ audioAnalysisEnabled: true }).audioAnalysisEnabled).toBe(true);
-    expect(normalizeSettings({ audioAnalysisEnabled: 'yes' as never }).audioAnalysisEnabled).toBe(false);
+    expect(normalizeSettings({ audioAnalysisEnabled: 'yes' as never }).audioAnalysisEnabled).toBe(true);
   });
 
   it('normalizes duplicate track settings conservatively', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).duplicateTracksEnabled).toBe(false);
+    expect(normalizeSettings({}).duplicateTracksEnabled).toBe(true);
+    expect(normalizeSettings({ duplicateTracksEnabled: false }).duplicateTracksEnabled).toBe(false);
     expect(normalizeSettings({ duplicateTracksEnabled: true }).duplicateTracksEnabled).toBe(true);
     expect(normalizeSettings({ duplicateTracksMode: 'aggressive' }).duplicateTracksMode).toBe('strict');
     expect(normalizeSettings({ duplicateTracksAutoRebuildAfterScan: true }).duplicateTracksAutoRebuildAfterScan).toBe(true);
@@ -251,6 +265,7 @@ describe('app settings normalization', () => {
         lyricsRomanizationEnabled: false,
         lyricsTranslationEnabled: false,
         lyricsFontSizePx: 999,
+        lyricsLineSpacingPercent: 999,
         lyricsContextOpacityPercent: 1000,
         lyricsColor: 'red',
         lyricsBackgroundMode: 'album' as never,
@@ -280,6 +295,7 @@ describe('app settings normalization', () => {
       lyricsRomanizationEnabled: false,
       lyricsTranslationEnabled: false,
       lyricsFontSizePx: 56,
+      lyricsLineSpacingPercent: 150,
       lyricsContextOpacityPercent: 100,
       lyricsColor: '#314054',
       lyricsBackgroundMode: 'theme',
@@ -293,6 +309,7 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         lyricsFontSizePx: 12,
+        lyricsLineSpacingPercent: 20,
         lyricsAutoAcceptScore: 0.1,
         lyricsContextOpacityPercent: 64.4,
         lyricsColor: '#ff3366',
@@ -304,6 +321,7 @@ describe('app settings normalization', () => {
       }),
     ).toMatchObject({
       lyricsFontSizePx: 22,
+      lyricsLineSpacingPercent: 60,
       lyricsAutoAcceptScore: 0.3,
       lyricsContextOpacityPercent: 64,
       lyricsColor: '#FF3366',

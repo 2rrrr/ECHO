@@ -53,6 +53,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsTranslationEnabled'
   | 'lyricsFontSizePx'
   | 'lyricsSecondaryFontSizePx'
+  | 'lyricsLineSpacingPercent'
   | 'lyricsContextOpacityPercent'
   | 'lyricsColor'
   | 'lyricsBackgroundMode'
@@ -79,9 +80,10 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsPlayerBarDrawerEnabled: false,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
-  lyricsFontSizePx: 36,
-  lyricsSecondaryFontSizePx: 18,
-  lyricsContextOpacityPercent: 38,
+  lyricsFontSizePx: 40,
+  lyricsSecondaryFontSizePx: 22,
+  lyricsLineSpacingPercent: 110,
+  lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -176,6 +178,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsTranslationEnabled: settings.lyricsTranslationEnabled,
   lyricsFontSizePx: settings.lyricsFontSizePx,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackSettings.lyricsSecondaryFontSizePx,
+  lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackSettings.lyricsLineSpacingPercent,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
   lyricsColor: settings.lyricsColor,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
@@ -906,6 +909,26 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               step={1}
               value={effectiveSettings.lyricsFontSizePx}
               onChange={(event) => patchSettingsDebounced({ lyricsFontSizePx: Number(event.currentTarget.value) })}
+            />
+          </label>
+          ) : null}
+
+          {showFullControls ? (
+          <label className="lyrics-drawer-range">
+            <span>
+              <strong>
+                <SlidersHorizontal size={15} />
+                歌词行距
+              </strong>
+              <em>{effectiveSettings.lyricsLineSpacingPercent}%</em>
+            </span>
+            <input
+              type="range"
+              min={60}
+              max={150}
+              step={1}
+              value={effectiveSettings.lyricsLineSpacingPercent}
+              onChange={(event) => patchSettingsDebounced({ lyricsLineSpacingPercent: Number(event.currentTarget.value) })}
             />
           </label>
           ) : null}

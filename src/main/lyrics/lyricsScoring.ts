@@ -225,13 +225,35 @@ export const evaluateLyricsCandidate = (
 
   const score = Math.max(0, Math.min(1, Number(rawScore.toFixed(4))));
   const autoAcceptScore = options.autoAcceptScore ?? 0.7;
+  const coverAutoAcceptScore = options.coverAutoAcceptScore ?? 0.97;
   const hasRequiredIdentity = Boolean(normalized.identityTitle && normalized.identityArtist);
-  const autoAccept = hasRequiredIdentity && !rejected && score > autoAcceptScore;
+  const hasDurationCaution = hasSynced && delta !== null && delta > 5;
+  const hasBlockingDurationMismatch = hasSynced && delta !== null && delta > 10;
+  const hasCloseDuration = delta !== null && delta <= 2;
+  const hasStrongTitle = titleScore >= 0.98;
+  const hasStrongVersionLabelMatch = titleScore >= 0.82 && artistScore >= 0.98 && hasCloseDuration && score >= 0.8;
+  const hasInstrumentalMismatch =
+    (flags.instrumental || flags.karaoke || flags.offVocal) &&
+    !(normalized.versionFlags.instrumental || normalized.versionFlags.karaoke || normalized.versionFlags.offVocal);
+  const hasArtistMismatch = artistScore < 0.75 && !(hasStrongTitle && hasCloseDuration);
+  const hasUnsafeVersionMismatch = versionConflict || versionScore < 0.9;
+  const hasBlockingVersionMismatch = hasInstrumentalMismatch || (hasUnsafeVersionMismatch && !hasStrongVersionLabelMatch);
+  const coverAutoAcceptSafe =
+    !normalized.coverIntent ||
+    (score >= Math.min(coverAutoAcceptScore, 0.9) && hasStrongTitle && !hasArtistMismatch && delta !== null && delta <= 5 && !hasBlockingVersionMismatch);
+  const autoAccept =
+    hasRequiredIdentity &&
+    !rejected &&
+    !hasBlockingDurationMismatch &&
+    !hasArtistMismatch &&
+    !hasBlockingVersionMismatch &&
+    coverAutoAcceptSafe &&
+    score > autoAcceptScore;
   const effectiveRisk: LyricsMatchRisk = autoAccept
     ? 'low'
-    : rejected || risk === 'high' || (hasSynced && delta !== null && delta > 20)
+    : rejected || risk === 'high' || hasBlockingDurationMismatch || hasArtistMismatch || (hasSynced && delta !== null && delta > 20)
       ? 'high'
-      : candidateOnly || risk === 'medium'
+      : candidateOnly || risk === 'medium' || hasDurationCaution || hasUnsafeVersionMismatch
         ? 'medium'
         : 'low';
 

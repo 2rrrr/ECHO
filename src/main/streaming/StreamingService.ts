@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import electron from 'electron';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
+import type { BpmAnalysisResult } from '../../shared/types/library';
 import type {
   StreamingLyricsResult,
   StreamingMvResult,
@@ -14,6 +15,7 @@ import type {
   StreamingTrack,
 } from '../../shared/types/streaming';
 import { streamingStableKey } from '../../shared/types/streaming';
+import { BpmAnalyzer } from '../library/audioAnalysis/BpmAnalyzer';
 import { StreamingCacheStore } from './StreamingCacheStore';
 import { StreamingMemoryCache } from './StreamingMemoryCache';
 import { StreamingPlaybackResolver } from './StreamingPlaybackResolver';
@@ -31,6 +33,7 @@ const fallbackPlaybackTtlMs = 2 * 60 * 1000;
 const providerTimeoutMs = 10 * 1000;
 const searchCacheVersion = 'v2';
 const lyricsCacheVersion = 'v2';
+const bpmConfidenceThreshold = 0.42;
 const playlistImportPageSize = 500;
 const maxPlaylistImportTracks = 20_000;
 
@@ -161,6 +164,7 @@ const playableTtlMs = (source: StreamingPlaybackSource): number => {
 
 export class StreamingService {
   private readonly playbackResolver: StreamingPlaybackResolver;
+  private readonly bpmAnalyzer = new BpmAnalyzer();
 
   constructor(
     private readonly registry: StreamingProviderRegistry,
@@ -253,6 +257,42 @@ export class StreamingService {
 
       return source;
     });
+  }
+
+  async analyzeBpm(request: StreamingPlaybackRequest): Promise<BpmAnalysisResult> {
+    const trackId = streamingStableKey(request.provider, request.providerTrackId);
+    const updatedAt = new Date().toISOString();
+
+    try {
+      const source = await this.resolvePlayback(request);
+      if (source.requiresProxy) {
+        throw new Error('streaming_source_requires_proxy');
+      }
+
+      const track = await this.getTrack(request.provider, request.providerTrackId).catch(() => null);
+      const result = await this.bpmAnalyzer.analyze(source.url, track?.duration ?? undefined, { headers: source.headers });
+      const status = result.confidence >= bpmConfidenceThreshold ? 'complete' : 'low_confidence';
+
+      return {
+        trackId,
+        bpm: result.bpm > 0 ? result.bpm : null,
+        confidence: result.confidence,
+        beatOffsetMs: result.beatOffsetMs >= 0 ? result.beatOffsetMs : null,
+        status,
+        error: null,
+        updatedAt,
+      };
+    } catch (error) {
+      return {
+        trackId,
+        bpm: null,
+        confidence: 0,
+        beatOffsetMs: null,
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        updatedAt,
+      };
+    }
   }
 
   invalidatePlayback(request: StreamingPlaybackRequest): void {

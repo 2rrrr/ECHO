@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import type { EchoDatabase } from '../database/createDatabase';
-import type { AlbumMergeStrategy, AlbumService } from './AlbumService';
+import type { AlbumKeyInput, AlbumMergeStrategy, AlbumService } from './AlbumService';
 import { updateCoverPathsInDatabase } from './CoverCacheManager';
 import { DuplicateTrackService } from './duplicates/DuplicateTrackService';
 import type {
@@ -48,6 +49,35 @@ type ArtistIndexStats = {
   albumIds: Set<string>;
   coverId: string | null;
   coverScore: number;
+};
+type AlbumIndexStats = {
+  id: string;
+  albumKey: string;
+  title: string;
+  albumArtist: string;
+  year: number | null;
+  trackCount: number;
+  duration: number;
+  coverId: string | null;
+};
+type AlbumTrackIndexLink = {
+  albumId: string;
+  trackId: string;
+  discNo: number | null;
+  trackNo: number | null;
+  position: number;
+};
+type StandardAlbumTrackIndexLink = Omit<AlbumTrackIndexLink, 'albumId'>;
+type StandardAlbumGroup = AlbumIndexStats & {
+  keyInput: AlbumKeyInput;
+  coverFingerprints: Map<string, number>;
+  coverSourceHashes: Map<string, number>;
+  links: StandardAlbumTrackIndexLink[];
+};
+type LooseAlbumCluster = {
+  albumKey: string;
+  representativeTitle: string;
+  coverSourceHashes: Set<string>;
 };
 
 const defaultPageSize = 100;
@@ -203,6 +233,76 @@ const parseErrors = (value: unknown): string[] => {
 
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const mostCommonMapKey = (counts: Map<string, number>): string | null => {
+  let selected: string | null = null;
+  let selectedCount = 0;
+
+  for (const [key, count] of counts) {
+    if (count > selectedCount) {
+      selected = key;
+      selectedCount = count;
+    }
+  }
+
+  return selected;
+};
+const normalizeAlbumTitleForSimilarity = (value: string): string =>
+  value
+    .normalize('NFKD')
+    .toLocaleLowerCase()
+    .replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFKC')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
+    .trim();
+const albumTitleSimilarity = (left: string, right: string): number => {
+  const a = normalizeAlbumTitleForSimilarity(left);
+  const b = normalizeAlbumTitleForSimilarity(right);
+
+  if (!a || !b || a === 'unknown album' || b === 'unknown album') {
+    return 0;
+  }
+
+  if (a === b) {
+    return 1;
+  }
+
+  if (a.length < 2 || b.length < 2) {
+    return a === b ? 1 : 0;
+  }
+
+  const grams = new Map<string, number>();
+  for (let index = 0; index < a.length - 1; index += 1) {
+    const gram = a.slice(index, index + 2);
+    grams.set(gram, (grams.get(gram) ?? 0) + 1);
+  }
+
+  let matches = 0;
+  for (let index = 0; index < b.length - 1; index += 1) {
+    const gram = b.slice(index, index + 2);
+    const count = grams.get(gram) ?? 0;
+    if (count > 0) {
+      matches += 1;
+      grams.set(gram, count - 1);
+    }
+  }
+
+  return (2 * matches) / (a.length + b.length - 2);
+};
+const coverFingerprint = (sourceType: string | null, sourceHash: string | null, albumPath: string | null): string | null => {
+  if (sourceType === 'default') {
+    return null;
+  }
+
+  if (albumPath && existsSync(albumPath)) {
+    try {
+      return createHash('sha1').update(readFileSync(albumPath)).digest('hex');
+    } catch {
+      // Fall back to the extractor hash when the cached derivative cannot be read.
+    }
+  }
+
+  return sourceHash;
+};
 const playbackHistoryKey = (trackId: string | null, trackPath: string): string => trackId ?? trackPath;
 const coverSourceOrNull = (value: unknown): CoverSource | null =>
   value === 'manual' || value === 'embedded' || value === 'folder' || value === 'network' || value === 'default' ? value : null;
@@ -1639,28 +1739,15 @@ export class LibraryStore {
       `SELECT
         tracks.id, tracks.path, tracks.artist, tracks.album, tracks.album_artist,
         tracks.year, tracks.duration, tracks.cover_id, tracks.disc_no, tracks.track_no,
-        tracks.field_sources_json, covers.source_hash AS cover_source_hash
+        tracks.field_sources_json, covers.source_type AS cover_source_type,
+        covers.source_hash AS cover_source_hash, covers.album_path AS cover_album_path
        FROM tracks
        LEFT JOIN covers ON covers.id = tracks.cover_id
        WHERE tracks.missing = 0
        ORDER BY tracks.album_artist COLLATE NOCASE, tracks.album COLLATE NOCASE, tracks.disc_no, tracks.track_no, tracks.title COLLATE NOCASE`,
     );
 
-    const albumIdsByKey = new Map<string, string>();
-    const albumStats = new Map<
-      string,
-      {
-        id: string;
-        albumKey: string;
-        title: string;
-        albumArtist: string;
-        year: number | null;
-        trackCount: number;
-        duration: number;
-        coverId: string | null;
-      }
-    >();
-    const albumTrackLinks: Array<{ albumId: string; trackId: string; discNo: number | null; trackNo: number | null; position: number }> = [];
+    const standardGroups = new Map<string, StandardAlbumGroup>();
 
     tracks.forEach((track, index) => {
       const trackId = String(track.id);
@@ -1668,7 +1755,7 @@ export class LibraryStore {
       const albumArtist = String(track.album_artist || '');
       const year = numberOrNull(track.year);
       const fieldSources = parseJsonObject(track.field_sources_json);
-      const albumKey = albumService.makeAlbumKey({
+      const keyInput: AlbumKeyInput = {
         albumTitle: title,
         albumArtist,
         fallbackArtist: String(track.artist || ''),
@@ -1678,8 +1765,63 @@ export class LibraryStore {
         trackId,
         coverId: textOrNull(track.cover_id),
         coverSourceHash: textOrNull(track.cover_source_hash),
-        mergeStrategy: options.albumMergeStrategy ?? 'standard',
+        mergeStrategy: 'standard',
+      };
+      const standardAlbumKey = albumService.makeAlbumKey(keyInput);
+      const standardGroup =
+        standardGroups.get(standardAlbumKey) ??
+        {
+          id: randomUUID(),
+          albumKey: standardAlbumKey,
+          title: title || 'Unknown Album',
+          albumArtist: albumArtist || String(track.artist || 'Unknown Artist'),
+          year,
+          trackCount: 0,
+          duration: 0,
+          coverId: textOrNull(track.cover_id),
+          keyInput,
+          coverFingerprints: new Map<string, number>(),
+          coverSourceHashes: new Map<string, number>(),
+          links: [],
+        };
+      const coverSourceHash = textOrNull(track.cover_source_hash);
+      const coverVisualFingerprint = coverFingerprint(
+        textOrNull(track.cover_source_type),
+        coverSourceHash,
+        textOrNull(track.cover_album_path),
+      );
+
+      standardGroup.trackCount += 1;
+      standardGroup.duration += Number(track.duration ?? 0);
+      standardGroup.coverId = standardGroup.coverId ?? textOrNull(track.cover_id);
+
+      if (coverVisualFingerprint) {
+        standardGroup.coverFingerprints.set(coverVisualFingerprint, (standardGroup.coverFingerprints.get(coverVisualFingerprint) ?? 0) + 1);
+      }
+
+      if (coverSourceHash) {
+        standardGroup.coverSourceHashes.set(coverSourceHash, (standardGroup.coverSourceHashes.get(coverSourceHash) ?? 0) + 1);
+      }
+
+      standardGroup.links.push({
+        trackId,
+        discNo: numberOrNull(track.disc_no),
+        trackNo: numberOrNull(track.track_no),
+        position: index,
       });
+      standardGroups.set(standardAlbumKey, standardGroup);
+    });
+
+    const albumIdsByKey = new Map<string, string>();
+    const albumStats = new Map<string, AlbumIndexStats>();
+    const albumTrackLinks: AlbumTrackIndexLink[] = [];
+    const looseAlbumKeys =
+      options.albumMergeStrategy === 'sameTitleAndCover'
+        ? this.makeLooseAlbumKeys(standardGroups, albumService)
+        : new Map<string, string>();
+
+    for (const standardGroup of standardGroups.values()) {
+      const albumKey = looseAlbumKeys.get(standardGroup.albumKey) ?? standardGroup.albumKey;
       const albumId = albumIdsByKey.get(albumKey) ?? randomUUID();
 
       albumIdsByKey.set(albumKey, albumId);
@@ -1689,27 +1831,23 @@ export class LibraryStore {
         {
           id: albumId,
           albumKey,
-          title: title || 'Unknown Album',
-          albumArtist: albumArtist || String(track.artist || 'Unknown Artist'),
-          year,
+          title: standardGroup.title,
+          albumArtist: standardGroup.albumArtist,
+          year: standardGroup.year,
           trackCount: 0,
           duration: 0,
-          coverId: textOrNull(track.cover_id),
+          coverId: standardGroup.coverId,
         };
 
-      stats.trackCount += 1;
-      stats.duration += Number(track.duration ?? 0);
-      stats.coverId = stats.coverId ?? textOrNull(track.cover_id);
+      stats.trackCount += standardGroup.trackCount;
+      stats.duration += standardGroup.duration;
+      stats.coverId = stats.coverId ?? standardGroup.coverId;
       albumStats.set(albumKey, stats);
 
-      albumTrackLinks.push({
-        albumId,
-        trackId,
-        discNo: numberOrNull(track.disc_no),
-        trackNo: numberOrNull(track.track_no),
-        position: index,
-      });
-    });
+      for (const link of standardGroup.links) {
+        albumTrackLinks.push({ albumId, ...link });
+      }
+    }
 
     for (const album of albumStats.values()) {
       this.run(
@@ -1739,6 +1877,48 @@ export class LibraryStore {
         link.position,
       );
     }
+  }
+
+  private makeLooseAlbumKeys(standardGroups: Map<string, StandardAlbumGroup>, albumService: AlbumService): Map<string, string> {
+    const albumKeys = new Map<string, string>();
+    const clusters: LooseAlbumCluster[] = [];
+
+    for (const standardGroup of standardGroups.values()) {
+      const coverSourceHash = mostCommonMapKey(standardGroup.coverSourceHashes);
+      const coverMatchKey = mostCommonMapKey(standardGroup.coverFingerprints) ?? coverSourceHash;
+      const matchingCluster = clusters.find((cluster) => {
+        const titleScore = albumTitleSimilarity(standardGroup.title, cluster.representativeTitle);
+
+        if (titleScore >= 0.95) {
+          return true;
+        }
+
+        return Boolean(coverMatchKey && titleScore >= 0.9 && cluster.coverSourceHashes.has(coverMatchKey));
+      });
+
+      if (matchingCluster) {
+        albumKeys.set(standardGroup.albumKey, matchingCluster.albumKey);
+        if (coverMatchKey) {
+          matchingCluster.coverSourceHashes.add(coverMatchKey);
+        }
+        continue;
+      }
+
+      const albumKey = albumService.makeAlbumKey({
+        ...standardGroup.keyInput,
+        coverId: standardGroup.coverId,
+        coverSourceHash,
+        mergeStrategy: coverSourceHash ? 'sameTitleAndCover' : 'standard',
+      });
+      clusters.push({
+        albumKey,
+        representativeTitle: standardGroup.title,
+        coverSourceHashes: new Set(coverMatchKey ? [coverMatchKey] : []),
+      });
+      albumKeys.set(standardGroup.albumKey, albumKey);
+    }
+
+    return albumKeys;
   }
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {

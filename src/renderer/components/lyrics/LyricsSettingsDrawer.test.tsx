@@ -6,6 +6,7 @@ import type { LyricsSearchCandidate, TrackLyrics } from '../../../shared/types/l
 import { LyricsSettingsDrawer } from './LyricsSettingsDrawer';
 
 const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
+  appearanceTheme: 'light',
   albumMergeStrategy: 'standard',
   artistWallAlbumArtwork: false,
   coverCacheDir: null,
@@ -32,7 +33,10 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
-  lyricsFontSizePx: 36,
+  lyricsFontSizePx: 40,
+  lyricsSecondaryFontSizePx: 22,
+  lyricsLineSpacingPercent: 110,
+  lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -246,6 +250,42 @@ describe('LyricsSettingsDrawer', () => {
 
     window.removeEventListener('lyrics:display-settings-changed', previewListener);
     window.removeEventListener('settings:changed', settingsChangedListener);
+  });
+
+  it('previews and saves custom lyrics line spacing', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    const previewListener = vi.fn();
+    window.addEventListener('lyrics:display-settings-changed', previewListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(0));
+    vi.useFakeTimers();
+    const spacingSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find(
+      (input) => input.min === '60' && input.max === '150',
+    ) as HTMLInputElement;
+
+    fireEvent.change(spacingSlider, { target: { value: '116' } });
+
+    expect(spacingSlider.value).toBe('116');
+    expect(previewListener).toHaveBeenCalledWith(expect.objectContaining({ detail: { lyricsLineSpacingPercent: 116 } }));
+    expect(setSettings).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(240);
+      await Promise.resolve();
+    });
+
+    expect(setSettings).toHaveBeenCalledWith({ lyricsLineSpacingPercent: 116 });
+
+    window.removeEventListener('lyrics:display-settings-changed', previewListener);
   });
 
   it('lets users toggle romanization display', async () => {

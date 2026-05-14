@@ -70,7 +70,7 @@ type AudioDrawerCopy = {
 const hiddenDeviceStorageKey = 'echo-next.hidden-audio-devices';
 const drawerExitAnimationMs = 320;
 const latencyProfileOptions: Array<{ id: AudioLatencyProfile; label: string; detail: string }> = [
-  { id: 'lowLatency', label: 'Low latency', detail: '512 frames / adaptive' },
+  { id: 'lowLatency', label: 'Low latency', detail: '256 frames / adaptive' },
   { id: 'balanced', label: 'Balanced', detail: '2048 frames' },
   { id: 'stable', label: 'Stable', detail: '8192 frames' },
 ];

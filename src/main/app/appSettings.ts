@@ -3,6 +3,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path
 import { app } from 'electron';
 import type {
   AppLocale,
+  AppThemeMode,
   AppearancePreferences,
   AppSettings,
   LyricsBackgroundMode,
@@ -28,6 +29,7 @@ const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmu
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
 const appMemoryVersion = 1;
 const locales: AppLocale[] = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'];
+const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
 const librarySorts: LibrarySort[] = [
   'default',
   'createdAsc',
@@ -85,6 +87,7 @@ export const defaultChannelBalanceSettings: ChannelBalanceState = {
 export const defaultSettings: AppSettings = {
   appMemoryVersion,
   locale: 'zh-CN',
+  appearanceTheme: 'light',
   appearancePreferences: { ...defaultAppearancePreferences },
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
@@ -102,7 +105,7 @@ export const defaultSettings: AppSettings = {
   appWallpaperUnifiedOpacityEnabled: false,
   networkMetadataEnabled: false,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
-  audioAnalysisEnabled: false,
+  audioAnalysisEnabled: true,
   lyricsNetworkEnabled: true,
   lyricsPreferredProvider: 'lrclib',
   lyricsEnabledProviders: [...defaultLyricsProviderOrder],
@@ -121,9 +124,10 @@ export const defaultSettings: AppSettings = {
   lyricsPlayerBarDrawerEnabled: false,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
-  lyricsFontSizePx: 36,
-  lyricsSecondaryFontSizePx: 18,
-  lyricsContextOpacityPercent: 38,
+  lyricsFontSizePx: 40,
+  lyricsSecondaryFontSizePx: 22,
+  lyricsLineSpacingPercent: 110,
+  lyricsContextOpacityPercent: 49,
   lyricsColor: defaultLyricsColor,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -153,7 +157,7 @@ export const defaultSettings: AppSettings = {
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
-  duplicateTracksEnabled: false,
+  duplicateTracksEnabled: true,
   duplicateTracksMode: 'strict',
   duplicateTracksAutoRebuildAfterScan: false,
   discordRichPresenceEnabled: false,
@@ -213,6 +217,9 @@ const normalizeFontPath = (value: unknown): string | null => {
 
 const normalizeLocale = (value: unknown): AppLocale =>
   locales.includes(value as AppLocale) ? (value as AppLocale) : 'zh-CN';
+
+const normalizeAppearanceTheme = (value: unknown): AppThemeMode =>
+  appThemeModes.includes(value as AppThemeMode) ? (value as AppThemeMode) : defaultSettings.appearanceTheme;
 
 const normalizeSongsSort = (value: unknown): LibrarySort =>
   librarySorts.includes(value as LibrarySort) ? (value as LibrarySort) : 'default';
@@ -405,6 +412,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const lyricsGlobalSyncOffsetMs = Number(settings.lyricsGlobalSyncOffsetMs);
   const lyricsFontSizePx = Number(settings.lyricsFontSizePx);
   const lyricsSecondaryFontSizePx = Number(settings.lyricsSecondaryFontSizePx);
+  const lyricsLineSpacingPercent = Number(settings.lyricsLineSpacingPercent);
   const lyricsContextOpacityPercent = Number(settings.lyricsContextOpacityPercent);
   const lyricsCoverOpacityPercent = Number(settings.lyricsCoverOpacityPercent);
   const lyricsCoverBlurPx = Number(settings.lyricsCoverBlurPx);
@@ -431,6 +439,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       ? Math.max(0, Math.round(normalizedAppMemoryVersion))
       : 0,
     locale: normalizeLocale(settings.locale),
+    appearanceTheme: normalizeAppearanceTheme(settings.appearanceTheme),
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: normalizeRememberedAudioOutput(settings.rememberedAudioOutput),
@@ -456,7 +465,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled === true,
     networkMetadataEnabled: settings.networkMetadataEnabled === true,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
-    audioAnalysisEnabled: settings.audioAnalysisEnabled === true,
+    audioAnalysisEnabled: settings.audioAnalysisEnabled !== false,
     lyricsNetworkEnabled: settings.lyricsNetworkEnabled !== false,
     lyricsPreferredProvider: 'lrclib',
     lyricsEnabledProviders: lyricsEnabledProviders.length ? lyricsEnabledProviders : (defaultSettings.lyricsEnabledProviders ?? ['local', 'lrclib', 'netease', 'qqmusic']),
@@ -496,6 +505,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsSecondaryFontSizePx: Number.isFinite(lyricsSecondaryFontSizePx)
       ? Math.round(clamp(lyricsSecondaryFontSizePx, 12, 32))
       : defaultSettings.lyricsSecondaryFontSizePx,
+    lyricsLineSpacingPercent: Number.isFinite(lyricsLineSpacingPercent)
+      ? Math.round(clamp(lyricsLineSpacingPercent, 60, 150))
+      : defaultSettings.lyricsLineSpacingPercent,
     lyricsContextOpacityPercent: Number.isFinite(lyricsContextOpacityPercent)
       ? Math.round(clamp(lyricsContextOpacityPercent, 0, 100))
       : defaultSettings.lyricsContextOpacityPercent,
@@ -555,7 +567,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.playbackSpeed,
     playbackSpeedMode,
     scanPerformanceMode,
-    duplicateTracksEnabled: settings.duplicateTracksEnabled === true,
+    duplicateTracksEnabled: settings.duplicateTracksEnabled !== false,
     duplicateTracksMode,
     duplicateTracksAutoRebuildAfterScan: settings.duplicateTracksAutoRebuildAfterScan === true,
     discordRichPresenceEnabled: settings.discordRichPresenceEnabled === true,

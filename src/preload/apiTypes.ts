@@ -29,6 +29,7 @@ import type {
   LibraryTrack,
   MissingMetadataScanOptions,
   MissingMetadataScanResult,
+  BpmAnalysisResult,
   BpmAnalysisJobStatus,
   BpmAnalysisStartOptions,
   NetworkApplyOptions,
@@ -117,6 +118,7 @@ export type EchoApi = {
     setCoverCacheDirectory: (request: SetCoverCacheDirectoryRequest) => Promise<CoverCacheMigrationResult | null>;
     getUpdateStatus: () => Promise<UpdateStatus>;
     checkForUpdates: () => Promise<UpdateStatus>;
+    onUpdateStatus: (handler: (status: UpdateStatus) => void) => () => void;
     openRepository: () => Promise<void>;
   };
   library: {
@@ -253,6 +255,7 @@ export type EchoApi = {
     search: (request: StreamingSearchRequest) => Promise<StreamingSearchResult>;
     getTrack: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingTrack>;
     resolvePlayback: (request: StreamingPlaybackRequest) => Promise<StreamingPlaybackSource>;
+    analyzeBpm: (request: StreamingPlaybackRequest) => Promise<BpmAnalysisResult>;
     getLyrics: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingLyricsResult>;
     getMv: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingMvResult>;
     getProviders: () => Promise<StreamingProviderDescriptor[]>;

@@ -551,7 +551,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[0].startOptions?.deviceName).toBeUndefined();
     expect(bridges[0].startOptions).toMatchObject({
       requestedOutputSampleRate: 48000,
-      bufferSizeFrames: 512,
+      bufferSizeFrames: 256,
       latencyProfile: 'lowLatency',
     });
     expect(decoder.decodeRequests[0].decoderOutputSampleRate).toBe(48000);
@@ -907,7 +907,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[0].sessionBegins).toBe(2);
   });
 
-  it('uses the adaptive low-latency 512-frame native buffer for exclusive and ASIO by default', async () => {
+  it('uses the adaptive low-latency 256-frame native buffer for exclusive and ASIO by default', async () => {
     const { bridges, session } = createSessionHarness([probe('exclusive.flac', 44100), probe('asio.flac', 44100)]);
 
     await session.playLocalFile({
@@ -921,14 +921,14 @@ describe('Audio Core sample-rate regression guard', () => {
 
     expect(bridges[0].startOptions).toMatchObject({
       exclusive: true,
-      bufferSizeFrames: 512,
+      bufferSizeFrames: 256,
       startupPrebufferMs: 0,
       startupPrebufferTimeoutMs: 0,
       latencyProfile: 'lowLatency',
     });
     expect(bridges[1].startOptions).toMatchObject({
       asio: true,
-      bufferSizeFrames: 512,
+      bufferSizeFrames: 256,
       startupPrebufferMs: 0,
       startupPrebufferTimeoutMs: 0,
       latencyProfile: 'lowLatency',
@@ -1344,8 +1344,8 @@ describe('AudioSession playback watchdog', () => {
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
 
     expect(bridges[0].startOptions).toMatchObject({
-      bufferSizeFrames: 512,
-      fifoCapacityMs: 250,
+      bufferSizeFrames: 256,
+      fifoCapacityMs: 80,
       startupPrebufferMs: 0,
       startupPrebufferTimeoutMs: 0,
       latencyProfile: 'lowLatency',
@@ -1375,14 +1375,14 @@ describe('AudioSession playback watchdog', () => {
     expect(bridges[0].stop).toHaveBeenCalledTimes(1);
     expect(bridges).toHaveLength(2);
     expect(bridges[1].startOptions).toMatchObject({
-      bufferSizeFrames: 1024,
-      fifoCapacityMs: 500,
+      bufferSizeFrames: 512,
+      fifoCapacityMs: 160,
       startupPrebufferMs: 0,
     });
     expect(session.getStatus().sharedStabilityTier).toBe('recovery');
     expect(session.getStatus().warnings).toContain('shared_output_underrun_detected');
     expect(session.getStatus().warnings).toContain('shared_stability_recovered:1');
-    expect(session.getStatus().warnings).toContain('native_output_buffer_recovered:1024 frames');
+    expect(session.getStatus().warnings).toContain('native_output_buffer_recovered:512 frames');
   });
 
   it.each([

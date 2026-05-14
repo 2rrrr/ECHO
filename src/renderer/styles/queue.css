@@ -394,6 +394,125 @@
   font-weight: 700;
 }
 
+html[data-theme="dark"] .page-surface:has(.queue-page) {
+  background:
+    radial-gradient(circle at 66% 8%, rgba(44, 118, 145, 0.1), transparent 34%),
+    linear-gradient(180deg, rgba(18, 23, 31, 0.94), rgba(9, 12, 17, 0.98)),
+    var(--color-bg);
+}
+
+html[data-theme="dark"] .queue-now-card,
+html[data-theme="dark"] .queue-toolbar,
+html[data-theme="dark"] .queue-repeat-group,
+html[data-theme="dark"] .queue-row,
+html[data-theme="dark"] .queue-empty-state,
+html[data-theme="dark"] .queue-now-cover,
+html[data-theme="dark"] .queue-row-cover,
+html[data-theme="dark"] .queue-icon-button,
+html[data-theme="dark"] .queue-tool-button,
+html[data-theme="dark"] .queue-repeat-group button {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: rgba(24, 30, 39, 0.82);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .queue-now-card {
+  background:
+    linear-gradient(135deg, rgba(27, 34, 44, 0.9), rgba(17, 22, 30, 0.9)),
+    rgba(17, 22, 30, 0.9);
+}
+
+html[data-theme="dark"] .queue-toolbar {
+  background: rgba(17, 22, 30, 0.84);
+}
+
+html[data-theme="dark"] .queue-row {
+  background: rgba(20, 26, 35, 0.78);
+}
+
+html[data-theme="dark"] .queue-row[data-current='true'] {
+  border-color: rgba(127, 216, 230, 0.28);
+  background:
+    linear-gradient(90deg, rgba(28, 84, 96, 0.34), rgba(20, 26, 35, 0.82)),
+    rgba(20, 26, 35, 0.82);
+}
+
+html[data-theme="dark"] .queue-row[data-drop-target='true'] {
+  border-color: rgba(127, 216, 230, 0.42);
+  box-shadow:
+    inset 0 2px 0 rgba(127, 216, 230, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.26);
+}
+
+html[data-theme="dark"] .queue-now-cover,
+html[data-theme="dark"] .queue-row-cover {
+  color: var(--color-subtle);
+  background: rgba(12, 17, 24, 0.9);
+}
+
+html[data-theme="dark"] .queue-icon-button:hover:not(:disabled),
+html[data-theme="dark"] .queue-tool-button:hover:not(:disabled),
+html[data-theme="dark"] .queue-repeat-group button:hover {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border-strong);
+  background: rgba(39, 48, 61, 0.94);
+}
+
+html[data-theme="dark"] .queue-icon-button:disabled,
+html[data-theme="dark"] .queue-tool-button:disabled {
+  color: rgba(196, 204, 216, 0.34);
+  background: rgba(54, 59, 70, 0.38);
+  box-shadow: none;
+  opacity: 1;
+}
+
+html[data-theme="dark"] .queue-tool-button.is-active,
+html[data-theme="dark"] .queue-repeat-group button.is-active,
+html[data-theme="dark"] .queue-quality-row span,
+html[data-theme="dark"] .queue-row-quality span,
+html[data-theme="dark"] .queue-row-source,
+html[data-theme="dark"] .queue-empty-icon {
+  color: #b8ecff;
+  border-color: rgba(100, 181, 255, 0.28);
+  background: rgba(24, 75, 104, 0.34);
+}
+
+html[data-theme="dark"] .queue-now-meta span {
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  background: rgba(15, 20, 28, 0.72);
+}
+
+html[data-theme="dark"] .queue-empty-state {
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  background: rgba(24, 30, 39, 0.78);
+}
+
+html[data-theme="dark"] .queue-row-copy span,
+html[data-theme="dark"] .queue-row-duration,
+html[data-theme="dark"] .queue-now-main p,
+html[data-theme="dark"] .queue-kicker,
+html[data-theme="dark"] .queue-count,
+html[data-theme="dark"] .queue-section-heading > span,
+html[data-theme="dark"] .queue-drag-handle {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .queue-now-main h2,
+html[data-theme="dark"] .queue-row-copy strong,
+html[data-theme="dark"] .queue-empty-state strong {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .queue-tool-button.danger,
+html[data-theme="dark"] .queue-icon-button.danger {
+  color: #ff9b9f;
+}
+
 @media (max-width: 980px) {
   .queue-now-card {
     grid-template-columns: 124px minmax(0, 1fr);

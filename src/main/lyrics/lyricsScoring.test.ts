@@ -73,11 +73,20 @@ describe('lyricsScoring', () => {
     expect(decision.autoAccept).toBe(true);
   });
 
-  it('auto accepts synced lyrics when duration differs by more than ten seconds but score remains above threshold', () => {
-    const decision = evaluateLyricsCandidate(query(), candidate({ durationSeconds: 132 }));
+  it('still auto accepts synced lyrics with moderate duration drift when identity is strong', () => {
+    const decision = evaluateLyricsCandidate(query(), candidate({ durationSeconds: 126 }));
 
     expect(decision.score).toBeGreaterThan(0.7);
     expect(decision.autoAccept).toBe(true);
+    expect(decision.risk).toBe('low');
+  });
+
+  it('marks synced lyrics with more than ten seconds duration drift as high risk', () => {
+    const decision = evaluateLyricsCandidate(query(), candidate({ durationSeconds: 132 }));
+
+    expect(decision.score).toBeGreaterThan(0.7);
+    expect(decision.autoAccept).toBe(false);
+    expect(decision.risk).toBe('high');
     expect(decision.reasons).toContain('duration_mismatch');
   });
 
@@ -85,21 +94,21 @@ describe('lyricsScoring', () => {
     expect(scoreLyricsCandidate(query(), candidate({ durationSeconds: 300 }))).toBeLessThan(0.75);
   });
 
-  it('auto accepts version mismatches when their total match score is above the threshold', () => {
+  it('auto accepts version-labeled results when title and duration are otherwise exact', () => {
     expect(evaluateLyricsCandidate(query(), candidate({ title: 'Echo Song Live' })).autoAccept).toBe(true);
     expect(evaluateLyricsCandidate(query(), candidate({ title: 'Echo Song Remix' })).autoAccept).toBe(true);
     expect(evaluateLyricsCandidate(query(), candidate({ title: 'Echo Song TV Size' })).autoAccept).toBe(true);
   });
 
-  it('auto accepts instrumental mismatches when their total match score is above the threshold', () => {
-    expect(evaluateLyricsCandidate(query(), candidate({ title: 'Echo Song Instrumental', instrumental: true })).autoAccept).toBe(true);
+  it('keeps instrumental mismatches as manual candidates when the query is not instrumental', () => {
+    expect(evaluateLyricsCandidate(query(), candidate({ title: 'Echo Song Instrumental', instrumental: true })).autoAccept).toBe(false);
   });
 
-  it('auto accepts cover-intent matches above the default threshold', () => {
+  it('keeps loose cover-intent matches as manual candidates unless they clear the stricter cover threshold', () => {
     const decision = evaluateLyricsCandidate(query({ title: 'Echo Song Cover' }), candidate());
 
     expect(decision.score).toBeGreaterThan(0.7);
-    expect(decision.autoAccept).toBe(true);
+    expect(decision.autoAccept).toBe(false);
     expect(decision.reasons).toContain('cover_intent');
   });
 
@@ -125,18 +134,27 @@ describe('lyricsScoring', () => {
     expect(decision.autoAccept).toBe(true);
   });
 
-  it('auto accepts different artists when the total match score clears the threshold', () => {
+  it('keeps different artists as manual candidates when title and duration are not enough to disambiguate', () => {
     const decision = evaluateLyricsCandidate(query(), candidate({ artist: 'Other Artist' }));
 
     expect(decision.score).toBeGreaterThan(0.7);
     expect(decision.autoAccept).toBe(true);
+    expect(decision.risk).toBe('low');
   });
 
-  it('auto accepts different-artist cover-intent results above the threshold', () => {
+  it('blocks different artists when the title is only a loose match', () => {
+    const decision = evaluateLyricsCandidate(query(), candidate({ title: 'Echo Song Extended', artist: 'Other Artist' }));
+
+    expect(decision.autoAccept).toBe(false);
+    expect(decision.risk).toBe('high');
+  });
+
+  it('keeps different-artist cover-intent results as manual candidates above the threshold', () => {
     const decision = evaluateLyricsCandidate(query({ title: 'Echo Song Cover' }), candidate({ artist: 'Other Artist' }));
 
     expect(decision.score).toBeGreaterThan(0.7);
-    expect(decision.autoAccept).toBe(true);
+    expect(decision.autoAccept).toBe(false);
+    expect(decision.risk).toBe('high');
   });
 
   it('accepts provider-confirmed instrumental results for instrumental queries', () => {
