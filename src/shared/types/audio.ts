@@ -92,3 +92,30 @@ export type AudioStatus = {
   warnings: string[];
   error: string | null;
 };
+
+export type AudioDiagnostics = Pick<
+  AudioStatus,
+  | 'state'
+  | 'host'
+  | 'outputMode'
+  | 'outputBackend'
+  | 'outputDeviceName'
+  | 'currentFilePath'
+  | 'currentTrackId'
+  | 'durationSeconds'
+  | 'positionSeconds'
+  | 'playbackRate'
+  | 'fileSampleRate'
+  | 'decoderOutputSampleRate'
+  | 'requestedOutputSampleRate'
+  | 'actualDeviceSampleRate'
+  | 'resampling'
+  | 'bitPerfectCandidate'
+  | 'sampleRateMismatch'
+  | 'warnings'
+  | 'error'
+> & {
+  watchdogStatus: 'idle' | 'monitoring' | 'recovering' | 'limited';
+  recentWatchdogRecoveryCount: number;
+  lastWatchdogRecoveryTime: string | null;
+};

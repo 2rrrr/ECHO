@@ -68,6 +68,7 @@ const monoModeLabelKeys: Record<ChannelBalanceMonoMode, TranslationKey> = {
 };
 
 const maxHistoryLength = 24;
+const eqControlDebounceMs = 12;
 
 const formatLevelDb = (value: number | null | undefined): string => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -247,7 +248,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     }));
 
     clearGainDebounce(band);
-    debounceTimers.current[band] = window.setTimeout(() => sendBandGain(band, gainDb), 45);
+    debounceTimers.current[band] = window.setTimeout(() => sendBandGain(band, gainDb), eqControlDebounceMs);
   };
 
   const handleBandCommit = (band: number, gainDb: number): void => {
@@ -291,7 +292,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     }));
 
     clearFrequencyDebounce(band);
-    frequencyDebounceTimers.current[band] = window.setTimeout(() => sendBandFrequency(band, safeFrequencyHz), 45);
+    frequencyDebounceTimers.current[band] = window.setTimeout(() => sendBandFrequency(band, safeFrequencyHz), eqControlDebounceMs);
   };
 
   const handleBandFrequencyCommit = (band: number, frequencyHz: number): void => {
@@ -351,11 +352,13 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     setState(nextState);
 
     try {
-      await eq.setPreamp(nextPreampDb);
-      for (const [band, nextBand] of nextBands.entries()) {
-        await eq.setBandFrequency({ band, frequencyHz: nextBand.frequencyHz });
-        await eq.setBandGain({ band, gainDb: nextBand.gainDb });
-      }
+      await Promise.all([
+        eq.setPreamp(nextPreampDb),
+        ...nextBands.flatMap((nextBand, band) => [
+          eq.setBandFrequency({ band, frequencyHz: nextBand.frequencyHz }),
+          eq.setBandGain({ band, gainDb: nextBand.gainDb }),
+        ]),
+      ]);
       commitState(nextState);
       setError(null);
     } catch (snapshotError) {

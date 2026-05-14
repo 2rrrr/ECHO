@@ -17,6 +17,7 @@ import { registerAudioIpc } from './audioIpc';
 import { registerAccountIpc } from './accountIpc';
 import { registerDiagnosticsIpc } from './diagnosticsIpc';
 import { registerDiscordPresenceIpc } from './discordPresenceIpc';
+import { registerDownloadsIpc } from './downloadsIpc';
 import { registerLastFmIpc } from './lastFmIpc';
 import { registerLibraryIpc } from './libraryIpc';
 import { registerLyricsIpc } from './lyricsIpc';
@@ -224,6 +225,7 @@ export const registerIpc = (): void => {
   registerDiagnosticsIpc();
   registerAccountIpc();
   registerDiscordPresenceIpc();
+  registerDownloadsIpc();
   registerLastFmIpc();
   registerLibraryIpc();
   registerLyricsIpc();

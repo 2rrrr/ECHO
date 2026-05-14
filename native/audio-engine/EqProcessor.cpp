@@ -207,8 +207,8 @@ uint64_t EqProcessor::getCoefficientUpdateCountForTests() const
 
 void EqProcessor::updateSmoothingSteps()
 {
-    gainSmoothingSamples = std::max(1, static_cast<int>(currentSampleRate * 0.025));
-    bypassSmoothingSamples = std::max(1, static_cast<int>(currentSampleRate * 0.015));
+    gainSmoothingSamples = std::max(1, static_cast<int>(currentSampleRate * 0.008));
+    bypassSmoothingSamples = std::max(1, static_cast<int>(currentSampleRate * 0.006));
 }
 
 void EqProcessor::updateBandCoefficient(int bandIndex)

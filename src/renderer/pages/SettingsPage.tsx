@@ -32,6 +32,7 @@ import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
 import { NetworkMetadataPanel } from '../components/library/NetworkMetadataPanel';
+import { PlaybackStabilityDiagnosticsPanel } from '../components/player/PlaybackStabilityDiagnosticsPanel';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import {
@@ -1677,6 +1678,7 @@ export const SettingsPage = (): JSX.Element => {
               {status?.warnings.length ? (
                 <p className="settings-inline-error">warnings: {status.warnings.join(', ')}</p>
               ) : null}
+              <PlaybackStabilityDiagnosticsPanel />
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title={t('settings.nav.integrations.label')}>

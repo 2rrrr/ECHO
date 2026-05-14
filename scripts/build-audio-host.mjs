@@ -9,6 +9,13 @@ const sourceDir = join(projectRoot, 'native', 'audio-host');
 const buildDir = join(projectRoot, 'out', 'native', 'audio-host');
 const targetDir = join(projectRoot, 'electron-app', 'build');
 const targetExe = join(targetDir, process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host');
+const packagedResourceExe = join(
+  projectRoot,
+  'dist',
+  'win-unpacked',
+  'resources',
+  process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host',
+);
 const config = process.env.ECHO_AUDIO_HOST_CONFIG || 'Release';
 const enableAsio = process.env.ECHO_ENABLE_ASIO ?? (process.platform === 'win32' ? 'ON' : 'OFF');
 const pngSignature = '89504e470d0a1a0a';
@@ -190,6 +197,11 @@ try {
   copyFileSync(builtHost, targetExe);
   console.log(`[build:audio-host] Copied ${builtHost}`);
   console.log(`[build:audio-host]      -> ${targetExe}`);
+
+  if (existsSync(packagedResourceExe)) {
+    copyFileSync(builtHost, packagedResourceExe);
+    console.log(`[build:audio-host]      -> ${packagedResourceExe}`);
+  }
 } catch (error) {
   console.error('[build:audio-host] Failed to build JUCE audio host.');
   console.error('[build:audio-host] Requirements: CMake, Visual Studio 2022 Build Tools, Windows SDK, and network access for JUCE 8.0.12.');

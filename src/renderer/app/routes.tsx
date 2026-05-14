@@ -18,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AlbumsPage } from '../pages/AlbumsPage';
 import { ArtistsPage } from '../pages/ArtistsPage';
+import { DownloadsPage } from '../pages/DownloadsPage';
 import { FoldersPage } from '../pages/FoldersPage';
 import { HistoryPage } from '../pages/HistoryPage';
 import { ImportFolderPage } from '../pages/ImportFolderPage';
@@ -93,7 +94,7 @@ export const appRoutes: AppRoute[] = [
     descriptionKey: 'route.downloads.description',
     icon: Download,
     placement: 'main',
-    element: <PlaceholderPage icon={Download} title="下载" description="下载任务列表会放在这里。" />,
+    element: <DownloadsPage />,
   },
   {
     id: 'lyrics',

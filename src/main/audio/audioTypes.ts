@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream';
 import type {
   AudioDeviceInfo,
+  AudioDiagnostics,
   AudioOutputMode,
   AudioOutputSettings,
   AudioPlaybackState,
@@ -10,6 +11,7 @@ import type { PlaybackProbeHint } from '../../shared/types/playback';
 
 export type {
   AudioDeviceInfo,
+  AudioDiagnostics,
   AudioOutputMode,
   AudioOutputSettings,
   AudioPlaybackState,

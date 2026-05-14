@@ -1,4 +1,4 @@
-import type { AudioDeviceInfo, AudioOutputSettings, AudioStatus, ChannelBalanceState } from '../shared/types/audio';
+import type { AudioDeviceInfo, AudioDiagnostics, AudioOutputSettings, AudioStatus, ChannelBalanceState } from '../shared/types/audio';
 import type { AppSettings } from '../shared/types/appSettings';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
@@ -51,6 +51,12 @@ import type {
 import type { PlaybackStartRequest, PlaybackStatus } from '../shared/types/playback';
 import type { LastCrashSummary, RendererErrorPayload } from '../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../shared/types/discordPresence';
+import type {
+  CreateDownloadUrlJobOptions,
+  DownloadJob,
+  DownloadSettings,
+  DownloadToolsStatus,
+} from '../shared/types/downloads';
 import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { LyricsSearchCandidate, TrackLyrics } from '../shared/types/lyrics';
@@ -222,6 +228,7 @@ export type EchoApi = {
   };
   audio: {
     getStatus: () => Promise<AudioStatus>;
+    getDiagnostics: () => Promise<AudioDiagnostics>;
     onStatus: (handler: (status: AudioStatus) => void) => () => void;
     listDevices: () => Promise<AudioDeviceInfo[]>;
     setOutput: (settings: AudioOutputSettings) => Promise<AudioStatus>;
@@ -232,6 +239,16 @@ export type EchoApi = {
     exportDiagnostics: () => Promise<string>;
     openDiagnosticsFolder: () => Promise<string>;
     reportRendererError: (payload: RendererErrorPayload) => Promise<void>;
+  };
+  downloads: {
+    getJobs: () => Promise<DownloadJob[]>;
+    createUrlJob: (url: string, options?: CreateDownloadUrlJobOptions) => Promise<DownloadJob>;
+    cancelJob: (jobId: string) => Promise<DownloadJob | null>;
+    clearCompleted: () => Promise<DownloadJob[]>;
+    getSettings: () => Promise<DownloadSettings>;
+    setSettings: (patch: Partial<DownloadSettings>) => Promise<DownloadSettings>;
+    checkTools: () => Promise<DownloadToolsStatus>;
+    onJobsUpdated: (handler: (jobs: DownloadJob[]) => void) => () => void;
   };
   accounts: {
     getStatuses: () => Promise<AccountStatus[]>;

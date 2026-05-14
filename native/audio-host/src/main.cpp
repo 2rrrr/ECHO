@@ -733,16 +733,23 @@ public:
         stop();
     }
 
-    void start()
+    bool start()
     {
         if (port <= 0)
-            return;
+            return false;
+
+        if (! listener.createListener(port, "127.0.0.1"))
+        {
+            logLine("EQ control listener failed on port " + std::to_string(port));
+            return false;
+        }
 
         running.store(true, std::memory_order_release);
         worker = std::thread([this]
         {
             run();
         });
+        return true;
     }
 
     void stop()
@@ -760,12 +767,6 @@ public:
 private:
     void run()
     {
-        if (! listener.createListener(port, "127.0.0.1"))
-        {
-            logLine("EQ control listener failed on port " + std::to_string(port));
-            return;
-        }
-
         logLine("EQ control listener ready on port " + std::to_string(port));
 
         while (running.load(std::memory_order_acquire))
@@ -788,7 +789,14 @@ private:
 
         while (running.load(std::memory_order_acquire) && socket.isConnected())
         {
-            const int read = socket.read(bytes, sizeof(bytes), true);
+            const int ready = socket.waitUntilReady(true, 100);
+            if (ready < 0)
+                break;
+
+            if (ready == 0)
+                continue;
+
+            const int read = socket.read(bytes, sizeof(bytes), false);
 
             if (read <= 0)
                 break;
@@ -1046,7 +1054,7 @@ int runHost(const Options& options)
     echo::EqProcessor eqProcessor;
     echo::ChannelBalanceProcessor channelBalanceProcessor;
     EqControlServer eqControlServer(options.eqControlPort, eqProcessor, channelBalanceProcessor);
-    eqControlServer.start();
+    const bool eqControlReady = eqControlServer.start();
 
     PcmRingAudioSource source(
         options.channels,
@@ -1066,7 +1074,7 @@ int runHost(const Options& options)
         + ",\"hardwareSampleRate\":" + std::to_string(actualSampleRate)
         + ",\"channels\":" + std::to_string(options.channels)
         + ",\"exclusive\":" + std::string(openedExclusive ? "true" : "false")
-        + ",\"eqControlPort\":" + std::to_string(options.eqControlPort)
+        + ",\"eqControlPort\":" + std::to_string(eqControlReady ? options.eqControlPort : 0)
         + ",\"dspActive\":" + std::string((eqProcessor.isEnabled() || channelBalanceProcessor.isEnabled()) ? "true" : "false")
         + ",\"backend\":\"" + getBackendName(options, openedDescriptor.typeName)
         + "\",\"deviceType\":\""

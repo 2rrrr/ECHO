@@ -167,6 +167,7 @@ const echoApi: EchoApi = {
   },
   audio: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.AudioGetStatus),
+    getDiagnostics: () => ipcRenderer.invoke(IpcChannels.AudioGetDiagnostics),
     onStatus: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
         handler(status as Awaited<ReturnType<EchoApi['audio']['getStatus']>>);
@@ -183,6 +184,22 @@ const echoApi: EchoApi = {
     exportDiagnostics: () => ipcRenderer.invoke(IpcChannels.DiagnosticsExport),
     openDiagnosticsFolder: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenFolder),
     reportRendererError: (payload) => ipcRenderer.invoke(IpcChannels.DiagnosticsReportRendererError, payload),
+  },
+  downloads: {
+    getJobs: () => ipcRenderer.invoke(IpcChannels.DownloadsGetJobs),
+    createUrlJob: (url, options) => ipcRenderer.invoke(IpcChannels.DownloadsCreateUrlJob, url, options),
+    cancelJob: (jobId) => ipcRenderer.invoke(IpcChannels.DownloadsCancelJob, jobId),
+    clearCompleted: () => ipcRenderer.invoke(IpcChannels.DownloadsClearCompleted),
+    getSettings: () => ipcRenderer.invoke(IpcChannels.DownloadsGetSettings),
+    setSettings: (patch) => ipcRenderer.invoke(IpcChannels.DownloadsSetSettings, patch),
+    checkTools: () => ipcRenderer.invoke(IpcChannels.DownloadsCheckTools),
+    onJobsUpdated: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, jobs: unknown): void => {
+        handler(jobs as Awaited<ReturnType<EchoApi['downloads']['getJobs']>>);
+      };
+      ipcRenderer.on(IpcChannels.DownloadsJobsUpdated, listener);
+      return () => ipcRenderer.off(IpcChannels.DownloadsJobsUpdated, listener);
+    },
   },
   accounts: {
     getStatuses: () => ipcRenderer.invoke(IpcChannels.AccountGetStatuses),

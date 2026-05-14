@@ -3,7 +3,7 @@ import type { ChildProcessWithoutNullStreams, execFileSync as nodeExecFileSync }
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import { AudioSession } from './AudioSession';
+import { AudioSession, type AudioSessionDependencies } from './AudioSession';
 import { DecoderPipeline, resolveDecoderFfmpegPath } from './DecoderPipeline';
 import type { DecoderPipelineDependencies } from './DecoderPipeline';
 import { DeviceService } from './DeviceService';
@@ -207,6 +207,7 @@ const createSessionHarness = (
   probes: AudioProbeResult[],
   readySampleRates: number[] = [],
   devices: AudioDeviceInfo[] = [],
+  sessionOptions: Partial<AudioSessionDependencies> = {},
 ) => {
   const decoder = new FakeDecoder(new Map(probes.map((item) => [item.filePath, item])));
   const bridges: FakeBridge[] = [];
@@ -223,10 +224,28 @@ const createSessionHarness = (
       return bridge;
     },
     logger: noopLogger,
+    ...sessionOptions,
   });
 
   return { decoder, bridges, session };
 };
+
+class PendingProbeDecoder extends FakeDecoder {
+  private resolveProbe: ((probe: AudioProbeResult) => void) | null = null;
+
+  override async probeLocalFile(filePath: string): Promise<AudioProbeResult> {
+    this.probeRequests.push(filePath);
+
+    return new Promise((resolve) => {
+      this.resolveProbe = resolve;
+    });
+  }
+
+  finishProbe(probeResult: AudioProbeResult): void {
+    this.resolveProbe?.(probeResult);
+    this.resolveProbe = null;
+  }
+}
 
 describe('Audio Core sample-rate regression guard', () => {
   it('44.1k file + exclusive requests 44100 and never defaults to 48000', async () => {
@@ -755,6 +774,110 @@ describe('Audio Core sample-rate regression guard', () => {
       deviceIndex: 5,
       deviceName: 'Mi Monitor (NVIDIA High Definition Audio)',
     });
+  });
+});
+
+describe('AudioSession playback watchdog', () => {
+  it('does not recover while playing position advances', async () => {
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 1,
+    });
+
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 10;
+    await session.checkPlaybackWatchdog();
+    bridges[0].positionSeconds = 11;
+    await session.checkPlaybackWatchdog();
+
+    expect(bridges).toHaveLength(1);
+    expect(session.getDiagnostics().recentWatchdogRecoveryCount).toBe(0);
+  });
+
+  it('recovers stuck native output while playing', async () => {
+    const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 1,
+    });
+
+    await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-1', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 15.5;
+    await session.checkPlaybackWatchdog();
+    await session.checkPlaybackWatchdog();
+
+    expect(bridges[0].stop).toHaveBeenCalledTimes(1);
+    expect(bridges).toHaveLength(2);
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({ filePath: 'song.flac', startSeconds: 15.5 });
+    expect(session.getStatus().warnings).toContain('audio_watchdog_recovered_native_output:1');
+    expect(session.getDiagnostics().recentWatchdogRecoveryCount).toBe(1);
+  });
+
+  it('does not recover while paused, loading, or ended', async () => {
+    const pausedHarness = createSessionHarness([probe('paused.flac', 44100)], [], [], {
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 1,
+    });
+    await pausedHarness.session.playLocalFile({ filePath: 'paused.flac', output: { outputMode: 'shared' } });
+    pausedHarness.bridges[0].positionSeconds = 5;
+    pausedHarness.session.pause();
+    await pausedHarness.session.checkPlaybackWatchdog();
+    await pausedHarness.session.checkPlaybackWatchdog();
+    expect(pausedHarness.bridges).toHaveLength(1);
+
+    const pendingDecoder = new PendingProbeDecoder(new Map());
+    const loadingBridges: FakeBridge[] = [];
+    const loadingSession = new AudioSession({
+      decoder: pendingDecoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = new FakeBridge();
+        loadingBridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 1,
+    });
+    const loadingPlay = loadingSession.playLocalFile({ filePath: 'loading.flac', output: { outputMode: 'shared' } });
+    await Promise.resolve();
+    expect(loadingSession.getStatus().state).toBe('loading');
+    await loadingSession.checkPlaybackWatchdog();
+    await loadingSession.checkPlaybackWatchdog();
+    expect(loadingBridges).toHaveLength(0);
+    pendingDecoder.finishProbe(probe('loading.flac', 44100));
+    await loadingPlay;
+
+    const endedHarness = createSessionHarness([probe('ended.flac', 44100)], [], [], {
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 1,
+    });
+    await endedHarness.session.playLocalFile({ filePath: 'ended.flac', output: { outputMode: 'shared' } });
+    endedHarness.bridges[0].positionSeconds = 12;
+    endedHarness.bridges[0].emit('ended');
+    await endedHarness.session.checkPlaybackWatchdog();
+    await endedHarness.session.checkPlaybackWatchdog();
+    expect(endedHarness.bridges).toHaveLength(1);
+  });
+
+  it('enters error after too many recoveries for one track', async () => {
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 1,
+      watchdogMaxRecoveriesPerTrack: 1,
+    });
+
+    await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-1', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 9;
+    await session.checkPlaybackWatchdog();
+    await session.checkPlaybackWatchdog();
+    bridges[1].positionSeconds = 9;
+    await session.checkPlaybackWatchdog();
+    await session.checkPlaybackWatchdog();
+
+    const status = session.getStatus();
+    expect(status.state).toBe('error');
+    expect(status.error).toBe('audio_watchdog_recovery_limit_exceeded');
+    expect(bridges).toHaveLength(2);
   });
 });
 

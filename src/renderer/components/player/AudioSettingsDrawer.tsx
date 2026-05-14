@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import {
   AudioLines,
   Check,
+  Clipboard,
   EyeOff,
   Gauge,
   Headphones,
@@ -20,7 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../../shared/types/audio';
+import type { AudioDeviceInfo, AudioDiagnostics, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../../shared/types/audio';
 import { useI18n } from '../../i18n/I18nProvider';
 import { createOutputSettings, readRememberedAudioOutput, writeRememberedAudioOutput } from './audioOutputMemory';
 
@@ -43,6 +44,8 @@ type AudioDrawerCopy = {
   bitPerfect: string;
   bitPerfectReady: string;
   close: string;
+  copyDiagnostics: string;
+  copiedDiagnostics: string;
   desktopBridgeUnavailable: string;
   dspActive: string;
   dspOn: string;
@@ -277,6 +280,47 @@ const getCurrentOutputName = (status: AudioStatus | null, fallbackDeviceName: st
 
 const getCurrentBackend = (status: AudioStatus | null, copy: AudioDrawerCopy): string => status?.outputBackend || status?.outputDeviceType || copy.systemAudio;
 
+const formatDiagnosticsValue = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return value.length ? value.join(', ') : '[]';
+  }
+
+  if (value === null || value === undefined || value === '') {
+    return 'n/a';
+  }
+
+  return String(value);
+};
+
+const formatAudioDiagnostics = (diagnostics: AudioDiagnostics): string => {
+  const rows: Array<[string, unknown]> = [
+    ['state', diagnostics.state],
+    ['host', diagnostics.host],
+    ['outputMode', diagnostics.outputMode],
+    ['outputBackend', diagnostics.outputBackend],
+    ['outputDeviceName', diagnostics.outputDeviceName],
+    ['currentFilePath', diagnostics.currentFilePath],
+    ['currentTrackId', diagnostics.currentTrackId],
+    ['durationSeconds', diagnostics.durationSeconds],
+    ['positionSeconds', diagnostics.positionSeconds],
+    ['playbackRate', diagnostics.playbackRate],
+    ['fileSampleRate', diagnostics.fileSampleRate],
+    ['decoderOutputSampleRate', diagnostics.decoderOutputSampleRate],
+    ['requestedOutputSampleRate', diagnostics.requestedOutputSampleRate],
+    ['actualDeviceSampleRate', diagnostics.actualDeviceSampleRate],
+    ['resampling', diagnostics.resampling],
+    ['bitPerfectCandidate', diagnostics.bitPerfectCandidate],
+    ['sampleRateMismatch', diagnostics.sampleRateMismatch],
+    ['warnings', diagnostics.warnings],
+    ['error', diagnostics.error],
+    ['watchdogStatus', diagnostics.watchdogStatus],
+    ['recentWatchdogRecoveryCount', diagnostics.recentWatchdogRecoveryCount],
+    ['lastWatchdogRecoveryTime', diagnostics.lastWatchdogRecoveryTime],
+  ];
+
+  return ['ECHO Next Audio Diagnostics', ...rows.map(([label, value]) => `${label}: ${formatDiagnosticsValue(value)}`)].join('\n');
+};
+
 export const AudioSettingsDrawer = ({
   isOpen,
   status,
@@ -291,6 +335,8 @@ export const AudioSettingsDrawer = ({
       bitPerfect: t('audioDrawer.signal.bitPerfect'),
       bitPerfectReady: t('audioDrawer.badge.bitPerfectReady'),
       close: t('audioDrawer.action.close'),
+      copyDiagnostics: t('audioDrawer.action.copyDiagnostics'),
+      copiedDiagnostics: t('audioDrawer.action.copiedDiagnostics'),
       desktopBridgeUnavailable: t('audioDrawer.error.desktopBridgeUnavailable'),
       dspActive: t('audioDrawer.badge.dspActive'),
       dspOn: t('audioDrawer.signal.dspOn'),
@@ -322,6 +368,7 @@ export const AudioSettingsDrawer = ({
   const [isBusy, setIsBusy] = useState(false);
   const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState<string[]>(() => readHiddenDeviceKeys());
   const [hiddenDeviceMenu, setHiddenDeviceMenu] = useState<HiddenDeviceMenu>(null);
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
 
   const hiddenDeviceKeySet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
   const visibleDevices = useMemo(
@@ -596,6 +643,25 @@ export const AudioSettingsDrawer = ({
     event.stopPropagation();
   };
 
+  const copyDiagnostics = useCallback(async (): Promise<void> => {
+    const audio = window.echo?.audio;
+
+    if (!audio) {
+      setError(copy.desktopBridgeUnavailable);
+      return;
+    }
+
+    try {
+      const diagnostics = await audio.getDiagnostics();
+      await window.navigator.clipboard.writeText(formatAudioDiagnostics(diagnostics));
+      setDiagnosticsCopied(true);
+      window.setTimeout(() => setDiagnosticsCopied(false), 1800);
+      setError(null);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : String(copyError));
+    }
+  }, [copy.desktopBridgeUnavailable]);
+
   if (!shouldRender) {
     return null;
   }
@@ -794,6 +860,11 @@ export const AudioSettingsDrawer = ({
             />
           </label>
           <p>{t('audioDrawer.option.rememberOutputDescription')}</p>
+
+          <button className="audio-diagnostics-copy-button" type="button" onClick={() => void copyDiagnostics()}>
+            <Clipboard size={16} />
+            <span>{diagnosticsCopied ? copy.copiedDiagnostics : copy.copyDiagnostics}</span>
+          </button>
 
           <div className="audio-advanced-todo">
             <strong>{t('audioDrawer.todo.outputControls')}</strong>

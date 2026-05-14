@@ -9,6 +9,7 @@ import { NativeOutputBridge, isNativeOutputBridgeAvailable } from './NativeOutpu
 import { PlaybackClock } from './PlaybackClock';
 import type {
   AudioDeviceInfo,
+  AudioDiagnostics,
   AudioOutputMode,
   AudioOutputSettings,
   AudioPlaybackState,
@@ -46,9 +47,19 @@ export type AudioSessionDependencies = {
   createBridge?: () => OutputBridgeLike;
   isNativeHostAvailable?: () => boolean;
   logger?: (message: string) => void;
+  watchdogIntervalMs?: number;
+  watchdogStallChecks?: number;
+  watchdogMaxRecoveriesPerTrack?: number;
+  watchdogRecoveryWindowMs?: number;
+  disableWatchdogTimer?: boolean;
 };
 
 const fallbackSampleRate = 44100;
+const defaultWatchdogIntervalMs = 2000;
+const defaultWatchdogStallChecks = 3;
+const defaultWatchdogMaxRecoveriesPerTrack = 2;
+const defaultWatchdogRecoveryWindowMs = 5 * 60 * 1000;
+const watchdogPositionEpsilonSeconds = 0.05;
 
 const defaultLogger = (message: string): void => {
   console.warn(message);
@@ -313,6 +324,17 @@ export class AudioSession extends EventEmitter {
   private outputWarnings: string[] = [];
   private pausedPositionSeconds: number | null = null;
   private runToken = 0;
+  private readonly watchdogIntervalMs: number;
+  private readonly watchdogStallChecks: number;
+  private readonly watchdogMaxRecoveriesPerTrack: number;
+  private readonly watchdogRecoveryWindowMs: number;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private watchdogLastPositionSeconds: number | null = null;
+  private watchdogStalledChecks = 0;
+  private watchdogRecovering = false;
+  private watchdogPendingWarning: string | null = null;
+  private watchdogLastRecoveryAt: string | null = null;
+  private readonly watchdogRecoveries = new Map<string, { count: number; windowStartedAt: number }>();
 
   constructor(dependencies: AudioSessionDependencies = {}) {
     super();
@@ -321,11 +343,24 @@ export class AudioSession extends EventEmitter {
     this.deviceService = dependencies.deviceService ?? new DeviceService({ logger: this.logger });
     this.createBridge = dependencies.createBridge ?? (() => new NativeOutputBridge({ logger: this.logger }));
     this.isNativeHostAvailable = dependencies.isNativeHostAvailable ?? isNativeOutputBridgeAvailable;
+    this.watchdogIntervalMs = Math.max(250, dependencies.watchdogIntervalMs ?? defaultWatchdogIntervalMs);
+    this.watchdogStallChecks = Math.max(1, dependencies.watchdogStallChecks ?? defaultWatchdogStallChecks);
+    this.watchdogMaxRecoveriesPerTrack = Math.max(
+      0,
+      dependencies.watchdogMaxRecoveriesPerTrack ?? defaultWatchdogMaxRecoveriesPerTrack,
+    );
+    this.watchdogRecoveryWindowMs = Math.max(1000, dependencies.watchdogRecoveryWindowMs ?? defaultWatchdogRecoveryWindowMs);
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.on('error', () => undefined);
     getEqBridge().on('state', () => {
       this.emitStatus();
     });
+    if (!dependencies.disableWatchdogTimer) {
+      this.watchdogTimer = setInterval(() => {
+        void this.checkPlaybackWatchdog();
+      }, this.watchdogIntervalMs);
+      this.watchdogTimer.unref?.();
+    }
   }
 
   listDevices(): AudioDeviceInfo[] {
@@ -403,7 +438,9 @@ export class AudioSession extends EventEmitter {
     this.state = 'loading';
     this.hostStatus = 'starting';
     this.errorMessage = null;
-    this.outputWarnings = [];
+    this.outputWarnings = this.watchdogPendingWarning ? [this.watchdogPendingWarning] : [];
+    this.watchdogPendingWarning = null;
+    this.resetWatchdogProgress();
     this.resetLevelMeter();
     this.currentFilePath = request.filePath;
     this.currentTrackId = request.trackId ?? null;
@@ -478,6 +515,7 @@ export class AudioSession extends EventEmitter {
 
       this.state = 'playing';
       this.hostStatus = 'ready';
+      this.resetWatchdogProgress();
       this.emitStatus();
       return this.getStatus();
     } catch (error) {
@@ -544,6 +582,7 @@ export class AudioSession extends EventEmitter {
         this.startDecoderRun(run, this.bridge.writable, token);
         this.state = 'playing';
         this.hostStatus = 'ready';
+        this.resetWatchdogProgress();
         this.emitStatus();
         return this.getStatus();
       }
@@ -576,6 +615,7 @@ export class AudioSession extends EventEmitter {
       this.pausedPositionSeconds = positionSeconds;
       this.clock.reset(positionSeconds, sampleRate);
       this.state = 'paused';
+      this.resetWatchdogProgress();
       this.hostStatus = this.bridge ? 'ready' : this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
       this.emitStatus();
     }
@@ -599,6 +639,8 @@ export class AudioSession extends EventEmitter {
     this.currentOutputDeviceName = null;
     this.pausedPositionSeconds = null;
     this.errorMessage = null;
+    this.outputWarnings = [];
+    this.resetWatchdogProgress();
     this.clock.reset(0, null);
     this.emitStatus();
     return this.getStatus();
@@ -641,6 +683,7 @@ export class AudioSession extends EventEmitter {
         decoderOutputSampleRate: this.currentPlan.decoderOutputSampleRate,
       });
       this.startDecoderRun(run, this.bridge.writable, token);
+      this.resetWatchdogProgress();
       this.emitStatus();
       return this.getStatus();
     }
@@ -725,6 +768,72 @@ export class AudioSession extends EventEmitter {
       warnings,
       error: this.errorMessage,
     };
+  }
+
+  getDiagnostics(): AudioDiagnostics {
+    const status = this.getStatus();
+
+    return {
+      state: status.state,
+      host: status.host,
+      outputMode: status.outputMode,
+      outputBackend: status.outputBackend,
+      outputDeviceName: status.outputDeviceName,
+      currentFilePath: status.currentFilePath,
+      currentTrackId: status.currentTrackId,
+      durationSeconds: status.durationSeconds,
+      positionSeconds: status.positionSeconds,
+      playbackRate: status.playbackRate,
+      fileSampleRate: status.fileSampleRate,
+      decoderOutputSampleRate: status.decoderOutputSampleRate,
+      requestedOutputSampleRate: status.requestedOutputSampleRate,
+      actualDeviceSampleRate: status.actualDeviceSampleRate,
+      resampling: status.resampling,
+      bitPerfectCandidate: status.bitPerfectCandidate,
+      sampleRateMismatch: status.sampleRateMismatch,
+      warnings: status.warnings,
+      error: status.error,
+      watchdogStatus: this.getWatchdogStatus(),
+      recentWatchdogRecoveryCount: this.getRecentWatchdogRecoveryCount(),
+      lastWatchdogRecoveryTime: this.watchdogLastRecoveryAt,
+    };
+  }
+
+  async checkPlaybackWatchdog(): Promise<void> {
+    if (this.state !== 'playing' || this.watchdogRecovering || !this.bridge || !this.currentFilePath || !this.currentOutputSettings) {
+      this.resetWatchdogProgress();
+      return;
+    }
+
+    const positionSeconds = this.bridge.getPositionSeconds();
+    if (!Number.isFinite(positionSeconds)) {
+      this.resetWatchdogProgress();
+      return;
+    }
+
+    if (
+      this.watchdogLastPositionSeconds === null ||
+      positionSeconds > this.watchdogLastPositionSeconds + watchdogPositionEpsilonSeconds
+    ) {
+      this.watchdogLastPositionSeconds = positionSeconds;
+      this.watchdogStalledChecks = 0;
+      return;
+    }
+
+    this.watchdogStalledChecks += 1;
+    if (this.watchdogStalledChecks < this.watchdogStallChecks) {
+      return;
+    }
+
+    await this.recoverFromWatchdogStall(positionSeconds);
+  }
+
+  dispose(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    this.stopResources();
   }
 
   private createSampleRatePlan(
@@ -1100,6 +1209,8 @@ export class AudioSession extends EventEmitter {
       }
 
       this.clock.updateFrames(Number(frames));
+      this.watchdogLastPositionSeconds = this.clock.getPositionSeconds();
+      this.watchdogStalledChecks = 0;
     });
     bridge.on('ended', () => {
       if (this.runToken !== token) {
@@ -1108,6 +1219,7 @@ export class AudioSession extends EventEmitter {
 
       this.state = 'ended';
       this.updatePositionFromOutput();
+      this.resetWatchdogProgress();
       this.emit('ended', this.getStatus());
       this.emitStatus();
     });
@@ -1224,6 +1336,7 @@ export class AudioSession extends EventEmitter {
     this.errorMessage = error.message;
     this.state = 'error';
     this.hostStatus = 'error';
+    this.resetWatchdogProgress();
     this.emit('error', error, this.getStatus());
     this.emitStatus();
   }
@@ -1236,6 +1349,105 @@ export class AudioSession extends EventEmitter {
 
   private emitStatus(): void {
     this.emit('status', this.getStatus());
+  }
+
+  private resetWatchdogProgress(): void {
+    this.watchdogLastPositionSeconds = null;
+    this.watchdogStalledChecks = 0;
+  }
+
+  private getWatchdogRecoveryKey(): string | null {
+    return this.currentTrackId ?? this.currentFilePath;
+  }
+
+  private getRecentWatchdogRecoveryCount(): number {
+    const key = this.getWatchdogRecoveryKey();
+    if (!key) {
+      return 0;
+    }
+
+    const recovery = this.watchdogRecoveries.get(key);
+    if (!recovery || Date.now() - recovery.windowStartedAt > this.watchdogRecoveryWindowMs) {
+      return 0;
+    }
+
+    return recovery.count;
+  }
+
+  private getWatchdogStatus(): AudioDiagnostics['watchdogStatus'] {
+    if (this.watchdogRecovering) {
+      return 'recovering';
+    }
+
+    if (this.getRecentWatchdogRecoveryCount() >= this.watchdogMaxRecoveriesPerTrack && this.watchdogMaxRecoveriesPerTrack > 0) {
+      return 'limited';
+    }
+
+    return this.state === 'playing' ? 'monitoring' : 'idle';
+  }
+
+  private reserveWatchdogRecoverySlot(): number | null {
+    const key = this.getWatchdogRecoveryKey();
+    if (!key) {
+      return null;
+    }
+
+    const now = Date.now();
+    const current = this.watchdogRecoveries.get(key);
+    const recovery =
+      !current || now - current.windowStartedAt > this.watchdogRecoveryWindowMs
+        ? { count: 0, windowStartedAt: now }
+        : current;
+
+    if (recovery.count >= this.watchdogMaxRecoveriesPerTrack) {
+      this.watchdogRecoveries.set(key, recovery);
+      return null;
+    }
+
+    recovery.count += 1;
+    this.watchdogRecoveries.set(key, recovery);
+    return recovery.count;
+  }
+
+  private async recoverFromWatchdogStall(positionSeconds: number): Promise<void> {
+    if (!this.currentFilePath || !this.currentOutputSettings || !this.currentProbe || this.state !== 'playing') {
+      this.resetWatchdogProgress();
+      return;
+    }
+
+    const recoveryCount = this.reserveWatchdogRecoverySlot();
+    if (recoveryCount === null) {
+      this.handleError(new Error('audio_watchdog_recovery_limit_exceeded'));
+      return;
+    }
+
+    const filePath = this.currentFilePath;
+    const trackId = this.currentTrackId;
+    const output = { ...this.currentOutputSettings };
+    const probe = createProbeHint(this.currentProbe);
+    const safePositionSeconds = Math.min(Math.max(0, positionSeconds), this.currentProbe.durationSeconds || Number.POSITIVE_INFINITY);
+
+    this.watchdogRecovering = true;
+    this.watchdogPendingWarning = `audio_watchdog_recovered_native_output:${recoveryCount}`;
+    this.logger(
+      `[AudioSession] watchdog detected stalled native output; restarting file="${filePath}" position=${safePositionSeconds.toFixed(3)} recovery=${recoveryCount}`,
+    );
+
+    try {
+      await this.playLocalFile({
+        filePath,
+        trackId: trackId ?? undefined,
+        startSeconds: safePositionSeconds,
+        output,
+        probe,
+      });
+      this.watchdogLastRecoveryAt = new Date().toISOString();
+    } catch (error) {
+      this.handleError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      this.watchdogRecovering = false;
+      this.resetWatchdogProgress();
+    }
   }
 }
 

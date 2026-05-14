@@ -29,6 +29,8 @@ export const getDiagnosticsBridge = (): Window['echo']['diagnostics'] | null => 
 
 export const getDiscordPresenceBridge = (): Window['echo']['discordPresence'] | null => getEchoBridge()?.discordPresence ?? null;
 
+export const getDownloadsBridge = (): Window['echo']['downloads'] | null => getEchoBridge()?.downloads ?? null;
+
 const browserEqStorageKey = 'echo-next.browser-eq';
 
 type BrowserEqStorage = {

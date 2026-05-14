@@ -60,6 +60,12 @@ describe('preload SMTC API', () => {
     expect(listeners.has(IpcChannels.AudioStatus)).toBe(false);
   });
 
+  it('exposes audio diagnostics through IPC', async () => {
+    await exposedApi!.audio.getDiagnostics();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioGetDiagnostics);
+  });
+
   it('exposes the dropped import path classifier', async () => {
     await exposedApi!.library.classifyImportPaths(['D:\\Music']);
 

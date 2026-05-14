@@ -81,6 +81,13 @@
       {
         "from": "electron-app/build/echo-audio-host.exe",
         "to": "echo-audio-host.exe"
+      },
+      {
+        "from": "electron-app/tools",
+        "to": "tools",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asarUnpack": [

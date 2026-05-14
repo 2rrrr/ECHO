@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { AudioOutputMode, AudioOutputSettings, AudioStatus, ChannelBalanceState, PlaybackSpeedMode } from '../../shared/types/audio';
+import type { AudioDiagnostics, AudioOutputMode, AudioOutputSettings, AudioStatus, ChannelBalanceState, PlaybackSpeedMode } from '../../shared/types/audio';
 import type { EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
@@ -59,6 +59,7 @@ export const registerAudioIpc = (): void => {
   });
 
   ipcMain.handle(IpcChannels.AudioGetStatus, (): AudioStatus => getAudioSession().getStatus());
+  ipcMain.handle(IpcChannels.AudioGetDiagnostics, (): AudioDiagnostics => getAudioSession().getDiagnostics());
   ipcMain.handle(IpcChannels.AudioListDevices, () => getAudioSession().listDevices());
   ipcMain.handle(IpcChannels.AudioSetOutput, async (_event, settings: unknown): Promise<AudioStatus> =>
     getAudioSession().setOutput(normalizeOutputSettings(settings)),

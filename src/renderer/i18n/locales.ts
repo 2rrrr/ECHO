@@ -16,6 +16,8 @@ export type TranslationKey =
   | 'app.window.maximize'
   | 'app.window.close'
   | 'audioDrawer.action.close'
+  | 'audioDrawer.action.copiedDiagnostics'
+  | 'audioDrawer.action.copyDiagnostics'
   | 'audioDrawer.action.hideDevice'
   | 'audioDrawer.action.restore'
   | 'audioDrawer.badge.bitPerfectReady'
@@ -607,6 +609,15 @@ export type TranslationKey =
   | 'settings.playback.outputMode.title'
   | 'settings.playback.speedMode.description'
   | 'settings.playback.speedMode.title'
+  | 'settings.playback.stability.action.copied'
+  | 'settings.playback.stability.action.copy'
+  | 'settings.playback.stability.action.refresh'
+  | 'settings.playback.stability.error.desktopBridgeUnavailable'
+  | 'settings.playback.stability.field.lastWatchdogRecoveryTime'
+  | 'settings.playback.stability.field.recentWatchdogRecoveryCount'
+  | 'settings.playback.stability.field.watchdogStatus'
+  | 'settings.playback.stability.title'
+  | 'settings.playback.stability.value.unknown'
   | 'settings.playback.wireless.description'
   | 'settings.playback.wireless.title'
   | 'settings.remote.library.description'
@@ -623,6 +634,8 @@ const zhCN: TranslationMap = {
   'app.window.maximize': '最大化',
   'app.window.close': '关闭',
   'audioDrawer.action.close': '关闭音频设置',
+  'audioDrawer.action.copiedDiagnostics': '已复制播放诊断信息',
+  'audioDrawer.action.copyDiagnostics': '复制播放诊断信息',
   'audioDrawer.action.hideDevice': '隐藏设备',
   'audioDrawer.action.restore': '恢复',
   'audioDrawer.badge.bitPerfectReady': 'Bit-perfect ready',
@@ -1214,6 +1227,15 @@ const zhCN: TranslationMap = {
   'settings.playback.outputMode.title': '输出模式',
   'settings.playback.speedMode.description': '选择播放器底部速度滑条使用的变速方式。',
   'settings.playback.speedMode.title': '变速模式',
+  'settings.playback.stability.action.copied': '已复制',
+  'settings.playback.stability.action.copy': '复制诊断信息',
+  'settings.playback.stability.action.refresh': '刷新播放稳定性诊断',
+  'settings.playback.stability.error.desktopBridgeUnavailable': '桌面桥接不可用。',
+  'settings.playback.stability.field.lastWatchdogRecoveryTime': '上次 watchdog 恢复时间',
+  'settings.playback.stability.field.recentWatchdogRecoveryCount': '近期 watchdog 恢复次数',
+  'settings.playback.stability.field.watchdogStatus': 'watchdog 状态',
+  'settings.playback.stability.title': '播放稳定性诊断',
+  'settings.playback.stability.value.unknown': '未知',
   'settings.playback.wireless.description': '后续 HiFi 引擎阶段再接入；当前阶段不迁移 gapless / automix / 流媒体。',
   'settings.playback.wireless.title': '无线播放',
   'settings.remote.library.description': '本阶段禁止网盘 / 远程 / 流媒体，只保留设置分组占位。',
@@ -1223,6 +1245,8 @@ const zhCN: TranslationMap = {
 const zhTW: TranslationMap = {
   ...zhCN,
   'audioDrawer.action.close': '關閉音訊設定',
+  'audioDrawer.action.copiedDiagnostics': '已複製播放診斷資訊',
+  'audioDrawer.action.copyDiagnostics': '複製播放診斷資訊',
   'audioDrawer.action.hideDevice': '隱藏裝置',
   'audioDrawer.action.restore': '復原',
   'audioDrawer.device.asioDriver': 'ASIO 驅動',
@@ -1529,6 +1553,16 @@ const zhTW: TranslationMap = {
   'settings.playback.outputDevice.empty': '沒有可用裝置',
   'settings.playback.wireless.title': '無線播放',
   'settings.playback.audioStatus.title': '音訊狀態',
+  'settings.playback.audioStatus.description': '取樣率欄位必須分開顯示，避免舊 ECHO 獨占模式 48k 鎖死回歸。',
+  'settings.playback.stability.action.copied': '已複製',
+  'settings.playback.stability.action.copy': '複製診斷資訊',
+  'settings.playback.stability.action.refresh': '重新整理播放穩定性診斷',
+  'settings.playback.stability.error.desktopBridgeUnavailable': '桌面橋接不可用。',
+  'settings.playback.stability.field.lastWatchdogRecoveryTime': '上次 watchdog 復原時間',
+  'settings.playback.stability.field.recentWatchdogRecoveryCount': '近期 watchdog 復原次數',
+  'settings.playback.stability.field.watchdogStatus': 'watchdog 狀態',
+  'settings.playback.stability.title': '播放穩定性診斷',
+  'settings.playback.stability.value.unknown': '未知',
   'settings.integrations.discord.action.refresh': '重新整理狀態',
   'settings.integrations.discord.title': 'Discord 狀態',
   'settings.integrations.smtc.description': '把目前播放資訊、封面、進度和媒體鍵動作發布到 Windows 音量浮層與鎖定畫面媒體控制。',
@@ -1595,6 +1629,8 @@ const jaJP: TranslationMap = {
   'app.window.maximize': '最大化',
   'app.window.close': '閉じる',
   'audioDrawer.action.close': '音声設定を閉じる',
+  'audioDrawer.action.copiedDiagnostics': '再生診断情報をコピーしました',
+  'audioDrawer.action.copyDiagnostics': '再生診断情報をコピー',
   'audioDrawer.action.hideDevice': 'デバイスを非表示',
   'audioDrawer.action.restore': '戻す',
   'audioDrawer.device.asioDriver': 'ASIO ドライバー',
@@ -1983,6 +2019,15 @@ const jaJP: TranslationMap = {
   'settings.playback.followCurrent.description': '有効にすると、曲変更時に左側の現在リストを再生中の曲へ自動スクロールします。',
   'settings.playback.audioStatus.title': '音声状態',
   'settings.playback.audioStatus.description': 'サンプルレート欄を分けて表示し、旧 ECHO の排他モード 48k 固定の再発を避けます。',
+  'settings.playback.stability.action.copied': 'コピーしました',
+  'settings.playback.stability.action.copy': '診断情報をコピー',
+  'settings.playback.stability.action.refresh': '再生安定性診断を更新',
+  'settings.playback.stability.error.desktopBridgeUnavailable': 'デスクトップブリッジを利用できません。',
+  'settings.playback.stability.field.lastWatchdogRecoveryTime': '前回の watchdog 復旧時刻',
+  'settings.playback.stability.field.recentWatchdogRecoveryCount': '最近の watchdog 復旧回数',
+  'settings.playback.stability.field.watchdogStatus': 'watchdog 状態',
+  'settings.playback.stability.title': '再生安定性診断',
+  'settings.playback.stability.value.unknown': '不明',
   'settings.integrations.discord.action.refresh': '状態を更新',
   'settings.integrations.discord.title': 'Discord ステータス',
   'settings.integrations.discord.description': 'Phase 1 では連携サービスに接続せず、設定位置のみ保持します。',
@@ -2046,6 +2091,8 @@ const enUS: TranslationMap = {
   'app.window.maximize': 'Maximize',
   'app.window.close': 'Close',
   'audioDrawer.action.close': 'Close audio settings',
+  'audioDrawer.action.copiedDiagnostics': 'Playback diagnostics copied',
+  'audioDrawer.action.copyDiagnostics': 'Copy Playback Diagnostics',
   'audioDrawer.action.hideDevice': 'Hide device',
   'audioDrawer.action.restore': 'Restore',
   'audioDrawer.badge.bitPerfectReady': 'Bit-perfect ready',
@@ -2542,6 +2589,15 @@ const enUS: TranslationMap = {
   'settings.playback.followCurrent.description': 'When enabled, the current list scrolls to the playing track after track changes.',
   'settings.playback.audioStatus.title': 'Audio Status',
   'settings.playback.audioStatus.description': 'Sample-rate fields stay separated to prevent the old ECHO exclusive-mode 48k lock regression.',
+  'settings.playback.stability.action.copied': 'Copied',
+  'settings.playback.stability.action.copy': 'Copy Diagnostics',
+  'settings.playback.stability.action.refresh': 'Refresh Playback Stability Diagnostics',
+  'settings.playback.stability.error.desktopBridgeUnavailable': 'Desktop bridge unavailable.',
+  'settings.playback.stability.field.lastWatchdogRecoveryTime': 'Last watchdog recovery time',
+  'settings.playback.stability.field.recentWatchdogRecoveryCount': 'Recent watchdog recovery count',
+  'settings.playback.stability.field.watchdogStatus': 'Watchdog status',
+  'settings.playback.stability.title': 'Playback Stability Diagnostics',
+  'settings.playback.stability.value.unknown': 'N/A',
   'settings.integrations.discord.action.refresh': 'Refresh status',
   'settings.integrations.discord.title': 'Discord Status',
   'settings.integrations.discord.description': 'Phase 1 does not connect integration services yet; this setting keeps the slot reserved.',
