@@ -31,6 +31,7 @@ describe('app settings normalization', () => {
     expect(settings.scanPerformanceMode).toBe('balanced');
     expect(settings.hideToTrayOnClose).toBe(true);
     expect(settings.networkMetadataProviders).toEqual(['qq-music']);
+    expect(settings.audioAnalysisEnabled).toBe(false);
     expect(settings.lyricsNetworkEnabled).toBe(true);
     expect(settings.lyricsEnabledProviders).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
     expect(settings.lyricsProviderOrder).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
@@ -185,6 +186,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ scanPerformanceMode: 'low' }).scanPerformanceMode).toBe('low');
     expect(normalizeSettings({ scanPerformanceMode: 'performance' }).scanPerformanceMode).toBe('performance');
     expect(normalizeSettings({ scanPerformanceMode: 'turbo' as never }).scanPerformanceMode).toBe('balanced');
+  });
+
+  it('keeps audio analysis disabled by default', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).audioAnalysisEnabled).toBe(false);
+    expect(normalizeSettings({ audioAnalysisEnabled: true }).audioAnalysisEnabled).toBe(true);
+    expect(normalizeSettings({ audioAnalysisEnabled: 'yes' as never }).audioAnalysisEnabled).toBe(false);
   });
 
   it('normalizes duplicate track settings conservatively', async () => {

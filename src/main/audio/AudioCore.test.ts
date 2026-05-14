@@ -467,13 +467,13 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.requestedOutputSampleRate).toBe(48000);
     expect(status.decoderOutputSampleRate).toBe(48000);
     expect(status.sharedDeviceSampleRate).toBe(48000);
-    expect(status.latencyProfile).toBe('stable');
+    expect(status.latencyProfile).toBe('lowLatency');
     expect(bridges[0].startOptions?.deviceIndex).toBeUndefined();
     expect(bridges[0].startOptions?.deviceName).toBeUndefined();
     expect(bridges[0].startOptions).toMatchObject({
       requestedOutputSampleRate: 48000,
-      bufferSizeFrames: 8192,
-      latencyProfile: 'stable',
+      bufferSizeFrames: 1024,
+      latencyProfile: 'lowLatency',
     });
     expect(decoder.decodeRequests[0].decoderOutputSampleRate).toBe(48000);
   });
@@ -748,7 +748,7 @@ describe('Audio Core sample-rate regression guard', () => {
     });
   });
 
-  it('uses the balanced 2048-frame native buffer for exclusive and ASIO by default', async () => {
+  it('uses the low-latency 1024-frame native buffer for exclusive and ASIO by default', async () => {
     const { bridges, session } = createSessionHarness([probe('exclusive.flac', 44100), probe('asio.flac', 44100)]);
 
     await session.playLocalFile({
@@ -762,13 +762,13 @@ describe('Audio Core sample-rate regression guard', () => {
 
     expect(bridges[0].startOptions).toMatchObject({
       exclusive: true,
-      bufferSizeFrames: 2048,
-      latencyProfile: 'balanced',
+      bufferSizeFrames: 1024,
+      latencyProfile: 'lowLatency',
     });
     expect(bridges[1].startOptions).toMatchObject({
       asio: true,
-      bufferSizeFrames: 2048,
-      latencyProfile: 'balanced',
+      bufferSizeFrames: 1024,
+      latencyProfile: 'lowLatency',
     });
   });
 
@@ -777,7 +777,7 @@ describe('Audio Core sample-rate regression guard', () => {
       deviceBufferFrames: 4096,
       nativeActualBufferFrames: 4096,
       actualBufferFrames: 4096,
-      requestedDeviceBufferFrames: 2048,
+      requestedDeviceBufferFrames: 1024,
       openedDeviceBufferFrames: 4096,
       bufferSizeFallback: true,
     });
@@ -793,7 +793,7 @@ describe('Audio Core sample-rate regression guard', () => {
       output: { outputMode: 'exclusive' },
     });
 
-    expect(status.warnings).toContain('native_output_buffer_size_fell_back:2048->4096');
+    expect(status.warnings).toContain('native_output_buffer_size_fell_back:1024->4096');
     expect(status.nativeActualBufferFrames).toBe(4096);
     expect(status.nativeOutputLatencyMs).toBe(93);
   });
@@ -1122,17 +1122,17 @@ describe('AudioSession playback watchdog', () => {
     expect(bridges).toHaveLength(2);
   });
 
-  it('starts shared output with the stable latency profile', async () => {
+  it('starts shared output immediately with the low-latency profile', async () => {
     const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
 
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
 
     expect(bridges[0].startOptions).toMatchObject({
-      bufferSizeFrames: 8192,
-      fifoCapacityMs: 750,
-      startupPrebufferMs: 120,
-      startupPrebufferTimeoutMs: 600,
-      latencyProfile: 'stable',
+      bufferSizeFrames: 1024,
+      fifoCapacityMs: 350,
+      startupPrebufferMs: 0,
+      startupPrebufferTimeoutMs: 0,
+      latencyProfile: 'lowLatency',
     });
   });
 
@@ -1159,7 +1159,7 @@ describe('AudioSession playback watchdog', () => {
     expect(bridges[0].stop).toHaveBeenCalledTimes(1);
     expect(bridges).toHaveLength(2);
     expect(bridges[1].startOptions).toMatchObject({
-      bufferSizeFrames: 8192,
+      bufferSizeFrames: 4096,
       fifoCapacityMs: 1000,
       startupPrebufferMs: 180,
     });

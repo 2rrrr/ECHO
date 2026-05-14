@@ -345,6 +345,7 @@ export const migrations: Migration[] = [
           source_provider TEXT NOT NULL DEFAULT 'local',
           source_playlist_id TEXT,
           cover_id TEXT,
+          cover_url TEXT,
           sort_mode TEXT NOT NULL DEFAULT 'manual',
           item_count INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
@@ -827,6 +828,67 @@ export const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_playback_history_stats_media_type ON playback_history_stats(media_type);
         CREATE INDEX IF NOT EXISTS idx_playback_history_stats_stable_key ON playback_history_stats(stable_key);
       `);
+    },
+  },
+  {
+    id: 23,
+    apply: (database) => {
+      database.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+          title,
+          artist,
+          album,
+          album_artist,
+          genre,
+          path,
+          tokenize = 'unicode61'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_after_insert
+        AFTER INSERT ON tracks
+        BEGIN
+          INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path)
+          VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_after_delete
+        AFTER DELETE ON tracks
+        BEGIN
+          DELETE FROM tracks_fts WHERE rowid = old.rowid;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_after_update
+        AFTER UPDATE OF title, artist, album, album_artist, genre, path ON tracks
+        BEGIN
+          DELETE FROM tracks_fts WHERE rowid = old.rowid;
+          INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path)
+          VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path);
+        END;
+
+        INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path)
+        SELECT rowid, title, artist, album, album_artist, COALESCE(genre, ''), path
+        FROM tracks
+        WHERE rowid NOT IN (SELECT rowid FROM tracks_fts);
+      `);
+    },
+  },
+  {
+    id: 24,
+    apply: (database) => {
+      addColumnIfMissing(database, 'playlists', 'cover_url', 'cover_url TEXT');
+    },
+  },
+  {
+    id: 25,
+    apply: (database) => {
+      addColumnIfMissing(database, 'tracks', 'bpm', 'bpm REAL');
+      addColumnIfMissing(database, 'tracks', 'bpm_confidence', 'bpm_confidence REAL');
+      addColumnIfMissing(database, 'tracks', 'beat_offset_ms', 'beat_offset_ms REAL');
+      addColumnIfMissing(database, 'tracks', 'analysis_status', "analysis_status TEXT NOT NULL DEFAULT 'none'");
+      addColumnIfMissing(database, 'tracks', 'analysis_version', 'analysis_version INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(database, 'tracks', 'analysis_error', 'analysis_error TEXT');
+      addColumnIfMissing(database, 'tracks', 'analysis_updated_at', 'analysis_updated_at TEXT');
+      database.exec('CREATE INDEX IF NOT EXISTS idx_tracks_analysis_status ON tracks(analysis_status)');
     },
   },
 ];

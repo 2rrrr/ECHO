@@ -29,6 +29,8 @@ import type {
   LibraryTrack,
   MissingMetadataScanOptions,
   MissingMetadataScanResult,
+  BpmAnalysisJobStatus,
+  BpmAnalysisStartOptions,
   NetworkApplyOptions,
   NetworkApplyResult,
   NetworkCandidateList,
@@ -47,6 +49,7 @@ import type {
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
   DuplicateTrackMode,
+  ExportPlaylistRequest,
   UpdatePlaylistRequest,
 } from '../shared/types/library';
 import type { LocalFileResolveResult, PlaybackMediaStartRequest, PlaybackStartRequest, PlaybackStatus } from '../shared/types/playback';
@@ -82,6 +85,7 @@ import type {
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylistImportResult,
   StreamingProviderDescriptor,
   StreamingProviderName,
   StreamingSearchRequest,
@@ -139,7 +143,9 @@ export type EchoApi = {
     deletePlaylist: (playlistId: string) => Promise<void>;
     getPlaylist: (playlistId: string) => Promise<LibraryPlaylist | null>;
     getPlaylistItems: (playlistId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize' | 'search'>) => Promise<LibraryPage<LibraryPlaylistItem>>;
+    exportPlaylist: (request: ExportPlaylistRequest) => Promise<string | null>;
     addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<LibraryPlaylistItem>;
+    addStreamingTrackToPlaylist: (playlistId: string, track: LibraryTrack) => Promise<LibraryPlaylistItem>;
     addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<LibraryPlaylistItem[]>;
     removePlaylistItem: (itemId: string) => Promise<void>;
     movePlaylistItem: (playlistId: string, itemId: string, targetPosition: number) => Promise<void>;
@@ -206,6 +212,8 @@ export type EchoApi = {
     applyNetworkMissingOnly: (candidateId: string, options?: NetworkApplyOptions) => Promise<NetworkApplyResult>;
     applyNetworkSelected: (candidateId: string, options?: NetworkApplyOptions) => Promise<NetworkApplyResult>;
     rejectNetworkCandidate: (candidateId: string) => Promise<NetworkApplyResult>;
+    startBpmAnalysis: (options?: BpmAnalysisStartOptions) => Promise<BpmAnalysisJobStatus>;
+    getBpmAnalysisStatus: (jobId: string) => Promise<BpmAnalysisJobStatus>;
   };
   playback: {
     getStatus: () => Promise<PlaybackStatus>;
@@ -246,6 +254,7 @@ export type EchoApi = {
     getLyrics: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingLyricsResult>;
     getMv: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingMvResult>;
     getProviders: () => Promise<StreamingProviderDescriptor[]>;
+    importPlaylistFromUrl: (url: string) => Promise<StreamingPlaylistImportResult>;
   };
   lyrics: {
     getForTrack: (trackId: string) => Promise<TrackLyrics | null>;

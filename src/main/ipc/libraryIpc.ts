@@ -12,6 +12,9 @@ import type {
   LibraryFolderPathRequest,
   LibraryFolderTracksQuery,
   LibraryPageQuery,
+  LibraryPlaylist,
+  LibraryPlaylistItem,
+  PlaylistExportFormat,
   PlaylistSortMode,
   LibrarySort,
   LibraryTrackTagUpdateRequest,
@@ -22,6 +25,7 @@ import type {
   NetworkTagProvider,
   PlaybackHistoryQuery,
   StartPlaybackHistoryRequest,
+  BpmAnalysisStartOptions,
 } from '../../shared/types/library';
 import { getAppSettings } from '../app/appSettings';
 import { getLibraryService } from '../library/LibraryService';
@@ -179,6 +183,7 @@ const normalizePlaylistItemsQuery = (value: unknown): Pick<LibraryPageQuery, 'pa
 };
 
 const playlistSortModes = new Set<PlaylistSortMode>(['manual', 'titleAsc', 'titleDesc', 'artistAsc', 'addedDesc']);
+const playlistExportFormats = new Set<PlaylistExportFormat>(['json', 'txt', 'm3u8', 'csv']);
 
 const normalizeCreatePlaylistRequest = (value: unknown): { name: string; description?: string | null } => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -214,12 +219,51 @@ const normalizeUpdatePlaylistRequest = (
   };
 };
 
+const normalizeExportPlaylistRequest = (value: unknown): { playlistId: string; format: PlaylistExportFormat } => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('playlist export request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  const format = typeof input.format === 'string' && playlistExportFormats.has(input.format as PlaylistExportFormat)
+    ? (input.format as PlaylistExportFormat)
+    : null;
+
+  if (!format) {
+    throw new Error('playlist export format must be json, txt, m3u8, or csv');
+  }
+
+  return {
+    playlistId: requireText(input.playlistId, 'playlistId'),
+    format,
+  };
+};
+
 const normalizeTrackIds = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     throw new Error('trackIds must be an array');
   }
 
   return value.map((item) => requireText(item, 'trackId'));
+};
+
+const normalizeStreamingPlaylistTrack = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('streaming track must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    id: typeof input.id === 'string' ? input.id : '',
+    provider: requireText(input.provider, 'provider'),
+    providerTrackId: requireText(input.providerTrackId, 'providerTrackId'),
+    stableKey: typeof input.stableKey === 'string' ? input.stableKey : null,
+    title: requireText(input.title, 'title'),
+    artist: typeof input.artist === 'string' && input.artist.trim() ? input.artist : 'Unknown Artist',
+    album: typeof input.album === 'string' ? input.album : '',
+    duration: typeof input.duration === 'number' && Number.isFinite(input.duration) ? input.duration : 0,
+    unavailable: input.unavailable === true,
+  };
 };
 
 const normalizeAlbumIds = (value: unknown): string[] => {
@@ -444,6 +488,22 @@ const normalizeNetworkTagCandidateSearchRequest = (value: unknown): NetworkTagCa
   };
 };
 
+const normalizeBpmAnalysisStartOptions = (value: unknown): BpmAnalysisStartOptions => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { limit: optionalLimit(value, 100) };
+  }
+
+  const input = value as Record<string, unknown>;
+  const trackIds = Array.isArray(input.trackIds)
+    ? input.trackIds.filter((trackId): trackId is string => typeof trackId === 'string' && trackId.trim().length > 0)
+    : undefined;
+  return {
+    limit: optionalLimit(input.limit, 100),
+    trackIds: trackIds?.length ? [...new Set(trackIds)] : undefined,
+    force: input.force === true,
+  };
+};
+
 const coverMimeType = (filePath: string): string => {
   const extension = filePath.split('.').pop()?.toLocaleLowerCase();
 
@@ -480,6 +540,153 @@ const renderTrackCard = async (trackId: unknown) => {
     coverPath: asset?.filePath && existsSync(asset.filePath) ? asset.filePath : null,
     coverMimeType: asset?.mimeType ?? null,
   });
+};
+
+const safeExportFileName = (name: string): string => {
+  const cleaned = name.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  return (cleaned || 'Playlist').slice(0, 120);
+};
+
+const csvCell = (value: unknown): string => {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/u.test(text) ? `"${text.replace(/"/gu, '""')}"` : text;
+};
+
+const playlistTrackExportRow = (item: LibraryPlaylistItem) => {
+  const track = item.track;
+  return {
+    title: item.titleSnapshot ?? track?.title ?? item.album?.title ?? 'Unavailable track',
+    artist: item.artistSnapshot ?? track?.artist ?? item.album?.albumArtist ?? 'Unknown artist',
+    album: item.albumSnapshot ?? track?.album ?? item.album?.title ?? '',
+    duration: item.durationSnapshot ?? track?.duration ?? item.album?.duration ?? 0,
+    path: item.mediaType === 'track' && track && !item.unavailable ? track.path : '',
+    provider: item.sourceProvider,
+    sourceItemId: item.sourceItemId,
+    mediaType: item.mediaType,
+    mediaId: item.mediaId,
+    unavailable: item.unavailable,
+  };
+};
+
+const buildPlaylistExportContent = (
+  playlist: LibraryPlaylist,
+  items: LibraryPlaylistItem[],
+  format: PlaylistExportFormat,
+): string => {
+  const exportedAt = new Date().toISOString();
+  const tracks = items.map(playlistTrackExportRow);
+
+  switch (format) {
+    case 'json':
+      return `${JSON.stringify(
+        {
+          playlist: {
+            id: playlist.id,
+            name: playlist.name,
+            description: playlist.description,
+            sourceProvider: playlist.sourceProvider,
+            sourcePlaylistId: playlist.sourcePlaylistId,
+            sortMode: playlist.sortMode,
+            itemCount: playlist.itemCount,
+            createdAt: playlist.createdAt,
+            updatedAt: playlist.updatedAt,
+          },
+          exportedAt,
+          tracks,
+        },
+        null,
+        2,
+      )}\n`;
+    case 'txt':
+      return [
+        playlist.name,
+        `${tracks.length} tracks`,
+        `Exported at ${exportedAt}`,
+        '',
+        ...tracks.map((track, index) => `${index + 1}. ${track.title} - ${track.artist}`),
+      ].join('\n') + '\n';
+    case 'm3u8':
+      return [
+        '#EXTM3U',
+        `#PLAYLIST:${playlist.name}`,
+        ...tracks.flatMap((track) => {
+          const title = `${track.title} - ${track.artist}`;
+          if (track.path && !track.unavailable) {
+            return [`#EXTINF:${Math.round(track.duration || -1)},${title}`, track.path];
+          }
+
+          return [`# ${title} (${track.provider}${track.sourceItemId ? `:${track.sourceItemId}` : ''})`];
+        }),
+      ].join('\n') + '\n';
+    case 'csv':
+      return [
+        ['title', 'artist', 'album', 'duration', 'path', 'provider', 'sourceItemId', 'unavailable'].join(','),
+        ...tracks.map((track) =>
+          [
+            track.title,
+            track.artist,
+            track.album,
+            track.duration,
+            track.path,
+            track.provider,
+            track.sourceItemId,
+            track.unavailable,
+          ].map(csvCell).join(','),
+        ),
+      ].join('\n') + '\n';
+    default:
+      return '';
+  }
+};
+
+const playlistExportFilter = (format: PlaylistExportFormat): Electron.FileFilter[] => {
+  switch (format) {
+    case 'json':
+      return [{ name: 'JSON Playlist', extensions: ['json'] }];
+    case 'txt':
+      return [{ name: 'Text Playlist', extensions: ['txt'] }];
+    case 'm3u8':
+      return [{ name: 'M3U8 Playlist', extensions: ['m3u8'] }];
+    case 'csv':
+      return [{ name: 'CSV Playlist', extensions: ['csv'] }];
+    default:
+      return [];
+  }
+};
+
+const exportPlaylist = async (request: unknown): Promise<string | null> => {
+  const { playlistId, format } = normalizeExportPlaylistRequest(request);
+  const service = getLibraryService();
+  const playlist = service.getPlaylist(playlistId);
+
+  if (!playlist) {
+    throw new Error(`Unknown playlist ${playlistId}`);
+  }
+
+  const items: LibraryPlaylistItem[] = [];
+  let page = 1;
+  const pageSize = 500;
+  for (;;) {
+    const result = service.getPlaylistItems(playlistId, { page, pageSize });
+    items.push(...result.items);
+    if (!result.hasMore) {
+      break;
+    }
+    page += 1;
+  }
+
+  const result = await dialog.showSaveDialog({
+    title: '导出歌单',
+    defaultPath: `${safeExportFileName(playlist.name)}.${format}`,
+    filters: playlistExportFilter(format),
+  });
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  writeFileSync(result.filePath, buildPlaylistExportContent(playlist, items, format), 'utf8');
+  return result.filePath;
 };
 
 export const registerLibraryIpc = (): void => {
@@ -555,8 +762,12 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetPlaylistItems, (_event, playlistId: unknown, query: unknown) =>
     getLibraryService().getPlaylistItems(requireText(playlistId, 'playlistId'), normalizePlaylistItemsQuery(query)),
   );
+  ipcMain.handle(IpcChannels.LibraryExportPlaylist, (_event, request: unknown) => exportPlaylist(request));
   ipcMain.handle(IpcChannels.LibraryAddTrackToPlaylist, (_event, playlistId: unknown, trackId: unknown) =>
     getLibraryService().addTrackToPlaylist(requireText(playlistId, 'playlistId'), requireText(trackId, 'trackId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryAddStreamingTrackToPlaylist, (_event, playlistId: unknown, track: unknown) =>
+    getLibraryService().addStreamingTrackToPlaylist(requireText(playlistId, 'playlistId'), normalizeStreamingPlaylistTrack(track)),
   );
   ipcMain.handle(IpcChannels.LibraryAddTracksToPlaylist, (_event, playlistId: unknown, trackIds: unknown) =>
     getLibraryService().addTracksToPlaylist(requireText(playlistId, 'playlistId'), normalizeTrackIds(trackIds)),
@@ -800,5 +1011,15 @@ export const registerLibraryIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.LibraryNetworkRejectCandidate, (_event, candidateId: unknown) =>
     getLibraryService().rejectNetworkCandidate(requireText(candidateId, 'candidateId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryStartBpmAnalysis, (_event, request: unknown) => {
+    const settings = getAppSettings();
+    if (!settings.audioAnalysisEnabled) {
+      throw new Error('BPM analysis is disabled in Settings');
+    }
+    return getLibraryService().startBpmAnalysis(normalizeBpmAnalysisStartOptions(request));
+  });
+  ipcMain.handle(IpcChannels.LibraryGetBpmAnalysisStatus, (_event, jobId: unknown) =>
+    getLibraryService().getBpmAnalysisStatus(requireText(jobId, 'jobId')),
   );
 };

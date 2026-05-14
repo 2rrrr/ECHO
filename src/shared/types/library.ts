@@ -55,6 +55,7 @@ export type LibraryDiagnostics = {
   scanPerformanceMode: 'low' | 'balanced' | 'performance';
   metadataConcurrency: number;
   coverConcurrency: number;
+  audioAnalysisEnabled?: boolean;
 };
 
 export type LibraryFolder = {
@@ -173,6 +174,7 @@ export type PlaylistKind = 'manual' | 'smart' | 'synced' | 'system';
 export type PlaylistSourceProvider = 'local' | 'netease' | 'qqmusic' | 'remote';
 export type PlaylistSortMode = 'manual' | 'titleAsc' | 'titleDesc' | 'artistAsc' | 'addedDesc';
 export type PlaylistMediaType = 'track' | 'album' | 'stream_track' | 'remote_file';
+export type PlaylistExportFormat = 'json' | 'txt' | 'm3u8' | 'csv';
 
 export type LibraryPlaylist = {
   id: string;
@@ -215,6 +217,13 @@ export type CreatePlaylistRequest = {
   description?: string | null;
 };
 
+export type ImportStreamingPlaylistResult = {
+  playlist: LibraryPlaylist;
+  importedCount: number;
+  provider: 'netease' | 'qqmusic';
+  providerPlaylistId: string;
+};
+
 export type UpdatePlaylistRequest = {
   playlistId: string;
   name?: string;
@@ -222,6 +231,11 @@ export type UpdatePlaylistRequest = {
   coverId?: string | null;
   coverPath?: string | null;
   sortMode?: PlaylistSortMode;
+};
+
+export type ExportPlaylistRequest = {
+  playlistId: string;
+  format: PlaylistExportFormat;
 };
 
 export type PlaybackHistoryEntry = {
@@ -324,6 +338,11 @@ export type LibraryTrack = {
   sampleRate: number | null;
   bitDepth: number | null;
   bitrate: number | null;
+  bpm?: number | null;
+  bpmConfidence?: number | null;
+  beatOffsetMs?: number | null;
+  analysisStatus?: 'none' | 'pending' | 'analyzing' | 'complete' | 'low_confidence' | 'error';
+  analysisUpdatedAt?: string | null;
   coverId: string | null;
   // Small list thumbnail: echo-cover://thumb/* resolves to thumb.webp (96x96).
   coverThumb: string | null;
@@ -376,6 +395,36 @@ export type EditableTrackTags = {
   discNo: number | null;
   year: number | null;
   genre: string | null;
+  bpm?: number | null;
+};
+
+export type BpmAnalysisResult = {
+  trackId: string;
+  bpm: number | null;
+  confidence: number;
+  beatOffsetMs: number | null;
+  status: 'complete' | 'low_confidence' | 'error';
+  error: string | null;
+  updatedAt: string;
+};
+
+export type BpmAnalysisJobStatus = {
+  id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  totalTracks: number;
+  processedTracks: number;
+  updatedTracks: number;
+  errorCount: number;
+  currentTrackTitle: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  errors: string[];
+};
+
+export type BpmAnalysisStartOptions = {
+  limit?: number;
+  trackIds?: string[];
+  force?: boolean;
 };
 
 export type TrackCoverSelection = {

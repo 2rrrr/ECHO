@@ -194,3 +194,15 @@ export type StreamingProviderDescriptor = {
   status?: 'ready' | 'needs_account' | 'disabled' | 'error';
   statusMessage?: string | null;
 };
+
+export type StreamingPlaylistImportRequest = {
+  url: string;
+};
+
+export type StreamingPlaylistImportResult = {
+  playlistId: string;
+  playlistName: string;
+  importedCount: number;
+  provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>;
+  providerPlaylistId: string;
+};

@@ -5,6 +5,8 @@ type SidebarProps = {
   routes: AppRoute[];
   activeRouteId: AppRouteId;
   onRouteChange: (routeId: AppRouteId) => void;
+  onOpenAudioSettings: () => void;
+  onOpenLyricsSettings: () => void;
   onImportFolder: () => void;
   onImportFile: () => void;
 };
@@ -13,6 +15,8 @@ export const Sidebar = ({
   routes,
   activeRouteId,
   onRouteChange,
+  onOpenAudioSettings,
+  onOpenLyricsSettings,
   onImportFolder,
   onImportFile,
 }: SidebarProps): JSX.Element => {
@@ -20,6 +24,29 @@ export const Sidebar = ({
   const visibleRoutes = routes.filter((route) => !route.hideFromSidebar);
   const mainRoutes = visibleRoutes.filter((route) => route.placement === 'main');
   const utilityRoutes = visibleRoutes.filter((route) => route.placement === 'utility');
+  const handleUtilityRouteClick = (routeId: AppRouteId): void => {
+    if (routeId === 'audio-settings') {
+      onOpenAudioSettings();
+      return;
+    }
+
+    if (routeId === 'lyrics-settings') {
+      onOpenLyricsSettings();
+      return;
+    }
+
+    if (routeId === 'import-folder') {
+      onImportFolder();
+      return;
+    }
+
+    if (routeId === 'import-file') {
+      onImportFile();
+      return;
+    }
+
+    onRouteChange(routeId);
+  };
 
   return (
     <aside className="sidebar" aria-label={t('app.navigation.main')}>
@@ -51,9 +78,11 @@ export const Sidebar = ({
         {utilityRoutes.map((route) => {
           const Icon = route.icon;
           const isActive = route.id === activeRouteId;
+          const isAudioSettings = route.id === 'audio-settings';
+          const isLyricsSettings = route.id === 'lyrics-settings';
           const isImportFolder = route.id === 'import-folder';
           const isImportFile = route.id === 'import-file';
-          const isDirectAction = isImportFolder || isImportFile;
+          const isDirectAction = isAudioSettings || isLyricsSettings || isImportFolder || isImportFile;
           const label = route.labelKey ? t(route.labelKey) : route.label;
 
           return (
@@ -61,13 +90,7 @@ export const Sidebar = ({
               className="nav-item"
               data-active={isDirectAction ? false : isActive}
               key={route.id}
-              onClick={
-                isImportFolder
-                  ? onImportFolder
-                  : isImportFile
-                    ? onImportFile
-                    : () => onRouteChange(route.id)
-              }
+              onClick={() => handleUtilityRouteClick(route.id)}
               type="button"
               title={label}
               aria-label={label}

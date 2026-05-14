@@ -62,6 +62,11 @@ const numberOrNull = (value: unknown): number | null => {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 };
 
+const positiveFloatOrNull = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 const yearFromMetadata = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     return Math.round(value);
@@ -97,6 +102,7 @@ const fallbackFields = (filePath: string): MetadataResult => {
       sampleRate: null,
       bitDepth: null,
       bitrate: null,
+      bpm: null,
     },
     fieldSources: {
       title: 'filename_fallback',
@@ -112,6 +118,7 @@ const fallbackFields = (filePath: string): MetadataResult => {
       sampleRate: 'unknown',
       bitDepth: 'unknown',
       bitrate: 'unknown',
+      bpm: 'unknown',
     },
     embeddedMetadataStatus: 'missing',
     embeddedCoverStatus: 'missing',
@@ -189,6 +196,7 @@ export class TsMetadataReader implements MetadataReader {
             sampleRate: null,
             bitDepth: null,
             bitrate: null,
+            bpm: null,
           },
           fieldSources: {
             title: cueTrack.title ? 'sidecar' : 'filename_fallback',
@@ -204,6 +212,7 @@ export class TsMetadataReader implements MetadataReader {
             sampleRate: 'unknown',
             bitDepth: 'unknown',
             bitrate: 'unknown',
+            bpm: 'unknown',
           },
           embeddedMetadataStatus: 'present',
           embeddedCoverStatus: 'missing',
@@ -272,6 +281,8 @@ export class TsMetadataReader implements MetadataReader {
     fieldSources.bitDepth = bitDepth ? 'technical' : 'unknown';
     const bitrate = typeof format.bitrate === 'number' ? Math.round(format.bitrate) : null;
     fieldSources.bitrate = bitrate ? 'technical' : 'unknown';
+    const bpm = positiveFloatOrNull(common.bpm);
+    fieldSources.bpm = bpm ? 'embedded' : 'unknown';
     const picture = common.picture?.[0];
     const hasEmbeddedMetadata = [
       embeddedTitle,
@@ -298,6 +309,7 @@ export class TsMetadataReader implements MetadataReader {
       sampleRate,
       bitDepth,
       bitrate,
+      bpm,
     };
 
     return {

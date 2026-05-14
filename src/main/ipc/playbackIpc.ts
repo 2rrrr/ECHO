@@ -11,6 +11,7 @@ import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
 import { resolveLocalAudioFiles } from '../app/localFileOpen';
 import { getStreamingService } from '../streaming/StreamingService';
+import { normalizePlaybackFilePath } from './playbackPath';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
@@ -160,7 +161,7 @@ const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
   const input = value as Record<string, unknown>;
 
   return {
-    filePath: requireText(input.filePath, 'filePath'),
+    filePath: normalizePlaybackFilePath(requireText(input.filePath, 'filePath')),
     trackId: typeof input.trackId === 'string' && input.trackId.trim() ? input.trackId : undefined,
     startSeconds: optionalNonNegativeNumber(input.startSeconds),
     output: normalizeOutputSettings(input.output),
@@ -216,7 +217,7 @@ const normalizeMediaItem = (value: unknown): PlayableTrack => {
   return {
     ...base,
     mediaType: 'local',
-    path: requireText(input.path, 'path'),
+    path: normalizePlaybackFilePath(requireText(input.path, 'path')),
   };
 };
 
@@ -238,7 +239,9 @@ const normalizePathList = (value: unknown): string[] => {
     throw new Error('paths must be an array');
   }
 
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map(normalizePlaybackFilePath);
 };
 
 const showOpenLocalAudioFiles = async (properties: Electron.OpenDialogOptions['properties']): Promise<string[] | null> => {

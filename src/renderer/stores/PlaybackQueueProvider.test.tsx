@@ -32,24 +32,30 @@ afterEach(() => {
 });
 
 describe('PlaybackQueueProvider playback history session', () => {
-  it('finishes the active history session before switching tracks', async () => {
+  it('does not wait for history writes before switching tracks', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);
+    let resolveFinish: (() => void) | null = null;
     const startPlaybackHistory = vi
       .fn()
       .mockResolvedValueOnce({ historyId: 'history-1' })
       .mockResolvedValueOnce({ historyId: 'history-2' });
-    const finishPlaybackHistory = vi.fn().mockResolvedValue(null);
+    const finishPlaybackHistory = vi.fn(() => new Promise<void>((resolve) => {
+      resolveFinish = resolve;
+    }));
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
 
     window.echo = {
       playback: {
-        playLocalFile: vi.fn().mockResolvedValue({
-          state: 'playing',
-          currentTrackId: first.id,
-          positionMs: 0,
-          durationMs: first.duration * 1000,
-          filePath: first.path,
-        }),
+        playLocalFile,
       },
       library: {
         startPlaybackHistory,
@@ -83,8 +89,11 @@ describe('PlaybackQueueProvider playback history session', () => {
     await waitFor(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'next' }));
 
-    await waitFor(() => expect(finishPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({ historyId: 'history-1' })));
-    expect(startPlaybackHistory).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: second.id })));
+    expect(finishPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({ historyId: 'history-1' }));
+    await waitFor(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(2));
+    const finish = resolveFinish ?? (() => undefined);
+    finish();
   });
 
   it('opens temporary local files, queues them, and records history from snapshots', async () => {

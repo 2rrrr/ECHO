@@ -90,10 +90,31 @@ const readHiddenDeviceKeys = (): string[] => {
 
 const writeHiddenDeviceKeys = (keys: string[]): void => {
   try {
-    window.localStorage.setItem(hiddenDeviceStorageKey, JSON.stringify(Array.from(new Set(keys))));
+    const nextKeys = Array.from(new Set(keys));
+    window.localStorage.setItem(hiddenDeviceStorageKey, JSON.stringify(nextKeys));
+    void window.echo?.app.setSettings({ hiddenAudioDeviceKeys: nextKeys }).catch(() => undefined);
   } catch {
     // UI preference only; failure should never block audio settings.
   }
+};
+
+const loadPersistedHiddenDeviceKeys = async (): Promise<string[]> => {
+  const localKeys = readHiddenDeviceKeys();
+  const appBridge = window.echo?.app;
+
+  if (!appBridge) {
+    return localKeys;
+  }
+
+  const settings = await appBridge.getSettings();
+  const keys = (settings.appMemoryVersion ?? 0) < 1 && localKeys.length > 0 ? localKeys : (settings.hiddenAudioDeviceKeys ?? []);
+  window.localStorage.setItem(hiddenDeviceStorageKey, JSON.stringify(keys));
+
+  if ((settings.appMemoryVersion ?? 0) < 1 && localKeys.length > 0) {
+    void appBridge.setSettings({ hiddenAudioDeviceKeys: keys }).catch(() => undefined);
+  }
+
+  return keys;
 };
 
 const formatRate = (value: number | null | undefined): string => {
@@ -243,7 +264,7 @@ const getSharedStabilityText = (status: AudioStatus | null, unknownValue: string
 };
 
 const getNativeLatencyText = (status: AudioStatus | null, unknownValue: string): string => {
-  const profile = status?.latencyProfile ?? 'stable';
+  const profile = status?.latencyProfile ?? 'lowLatency';
   const latency = status?.nativeOutputLatencyMs !== null && status?.nativeOutputLatencyMs !== undefined
     ? `${status.nativeOutputLatencyMs} ms`
     : unknownValue;
@@ -501,7 +522,7 @@ export const AudioSettingsDrawer = ({
       Icon: getDeviceIcon(name, currentMode),
     };
   }, [copy, currentOutputName, effectiveSharedSampleRate, outputMode, status]);
-  const currentLatencyProfile = status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'stable';
+  const currentLatencyProfile = status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'lowLatency';
 
   const refresh = useCallback(async (): Promise<void> => {
     const audio = window.echo?.audio;
@@ -552,7 +573,11 @@ export const AudioSettingsDrawer = ({
     }
 
     setRememberOutput(readRememberedAudioOutput().enabled);
-    setHiddenDeviceKeys(readHiddenDeviceKeys());
+    void window.echo?.app
+      .getSettings()
+      .then((settings) => setRememberOutput(settings.rememberedAudioOutput?.enabled === true))
+      .catch(() => undefined);
+    void loadPersistedHiddenDeviceKeys().then(setHiddenDeviceKeys).catch(() => setHiddenDeviceKeys(readHiddenDeviceKeys()));
     void refresh();
   }, [isOpen, refresh]);
 
@@ -599,7 +624,7 @@ export const AudioSettingsDrawer = ({
       writeRememberedAudioOutput({
         enabled,
         outputMode: settings.outputMode ?? remembered.outputMode ?? status?.outputMode ?? outputMode ?? 'shared',
-        latencyProfile: settings.latencyProfile ?? remembered.latencyProfile ?? status?.latencyProfile ?? 'stable',
+        latencyProfile: settings.latencyProfile ?? remembered.latencyProfile ?? status?.latencyProfile ?? 'lowLatency',
         deviceIndex: isDeviceSelection ? settings.deviceIndex : remembered.deviceIndex,
         deviceName: isDeviceSelection ? settings.deviceName : remembered.deviceName,
       });
@@ -635,7 +660,7 @@ export const AudioSettingsDrawer = ({
   );
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
-    const settings = createOutputSettings(mode, device, status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'stable');
+    const settings = createOutputSettings(mode, device, status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'lowLatency');
     setOutputMode(mode);
     void applyOutput(settings);
   };
@@ -651,7 +676,7 @@ export const AudioSettingsDrawer = ({
       writeRememberedAudioOutput({
         enabled,
         outputMode: status?.outputMode ?? outputMode,
-        latencyProfile: status?.latencyProfile ?? 'stable',
+        latencyProfile: status?.latencyProfile ?? 'lowLatency',
         deviceName: status?.outputDeviceName ?? undefined,
       });
   };

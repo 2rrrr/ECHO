@@ -7,7 +7,13 @@ import '@fontsource/outfit/700.css';
 import '@fontsource/outfit/800.css';
 import '@fontsource/outfit/900.css';
 import { App } from './app/App';
-import { applyAppearancePreferences, readAppearancePreferences, registerAppearanceFontFile } from './preferences/appearancePreferences';
+import {
+  applyAppearancePreferences,
+  loadPersistedAppearancePreferences,
+  readAppearancePreferences,
+  registerAppearanceFontFile,
+} from './preferences/appearancePreferences';
+import type { AppearancePreferences } from '../shared/types/appSettings';
 import { getAppBridge } from './utils/echoBridge';
 import './styles/tokens.css';
 import './styles/theme.css';
@@ -24,6 +30,19 @@ import './styles/lyrics.css';
 const appearancePreferences = readAppearancePreferences();
 const appBridge = getAppBridge();
 applyAppearancePreferences(appearancePreferences);
+
+const loadAppearanceFontFiles = (preferences: AppearancePreferences): void => {
+  if (preferences.mainFontFilePath && appBridge) {
+    void appBridge.loadFontFile(preferences.mainFontFilePath).then((fontFile) => registerAppearanceFontFile('main', fontFile)).catch(() => undefined);
+  }
+
+  if (preferences.chineseFontFilePath && appBridge) {
+    void appBridge
+      .loadFontFile(preferences.chineseFontFilePath)
+      .then((fontFile) => registerAppearanceFontFile('chinese', fontFile))
+      .catch(() => undefined);
+  }
+};
 
 const reportRendererError = (payload: Parameters<NonNullable<Window['echo']['diagnostics']>['reportRendererError']>[0]): void => {
   void window.echo?.diagnostics.reportRendererError(payload).catch(() => undefined);
@@ -51,16 +70,13 @@ window.addEventListener('unhandledrejection', (event) => {
   });
 });
 
-if (appearancePreferences.mainFontFilePath && appBridge) {
-  void appBridge.loadFontFile(appearancePreferences.mainFontFilePath).then((fontFile) => registerAppearanceFontFile('main', fontFile)).catch(() => undefined);
-}
-
-if (appearancePreferences.chineseFontFilePath && appBridge) {
-  void appBridge
-    .loadFontFile(appearancePreferences.chineseFontFilePath)
-    .then((fontFile) => registerAppearanceFontFile('chinese', fontFile))
-    .catch(() => undefined);
-}
+loadAppearanceFontFiles(appearancePreferences);
+void loadPersistedAppearancePreferences()
+  .then((preferences) => {
+    applyAppearancePreferences(preferences);
+    loadAppearanceFontFiles(preferences);
+  })
+  .catch(() => undefined);
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, PointerEvent } from 'react';
 import { formatTime } from './playerFormat';
 
@@ -5,7 +6,6 @@ type PlayerProgressProps = {
   disabled: boolean;
   durationSeconds: number;
   positionSeconds: number;
-  onPreview: (positionSeconds: number) => void;
   onCommit: (positionSeconds: number) => void;
 };
 
@@ -13,24 +13,31 @@ export const PlayerProgress = ({
   disabled,
   durationSeconds,
   positionSeconds,
-  onPreview,
   onCommit,
 }: PlayerProgressProps): JSX.Element => {
+  const [dragPositionSeconds, setDragPositionSeconds] = useState<number | null>(null);
+  const displayedPositionSeconds = dragPositionSeconds ?? positionSeconds;
   const boundedPositionSeconds =
-    durationSeconds > 0 ? Math.min(durationSeconds, Math.max(0, positionSeconds)) : 0;
+    durationSeconds > 0 ? Math.min(durationSeconds, Math.max(0, displayedPositionSeconds)) : 0;
   const progressPercent =
     durationSeconds > 0 ? Math.min(100, Math.max(0, (boundedPositionSeconds / durationSeconds) * 100)) : 0;
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
-    onPreview(Number(event.currentTarget.value));
+    setDragPositionSeconds(Number(event.currentTarget.value));
   };
 
   const handlePointerCommit = (event: PointerEvent<HTMLInputElement>): void => {
+    setDragPositionSeconds(null);
     onCommit(Number(event.currentTarget.value));
+  };
+
+  const handlePointerCancel = (): void => {
+    setDragPositionSeconds(null);
   };
 
   const handleKeyCommit = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'Enter' || event.key === ' ' || event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+      setDragPositionSeconds(null);
       onCommit(Number(event.currentTarget.value));
     }
   };
@@ -49,6 +56,7 @@ export const PlayerProgress = ({
           min={0}
           onChange={handleChange}
           onKeyUp={handleKeyCommit}
+          onPointerCancel={handlePointerCancel}
           onPointerUp={handlePointerCommit}
           step={0.1}
           type="range"

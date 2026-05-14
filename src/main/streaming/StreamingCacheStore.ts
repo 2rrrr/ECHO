@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { EchoDatabase } from '../database/createDatabase';
-import type { StreamingProviderName, StreamingTrack } from '../../shared/types/streaming';
+import type { LibraryPlaylist } from '../../shared/types/library';
+import type { StreamingPlaylistDetail, StreamingProviderName, StreamingTrack } from '../../shared/types/streaming';
 import { streamingProviderNames, streamingStableKey } from '../../shared/types/streaming';
 
 type DbRow = Record<string, unknown>;
@@ -168,6 +170,13 @@ export class StreamingCacheStore {
       return;
     }
 
+    if (this.database.inTransaction) {
+      for (const track of tracks) {
+        this.upsertTrack(track);
+      }
+      return;
+    }
+
     this.database.transaction((items: StreamingTrack[]) => {
       for (const track of items) {
         this.upsertTrack(track);
@@ -204,6 +213,166 @@ export class StreamingCacheStore {
           updated_at = excluded.updated_at`,
       )
       .run(cacheKey, provider, kind, JSON.stringify(sanitizeForCache(payload)), expiresAt, timestamp, timestamp);
+  }
+
+  upsertImportedPlaylist(playlist: StreamingPlaylistDetail): LibraryPlaylist {
+    const timestamp = nowIso();
+    const existing = this.database
+      .prepare<[StreamingProviderName, string], DbRow>(
+        'SELECT * FROM playlists WHERE source_provider = ? AND source_playlist_id = ? LIMIT 1',
+      )
+      .get(playlist.provider, playlist.providerPlaylistId);
+    const playlistId = existing ? String(existing.id) : randomUUID();
+
+    this.database
+      .prepare(
+        `INSERT INTO playlists (
+          id, name, description, kind, source_provider, source_playlist_id,
+          cover_id, cover_url, sort_mode, item_count, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          description = excluded.description,
+          kind = excluded.kind,
+          source_provider = excluded.source_provider,
+          source_playlist_id = excluded.source_playlist_id,
+          cover_url = excluded.cover_url,
+          sort_mode = excluded.sort_mode,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        playlistId,
+        playlist.title.trim() || 'Streaming Playlist',
+        textOrNull(playlist.description),
+        'synced',
+        playlist.provider,
+        playlist.providerPlaylistId,
+        null,
+        playlist.coverThumb ?? playlist.coverUrl,
+        'manual',
+        Number(existing?.item_count ?? 0),
+        textOrNull(existing?.created_at) ?? timestamp,
+        timestamp,
+      );
+
+    const row = this.database.prepare<[string], DbRow>('SELECT * FROM playlists WHERE id = ?').get(playlistId);
+    if (!row) {
+      throw new Error(`Failed to save streaming playlist ${playlist.providerPlaylistId}`);
+    }
+
+    return this.mapPlaylist(row);
+  }
+
+  replacePlaylistItems(playlistId: string): void {
+    this.database.prepare('DELETE FROM playlist_items WHERE playlist_id = ?').run(playlistId);
+  }
+
+  appendStreamingPlaylistTracks(
+    playlistId: string,
+    tracks: StreamingTrack[],
+    options: { startPosition: number; addedFrom?: string | null },
+  ): number {
+    if (tracks.length === 0) {
+      return options.startPosition;
+    }
+
+    const timestamp = nowIso();
+    const insertItem = this.database.prepare(
+      `INSERT INTO playlist_items (
+        id, playlist_id, media_type, media_id, source_provider, source_item_id,
+        title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
+        cover_id, position, added_at, added_from, unavailable
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    let nextPosition = options.startPosition;
+
+    for (const track of tracks) {
+      insertItem.run(
+        randomUUID(),
+        playlistId,
+        'stream_track',
+        track.stableKey || streamingStableKey(track.provider, track.providerTrackId),
+        track.provider,
+        track.providerTrackId,
+        track.title,
+        track.artist,
+        track.album,
+        track.duration,
+        null,
+        nextPosition,
+        timestamp,
+        options.addedFrom ?? 'streaming-playlist',
+        0,
+      );
+      nextPosition += 1;
+    }
+
+    this.database
+      .prepare(
+        `UPDATE playlists SET
+          item_count = (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = ?),
+          updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(playlistId, timestamp, playlistId);
+
+    return nextPosition;
+  }
+
+  refreshPlaylistItemCount(playlistId: string): LibraryPlaylist {
+    const timestamp = nowIso();
+    this.database
+      .prepare(
+        `UPDATE playlists SET
+          item_count = (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = ?),
+          updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(playlistId, timestamp, playlistId);
+    const row = this.database.prepare<[string], DbRow>('SELECT * FROM playlists WHERE id = ?').get(playlistId);
+    if (!row) {
+      throw new Error(`Unknown playlist ${playlistId}`);
+    }
+
+    return this.mapPlaylist(row);
+  }
+
+  importStreamingPlaylistPage(
+    playlist: StreamingPlaylistDetail,
+    options: { reset: boolean; startPosition: number },
+  ): { playlist: LibraryPlaylist; nextPosition: number } {
+    return this.database.transaction(() => {
+      const savedPlaylist = this.upsertImportedPlaylist(playlist);
+      if (options.reset) {
+        this.replacePlaylistItems(savedPlaylist.id);
+      }
+
+      this.upsertTracks(playlist.tracks);
+      const nextPosition = this.appendStreamingPlaylistTracks(savedPlaylist.id, playlist.tracks, {
+        startPosition: options.startPosition,
+      });
+      return { playlist: this.refreshPlaylistItemCount(savedPlaylist.id), nextPosition };
+    })();
+  }
+
+  private mapPlaylist(row: DbRow): LibraryPlaylist {
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      description: textOrNull(row.description),
+      kind: row.kind === 'smart' || row.kind === 'synced' || row.kind === 'system' ? row.kind : 'manual',
+      sourceProvider: row.source_provider === 'netease' || row.source_provider === 'qqmusic' ? row.source_provider : 'local',
+      sourcePlaylistId: textOrNull(row.source_playlist_id),
+      coverId: textOrNull(row.cover_id),
+      coverThumb: textOrNull(row.cover_url),
+      sortMode:
+        row.sort_mode === 'titleAsc' || row.sort_mode === 'titleDesc' || row.sort_mode === 'artistAsc' || row.sort_mode === 'addedDesc'
+          ? row.sort_mode
+          : 'manual',
+      itemCount: Number(row.item_count ?? 0),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
   }
 
   private mapTrack(row: DbRow): StreamingTrack {

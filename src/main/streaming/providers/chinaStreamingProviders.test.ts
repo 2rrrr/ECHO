@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NeteaseStreamingProvider } from './NeteaseStreamingProvider';
+import { NeteaseStreamingProvider, setNeteaseApiForTests } from './NeteaseStreamingProvider';
 import { QQMusicStreamingProvider } from './QQMusicStreamingProvider';
 
 const accountStatus = vi.hoisted(() => ({
@@ -40,6 +40,7 @@ const remoteImageUrl = (url: string, referer: string): string =>
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setNeteaseApiForTests(undefined);
   accountStatus.connected = true;
 });
 
@@ -92,24 +93,28 @@ describe('China streaming providers', () => {
   });
 
   it('resolves NetEase playback without returning secret headers', async () => {
+    setNeteaseApiForTests(null);
+    const fetchRunner = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            id: 123,
+            url: 'https://m701.music.126.net/token/song.mp3',
+            br: 320000,
+            type: 'mp3',
+          },
+        ],
+      }),
+    );
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          data: [
-            {
-              id: 123,
-              url: 'https://m701.music.126.net/token/song.mp3',
-              br: 320000,
-              type: 'mp3',
-            },
-          ],
-        }),
-      ),
+      fetchRunner,
     );
 
     const source = await new NeteaseStreamingProvider().resolvePlayback({ provider: 'netease', providerTrackId: '123', quality: 'high' });
 
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('csrf_token=hidden');
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('os=pc');
     expect(source).toMatchObject({
       provider: 'netease',
       providerTrackId: '123',
@@ -120,23 +125,98 @@ describe('China streaming providers', () => {
     });
   });
 
+  it('uses the NetEase enhanced song_url_v1 resolver before the public URL fallback', async () => {
+    const songUrlV1 = vi.fn().mockResolvedValue({
+      body: {
+        data: [
+          {
+            url: 'https://m701.music.126.net/enhanced/song.flac',
+            br: 999000,
+            type: 'flac',
+            level: 'lossless',
+          },
+        ],
+      },
+    });
+    const fetchRunner = vi.fn();
+    setNeteaseApiForTests({ song_url_v1: songUrlV1 });
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const source = await new NeteaseStreamingProvider().resolvePlayback({ provider: 'netease', providerTrackId: '123', quality: 'lossless' });
+
+    expect(songUrlV1).toHaveBeenCalledWith({
+      id: 123,
+      level: 'lossless',
+      cookie: 'MUSIC_U=secret; csrf=hidden',
+    });
+    expect(fetchRunner).not.toHaveBeenCalled();
+    expect(source).toMatchObject({
+      url: 'https://m701.music.126.net/enhanced/song.flac',
+      codec: 'flac',
+      bitrate: 999000,
+    });
+  });
+
+  it('falls back to high quality when NetEase max quality returns no URL', async () => {
+    setNeteaseApiForTests(null);
+    const fetchRunner = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 123, url: null, br: 999000, type: 'flac', code: 200 }] }))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 123, url: null, br: 999000, type: 'flac', code: 200 }] }))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 123, url: null, br: 999000, type: 'flac', code: 200 }] }))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 123, url: null, br: 999000, type: 'flac', code: 200 }] }))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 123, url: null, br: 999000, type: 'flac', code: 200 }] }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 123,
+              url: 'https://m701.music.126.net/token/song.mp3',
+              br: 320000,
+              type: 'mp3',
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const source = await new NeteaseStreamingProvider().resolvePlayback({ provider: 'netease', providerTrackId: '123', quality: 'hires' });
+
+    expect(source).toMatchObject({
+      url: 'https://m701.music.126.net/token/song.mp3',
+      codec: 'mp3',
+      bitrate: 320000,
+    });
+    expect(fetchRunner).toHaveBeenCalledTimes(6);
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('level=jymaster');
+    expect(String(fetchRunner.mock.calls[3][0])).toContain('level=hires');
+    expect(String(fetchRunner.mock.calls[5][0])).toContain('level=exhigh');
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('encodeType=flac');
+  });
+
   it('maps QQ Music search results to streaming tracks', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
         jsonResponse({
-          data: {
-            song: {
-              totalnum: 1,
-              list: [
-                {
-                  mid: 'song-mid',
-                  name: '测试歌曲',
-                  interval: 180,
-                  singer: [{ mid: 'artist-mid', name: '测试歌手' }],
-                  album: { mid: 'album-mid', name: '测试专辑' },
+          req_1: {
+            data: {
+              body: {
+                song: {
+                  list: [
+                    {
+                      mid: 'song-mid',
+                      name: '测试歌曲',
+                      interval: 180,
+                      singer: [{ mid: 'artist-mid', name: '测试歌手' }],
+                      album: { mid: 'album-mid', name: '测试专辑' },
+                    },
+                  ],
                 },
-              ],
+              },
+              meta: {
+                sum: 1,
+              },
             },
           },
         }),

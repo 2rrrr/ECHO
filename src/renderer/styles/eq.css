@@ -983,6 +983,111 @@
   font-weight: 720;
 }
 
+.app-shell--wallpaper .eq-title-icon,
+.app-shell--wallpaper .eq-enable-pill,
+.app-shell--wallpaper .eq-icon-action,
+.app-shell--wallpaper .eq-preset-tools input,
+.app-shell--wallpaper .eq-preset-tools button,
+.app-shell--wallpaper .eq-soft-button,
+.app-shell--wallpaper .eq-band-chip,
+.app-shell--wallpaper .eq-preset-search,
+.app-shell--wallpaper .eq-preset-filter,
+.app-shell--wallpaper .eq-preset-trigger,
+.app-shell--wallpaper .eq-preset-menu,
+.app-shell--wallpaper .eq-status-card,
+.app-shell--wallpaper .eq-preset-metadata,
+.app-shell--wallpaper .eq-workbench,
+.app-shell--wallpaper .eq-preamp-bar,
+.app-shell--wallpaper .eq-level-meter,
+.app-shell--wallpaper .eq-curve-shell,
+.app-shell--wallpaper .eq-inspector,
+.app-shell--wallpaper .eq-inspector label,
+.app-shell--wallpaper .eq-inspector input[type="number"],
+.app-shell--wallpaper .eq-compare-row,
+.app-shell--wallpaper .channel-balance-panel,
+.app-shell--wallpaper .channel-tool-group,
+.app-shell--wallpaper .channel-calibration-readout span,
+.app-shell--wallpaper .channel-balance-meter,
+.app-shell--wallpaper .channel-balance-readout span {
+  border-color: rgb(28 47 67 / var(--app-wallpaper-ui-border-alpha));
+  background: rgb(255 255 255 / var(--app-wallpaper-ui-sidebar-top-alpha));
+  box-shadow: none;
+}
+
+.app-shell--wallpaper .eq-workbench,
+.app-shell--wallpaper .channel-balance-panel {
+  background: rgb(247 250 252 / var(--app-wallpaper-ui-page-base-alpha));
+}
+
+.app-shell--wallpaper .eq-preset-filter,
+.app-shell--wallpaper .eq-curve-shell,
+.app-shell--wallpaper .channel-calibration-readout span,
+.app-shell--wallpaper .channel-balance-meter {
+  background: rgb(248 250 252 / var(--app-wallpaper-ui-page-bottom-alpha));
+}
+
+.app-shell--wallpaper .eq-preset-filter-chip[data-active="true"],
+.app-shell--wallpaper .eq-preset-option[data-selected="true"],
+.app-shell--wallpaper .eq-status-card[data-active="true"],
+.app-shell--wallpaper .eq-preset-metadata strong,
+.app-shell--wallpaper .eq-band-chip[data-selected="true"],
+.app-shell--wallpaper .eq-soft-button[data-active="true"] {
+  border-color: rgb(31 93 102 / var(--app-wallpaper-ui-border-alpha));
+  background: rgb(232 244 243 / var(--app-wallpaper-ui-sidebar-mid-alpha));
+}
+
+.app-shell--wallpaper .eq-status-card[data-risk="true"],
+.app-shell--wallpaper .eq-level-meter[data-risk="true"],
+.app-shell--wallpaper .eq-soft-button[data-risk="true"] {
+  border-color: rgb(189 93 45 / var(--app-wallpaper-ui-border-alpha));
+  background: rgb(255 245 237 / var(--app-wallpaper-ui-sidebar-mid-alpha));
+}
+
+.app-shell--wallpaper .eq-preset-menu {
+  backdrop-filter: blur(var(--app-wallpaper-ui-surface-blur)) saturate(1.08);
+}
+
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-title-icon,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-enable-pill,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-icon-action,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-tools input,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-tools button,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-soft-button,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-band-chip,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-search,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-filter,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-filter-chip[data-active="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-trigger,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-menu,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-option[data-selected="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-status-card,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-status-card[data-risk="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-status-card[data-active="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-metadata,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-metadata strong,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-workbench,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preamp-bar,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-level-meter,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-level-meter[data-risk="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-curve-shell,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-inspector,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-inspector label,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-inspector input[type="number"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-band-chip[data-selected="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-compare-row,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-soft-button[data-risk="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-soft-button[data-active="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-panel,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-tool-group,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-calibration-readout span,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-meter,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-readout span {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 @media (max-width: 1040px) {
   .eq-header,
   .channel-balance-header {

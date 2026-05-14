@@ -1704,7 +1704,7 @@
 @media (max-width: 1180px) {
   .lyrics-page {
     grid-template-columns: minmax(0, 1fr);
-    overflow: auto;
+    overflow: hidden;
   }
 
   .lyrics-scroll {

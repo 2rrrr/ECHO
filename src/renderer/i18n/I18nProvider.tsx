@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { PropsWithChildren } from 'react';
+import { getAppBridge } from '../utils/echoBridge';
 import { isLocale, localeOptions, translations } from './locales';
 import type { Locale, TranslationKey } from './locales';
 
@@ -64,8 +65,47 @@ export const I18nProvider = ({ children }: PropsWithChildren): JSX.Element => {
     window.localStorage.setItem(storageKey, locale);
   }, [locale]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const appBridge = getAppBridge();
+
+    if (!appBridge) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    void appBridge
+      .getSettings()
+      .then((settings) => {
+        if (!isMounted) {
+          return;
+        }
+
+        const localLocale = readInitialLocale();
+        const shouldMigrateLocalLocale = (settings.appMemoryVersion ?? 0) < 1 && isLocale(localLocale);
+        const nextLocale = shouldMigrateLocalLocale ? localLocale : (settings.locale ?? fallbackLocale);
+
+        if (isLocale(nextLocale)) {
+          setLocaleState(nextLocale);
+          window.localStorage.setItem(storageKey, nextLocale);
+        }
+
+        if (shouldMigrateLocalLocale) {
+          void appBridge.setSettings({ locale: localLocale }).catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const setLocale = useCallback((nextLocale: Locale): void => {
     setLocaleState(nextLocale);
+    window.localStorage.setItem(storageKey, nextLocale);
+    void getAppBridge()?.setSettings({ locale: nextLocale }).catch(() => undefined);
   }, []);
 
   const t = useCallback(
@@ -98,4 +138,3 @@ export const useI18n = (): I18nContextValue => {
 
   return context;
 };
-

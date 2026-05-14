@@ -69,7 +69,9 @@ const echoApi: EchoApi = {
     deletePlaylist: (playlistId) => ipcRenderer.invoke(IpcChannels.LibraryDeletePlaylist, playlistId),
     getPlaylist: (playlistId) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaylist, playlistId),
     getPlaylistItems: (playlistId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaylistItems, playlistId, query),
+    exportPlaylist: (request) => ipcRenderer.invoke(IpcChannels.LibraryExportPlaylist, request),
     addTrackToPlaylist: (playlistId, trackId) => ipcRenderer.invoke(IpcChannels.LibraryAddTrackToPlaylist, playlistId, trackId),
+    addStreamingTrackToPlaylist: (playlistId, track) => ipcRenderer.invoke(IpcChannels.LibraryAddStreamingTrackToPlaylist, playlistId, track),
     addTracksToPlaylist: (playlistId, trackIds) => ipcRenderer.invoke(IpcChannels.LibraryAddTracksToPlaylist, playlistId, trackIds),
     removePlaylistItem: (itemId) => ipcRenderer.invoke(IpcChannels.LibraryRemovePlaylistItem, itemId),
     movePlaylistItem: (playlistId, itemId, targetPosition) =>
@@ -134,6 +136,8 @@ const echoApi: EchoApi = {
     applyNetworkSelected: (candidateId, options) =>
       ipcRenderer.invoke(IpcChannels.LibraryNetworkApplySelected, { candidateId, ...options }),
     rejectNetworkCandidate: (candidateId) => ipcRenderer.invoke(IpcChannels.LibraryNetworkRejectCandidate, candidateId),
+    startBpmAnalysis: (options) => ipcRenderer.invoke(IpcChannels.LibraryStartBpmAnalysis, options),
+    getBpmAnalysisStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetBpmAnalysisStatus, jobId),
   },
   playback: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),
@@ -183,6 +187,7 @@ const echoApi: EchoApi = {
     getLyrics: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetLyrics, request),
     getMv: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetMv, request),
     getProviders: () => ipcRenderer.invoke(IpcChannels.StreamingGetProviders),
+    importPlaylistFromUrl: (url) => ipcRenderer.invoke(IpcChannels.StreamingImportPlaylistFromUrl, url),
   },
   lyrics: {
     getForTrack: (trackId) => ipcRenderer.invoke(IpcChannels.LyricsGetForTrack, trackId),

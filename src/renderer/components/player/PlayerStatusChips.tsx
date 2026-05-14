@@ -72,6 +72,9 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const bitrate = track?.bitrate ?? status?.bitrate ?? null;
   const channels = channelLabel(status?.channels);
   const formattedRate = formatSpecRate(sampleRate);
+  const playbackRate = status?.playbackRate ?? 1;
+  const bpm = track?.bpm ?? null;
+  const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
   const chips: Chip[] = [
     status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
@@ -79,6 +82,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
     bitDepth && formattedRate ? { label: `${bitDepth}bit / ${formattedRate}`, className: 'tag-depth' } : null,
     !bitDepth && formattedRate ? { label: formattedRate, className: 'tag-depth' } : null,
     bitrate ? { label: `${Math.round(bitrate / 1000)}kbps`, className: 'tag-bitrate' } : null,
+    displayBpm ? { label: playbackRate === 1 ? `${displayBpm} BPM` : `${displayBpm} BPM (${Math.round(bpm!)}原)`, className: 'tag-bpm' } : null,
     channels ? { label: channels, className: 'tag-channel' } : null,
   ].filter((chip): chip is Chip => Boolean(chip));
 

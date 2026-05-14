@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Captions, Check, ChevronDown, Clock3, ListPlus, Loader2, MoreHorizontal, Play, Radio, Search, Sparkles, Video } from 'lucide-react';
+import { Check, ChevronDown, Download, Link, ListPlus, Loader2, Play, Radio, Search, Sparkles } from 'lucide-react';
+import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type {
   StreamingAudioQuality,
@@ -13,7 +14,7 @@ import type {
 } from '../../../shared/types/streaming';
 import { streamingStableKey } from '../../../shared/types/streaming';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
-import { getStreamingBridge } from '../../utils/echoBridge';
+import { getDownloadsBridge, getStreamingBridge } from '../../utils/echoBridge';
 import {
   readStreamingSearchMemory,
   updateStreamingSearchMemory,
@@ -68,6 +69,29 @@ const statusText = (provider: StreamingProviderDescriptor): string => {
 const qualityToPlaybackQuality = (quality: QualityPreference): StreamingAudioQuality =>
   quality === 'max' ? 'hires' : quality;
 
+const downloadStatusLabels: Record<DownloadJobStatus, string> = {
+  queued: '排队中',
+  probing: '解析链接',
+  downloading: '下载中',
+  extracting_audio: '提取音频',
+  importing: '导入曲库',
+  binding_mv: '绑定 MV',
+  completed: '下载成功',
+  failed: '下载失败',
+  cancelled: '已取消',
+};
+
+const streamingTrackWebUrl = (track: StreamingTrack): string | null => {
+  switch (track.provider) {
+    case 'netease':
+      return `https://music.163.com/#/song?id=${encodeURIComponent(track.providerTrackId)}`;
+    case 'qqmusic':
+      return `https://y.qq.com/n/ryqq/songDetail/${encodeURIComponent(track.providerTrackId)}`;
+    default:
+      return null;
+  }
+};
+
 const streamingTrackToLibraryTrack = (track: StreamingTrack, quality: QualityPreference): LibraryTrack => ({
   id: track.stableKey || streamingStableKey(track.provider, track.providerTrackId),
   mediaType: 'streaming',
@@ -110,17 +134,23 @@ export const StreamingSearchPage = (): JSX.Element => {
   const [input, setInput] = useState(initialMemory.input);
   const [query, setQuery] = useState(initialMemory.query);
   const [result, setResult] = useState<StreamingSearchResult | null>(initialMemory.result);
+  const [playlistUrl, setPlaylistUrl] = useState('');
   const [lyrics, setLyrics] = useState<StreamingLyricsResult | null>(null);
   const [lyricsTrackKey, setLyricsTrackKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
   const [resolvingTrackKey, setResolvingTrackKey] = useState<string | null>(null);
   const [queuedTrackKey, setQueuedTrackKey] = useState<string | null>(null);
+  const [downloadingTrackKey, setDownloadingTrackKey] = useState<string | null>(null);
+  const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
+  const [downloadJobIdsByTrackKey, setDownloadJobIdsByTrackKey] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [failedCoverUrls, setFailedCoverUrls] = useState<Record<string, string>>(initialMemory.failedCoverUrls);
   const requestIdRef = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
 
   const providerOptions = useMemo(
     () => (providers.length > 0 ? providers : [{ name: 'mock' as const, displayName: 'Mock', enabled: true, supportsSearch: true, supportsLyrics: true, supportsMv: true, requiresAccount: false }]),
@@ -202,9 +232,6 @@ export const StreamingSearchPage = (): JSX.Element => {
       requestIdRef.current = requestId;
       setActionError(null);
       setActionMessage(null);
-      setLyrics(null);
-      setLyricsTrackKey(null);
-
       if (!streaming) {
         setResult(null);
         setError('桌面桥接不可用，请在 ECHO Next 客户端中使用流媒体。');
@@ -263,6 +290,32 @@ export const StreamingSearchPage = (): JSX.Element => {
   useEffect(() => {
     setFailedCoverUrls({});
   }, [provider, query]);
+
+  useEffect(() => {
+    const downloads = getDownloadsBridge();
+    if (!downloads?.onJobsUpdated) {
+      return undefined;
+    }
+
+    return downloads.onJobsUpdated((nextJobs) => {
+      setDownloadJobs(nextJobs);
+      const trackedEntries = Object.entries(downloadJobIdsByTrackKey);
+      for (const job of nextJobs) {
+        if (job.status !== 'completed' || notifiedDownloadJobIdsRef.current.has(job.id)) {
+          continue;
+        }
+
+        const matchedTrackKey = trackedEntries.find(([, jobId]) => jobId === job.id)?.[0];
+        if (matchedTrackKey) {
+          notifiedDownloadJobIdsRef.current.add(job.id);
+          const matchedTrack = tracks.find((track) => track.stableKey === matchedTrackKey);
+          setActionError(null);
+          setActionMessage(`下载成功：${job.title ?? matchedTrack?.title ?? job.sourceUrl}`);
+          break;
+        }
+      }
+    });
+  }, [downloadJobIdsByTrackKey, tracks]);
 
   const handleCoverError = useCallback((track: StreamingTrack, coverUrl: string): void => {
     if (coverUrl === defaultCover) {
@@ -382,6 +435,87 @@ export const StreamingSearchPage = (): JSX.Element => {
     }
   }, []);
 
+  const handleDownload = useCallback(async (track: StreamingTrack): Promise<void> => {
+    const sourceUrl = streamingTrackWebUrl(track);
+    if (!sourceUrl) {
+      setActionError('这个平台暂不支持从流媒体结果直接下载。');
+      setActionMessage(null);
+      return;
+    }
+
+    const downloads = getDownloadsBridge();
+    if (!downloads?.createUrlJob) {
+      setActionError('桌面下载服务不可用。');
+      setActionMessage(null);
+      return;
+    }
+
+    setActionError(null);
+    setActionMessage(null);
+    setDownloadingTrackKey(track.stableKey);
+    try {
+      const streaming = getStreamingBridge();
+      if (!streaming?.resolvePlayback) {
+        throw new Error('桌面桥接不可用，无法解析流媒体下载地址。');
+      }
+      const source = await streaming.resolvePlayback({
+        provider: track.provider,
+        providerTrackId: track.providerTrackId,
+        quality: qualityToPlaybackQuality(quality),
+      });
+      const job = await downloads.createUrlJob(source.url, {
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        albumArtist: track.albumArtist ?? track.artist,
+        coverUrl: track.coverUrl ?? track.coverThumb ?? null,
+        webpageUrl: sourceUrl,
+        bindMvAfterImport: false,
+        requestHeaders: source.headers,
+        directAudio: true,
+        directAudioMimeType: source.mimeType,
+        directAudioExtension: source.codec,
+      });
+      setDownloadJobs((current) => (current.some((item) => item.id === job.id) ? current : [job, ...current]));
+      setDownloadJobIdsByTrackKey((current) => ({ ...current, [track.stableKey]: job.id }));
+      setActionMessage(`已加入下载队列：${track.title}`);
+    } catch (downloadError) {
+      setActionError(downloadError instanceof Error ? downloadError.message : '添加下载任务失败');
+      setActionMessage(null);
+    } finally {
+      setDownloadingTrackKey((current) => (current === track.stableKey ? null : current));
+    }
+  }, [quality]);
+
+  const handleImportPlaylist = useCallback(async (): Promise<void> => {
+    const streaming = getStreamingBridge();
+    const url = playlistUrl.trim();
+    if (!url || isImportingPlaylist) {
+      return;
+    }
+
+    if (!streaming?.importPlaylistFromUrl) {
+      setActionError('桌面桥接不可用，请在 ECHO Next 客户端窗口中添加流媒体歌单。');
+      setActionMessage(null);
+      return;
+    }
+
+    setActionError(null);
+    setActionMessage(null);
+    setIsImportingPlaylist(true);
+    try {
+      const imported = await streaming.importPlaylistFromUrl(url);
+      setPlaylistUrl('');
+      setActionMessage(`已添加歌单：${imported.playlistName}，共 ${imported.importedCount} 首。可在播放列表页播放。`);
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    } catch (importError) {
+      setActionError(importError instanceof Error ? importError.message : '添加流媒体歌单失败');
+      setActionMessage(null);
+    } finally {
+      setIsImportingPlaylist(false);
+    }
+  }, [isImportingPlaylist, playlistUrl]);
+
   return (
     <div className="streaming-page streaming-hub">
       <header className="streaming-hero">
@@ -450,12 +584,41 @@ export const StreamingSearchPage = (): JSX.Element => {
       {error ? <div className="streaming-state streaming-state--error">{error}</div> : null}
       {actionError ? <div className="streaming-state streaming-state--error">{actionError}</div> : null}
       {actionMessage ? <div className="streaming-state streaming-state--success">{actionMessage}</div> : null}
-      {isLoading && tracks.length === 0 ? <div className="streaming-state">正在搜索...</div> : null}
-      {!isLoading && query && tracks.length === 0 && !error ? <div className="streaming-state">没有找到匹配的流媒体歌曲。</div> : null}
-      {!query ? <div className="streaming-state">输入关键词开始搜索。播放时才会解析真实地址，队列不会保存临时 URL。</div> : null}
+      {activeTab === 'track' && isLoading && tracks.length === 0 ? <div className="streaming-state">正在搜索...</div> : null}
+      {activeTab === 'track' && !isLoading && query && tracks.length === 0 && !error ? <div className="streaming-state">没有找到匹配的流媒体歌曲。</div> : null}
+      {activeTab === 'track' && !query ? <div className="streaming-state">输入关键词开始搜索。播放时才会解析真实地址，队列不会保存临时 URL。</div> : null}
 
       <div className="streaming-results-shell">
-        {activeTab !== 'track' ? (
+        {activeTab === 'playlist' ? (
+          <form
+            className="streaming-playlist-import"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleImportPlaylist();
+            }}
+          >
+            <div className="streaming-playlist-import-copy">
+              <span>
+                <Link size={18} />
+                添加流媒体歌单
+              </span>
+              <p>粘贴网易云音乐或 QQ 音乐歌单链接，导入后会保存到本地播放列表，重开软件也不会消失。</p>
+            </div>
+            <label>
+              <Link size={18} />
+              <input
+                value={playlistUrl}
+                onChange={(event) => setPlaylistUrl(event.target.value)}
+                placeholder="粘贴歌单链接，例如 https://music.163.com/#/playlist?id=..."
+                disabled={isImportingPlaylist}
+              />
+            </label>
+            <button type="submit" disabled={!playlistUrl.trim() || isImportingPlaylist}>
+              {isImportingPlaylist ? <Loader2 className="spinning-icon" size={16} /> : <ListPlus size={16} />}
+              <span>{isImportingPlaylist ? '正在添加' : '添加歌单'}</span>
+            </button>
+          </form>
+        ) : activeTab !== 'track' ? (
           <div className="streaming-state streaming-state--quiet">
             <Sparkles size={18} />
             {activeTab === 'mv' ? 'MV 搜索入口已预留，首版先稳定单曲播放链路。' : '这个分类的正式视图已预留，首版先稳定单曲播放链路。'}
@@ -468,7 +631,18 @@ export const StreamingSearchPage = (): JSX.Element => {
                 const isPlaying = currentStableKey === track.stableKey;
                 const isResolving = resolvingTrackKey === track.stableKey;
                 const isQueued = queuedTrackKey === track.stableKey;
+                const downloadJobId = downloadJobIdsByTrackKey[track.stableKey];
+                const downloadJob = downloadJobId ? downloadJobs.find((job) => job.id === downloadJobId) : null;
+                const isDownloading =
+                  downloadingTrackKey === track.stableKey ||
+                  downloadJob?.status === 'queued' ||
+                  downloadJob?.status === 'probing' ||
+                  downloadJob?.status === 'downloading' ||
+                  downloadJob?.status === 'extracting_audio' ||
+                  downloadJob?.status === 'importing' ||
+                  downloadJob?.status === 'binding_mv';
                 const disabled = !track.playable || Boolean(resolvingTrackKey);
+                const downloadProgress = downloadJob ? Math.max(0, Math.min(100, downloadJob.progress)) : 0;
                 const rawCoverSrc = track.coverThumb ?? defaultCover;
                 const coverSrc = failedCoverUrls[track.stableKey] === rawCoverSrc ? defaultCover : rawCoverSrc;
 
@@ -480,7 +654,7 @@ export const StreamingSearchPage = (): JSX.Element => {
                     data-index={virtualItem.index}
                     style={{ transform: `translateY(${virtualItem.start}px)` }}
                   >
-                    <article className="streaming-row" data-playing={isPlaying} data-unavailable={!track.playable}>
+                    <article className="streaming-row" data-playing={isPlaying} data-unavailable={!track.playable} onDoubleClick={() => void handlePlay(track)}>
                       <div className="streaming-cover" data-empty={coverSrc === defaultCover}>
                         <img
                           src={coverSrc}
@@ -505,27 +679,36 @@ export const StreamingSearchPage = (): JSX.Element => {
                         <small>{track.playable ? `${track.provider} · ${track.qualities.join(' / ') || 'standard'}` : (track.unavailableReason ?? '这首歌暂时不可播放')}</small>
                       </div>
                       <span className="streaming-duration">{formatDuration(track.duration)}</span>
-                      <div className="streaming-actions">
+                      <div className="streaming-actions" onDoubleClick={(event) => event.stopPropagation()}>
                         <button type="button" title="播放" onClick={() => void handlePlay(track)} disabled={disabled}>
                           {isResolving ? <Loader2 className="spinning-icon" size={16} /> : <Play size={16} />}
                         </button>
                         <button type="button" title="加入队列" onClick={() => handleAddToQueue(track)} disabled={!track.playable}>
                           {isQueued ? <Check size={16} /> : <ListPlus size={16} />}
                         </button>
-                        <button type="button" title="下一首播放" onClick={() => handlePlayNext(track)} disabled={!track.playable}>
-                          <Clock3 size={16} />
-                        </button>
-                        <button type="button" title="查看歌词" onClick={() => void handleLyrics(track)}>
-                          <Captions size={16} />
-                        </button>
-                        <button type="button" title="查看 MV" onClick={() => void handleMv(track)} disabled={track.mvStatus === 'missing'}>
-                          <Video size={16} />
-                        </button>
-                        <button type="button" title="更多" disabled>
-                          <MoreHorizontal size={16} />
+                        <button type="button" title="下载" onClick={() => void handleDownload(track)} disabled={isDownloading}>
+                          {isDownloading ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
                         </button>
                       </div>
                       {isResolving ? <div className="streaming-resolving">正在解析播放地址...</div> : null}
+                      {downloadJob ? (
+                        <div className="streaming-download-progress" data-status={downloadJob.status}>
+                          <div
+                            className="streaming-download-progress-track"
+                            role="progressbar"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(downloadProgress)}
+                            aria-label="下载进度"
+                          >
+                            <span style={{ width: `${downloadProgress}%` }} />
+                          </div>
+                          <small>
+                            {downloadStatusLabels[downloadJob.status]} · {Math.round(downloadProgress)}%
+                          </small>
+                          {downloadJob.status === 'failed' && downloadJob.error ? <small>{downloadJob.error}</small> : null}
+                        </div>
+                      ) : null}
                       {lyricsTrackKey === track.stableKey && lyrics ? (
                         <pre className="streaming-lyrics">{lyrics.plainLyrics ?? lyrics.syncedLyrics ?? (lyrics.lines.map((line) => line.text).join('\n') || '暂时没有歌词。')}</pre>
                       ) : null}

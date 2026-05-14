@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { FilePlus2, FolderPlus, Music2, Settings } from 'lucide-react';
+import { Captions, FilePlus2, FolderPlus, Headphones, Music2, Settings } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import type { AppRoute } from '../../app/routes';
 import { I18nProvider } from '../../i18n/I18nProvider';
@@ -33,6 +33,22 @@ const routes: AppRoute[] = [
     element: <div>Import Folder</div>,
   },
   {
+    id: 'audio-settings',
+    label: 'Audio Settings',
+    description: 'Audio Settings',
+    icon: Headphones,
+    placement: 'utility',
+    element: <div>Audio Settings</div>,
+  },
+  {
+    id: 'lyrics-settings',
+    label: 'Lyrics Settings',
+    description: 'Lyrics Settings',
+    icon: Captions,
+    placement: 'utility',
+    element: <div>Lyrics Settings</div>,
+  },
+  {
     id: 'import-file',
     label: 'Import File',
     description: 'Import File',
@@ -58,6 +74,8 @@ afterEach(() => {
 describe('Sidebar direct import actions', () => {
   const renderSidebar = (props: {
     onRouteChange: (routeId: AppRoute['id']) => void;
+    onOpenAudioSettings?: () => void;
+    onOpenLyricsSettings?: () => void;
     onImportFolder: () => void;
     onImportFile: () => void;
   }): void => {
@@ -67,6 +85,8 @@ describe('Sidebar direct import actions', () => {
           routes={routes}
           activeRouteId="songs"
           onRouteChange={props.onRouteChange}
+          onOpenAudioSettings={props.onOpenAudioSettings ?? vi.fn()}
+          onOpenLyricsSettings={props.onOpenLyricsSettings ?? vi.fn()}
           onImportFolder={props.onImportFolder}
           onImportFile={props.onImportFile}
         />
@@ -85,6 +105,46 @@ describe('Sidebar direct import actions', () => {
 
     await waitFor(() => expect(onImportFolder).toHaveBeenCalledTimes(1));
     expect(onImportFile).not.toHaveBeenCalled();
+    expect(onRouteChange).not.toHaveBeenCalled();
+  });
+
+  it('opens the audio settings drawer from Audio Settings without navigating', async () => {
+    const onRouteChange = vi.fn();
+    const onOpenAudioSettings = vi.fn();
+    const onOpenLyricsSettings = vi.fn();
+
+    renderSidebar({
+      onRouteChange,
+      onOpenAudioSettings,
+      onOpenLyricsSettings,
+      onImportFolder: vi.fn(),
+      onImportFile: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Audio Settings' }));
+
+    await waitFor(() => expect(onOpenAudioSettings).toHaveBeenCalledTimes(1));
+    expect(onOpenLyricsSettings).not.toHaveBeenCalled();
+    expect(onRouteChange).not.toHaveBeenCalled();
+  });
+
+  it('opens the lyrics settings drawer from Lyrics Settings without navigating', async () => {
+    const onRouteChange = vi.fn();
+    const onOpenAudioSettings = vi.fn();
+    const onOpenLyricsSettings = vi.fn();
+
+    renderSidebar({
+      onRouteChange,
+      onOpenAudioSettings,
+      onOpenLyricsSettings,
+      onImportFolder: vi.fn(),
+      onImportFile: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lyrics Settings' }));
+
+    await waitFor(() => expect(onOpenLyricsSettings).toHaveBeenCalledTimes(1));
+    expect(onOpenAudioSettings).not.toHaveBeenCalled();
     expect(onRouteChange).not.toHaveBeenCalled();
   });
 

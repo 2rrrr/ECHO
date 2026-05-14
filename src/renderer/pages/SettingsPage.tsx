@@ -28,8 +28,9 @@ import type { AppSettings } from '../../shared/types/appSettings';
 import type { CoverCacheMigrationResult } from '../../shared/types/coverCache';
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
+import type { DownloadSettings } from '../../shared/types/downloads';
 import type { LastFmStatus } from '../../shared/types/lastfm';
-import type { DuplicateTrackIndexSummary } from '../../shared/types/library';
+import type { BpmAnalysisJobStatus, DuplicateTrackIndexSummary } from '../../shared/types/library';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
@@ -54,6 +55,7 @@ import {
   getAudioBridge,
   getDiagnosticsBridge,
   getDiscordPresenceBridge,
+  getDownloadsBridge,
   getLastFmBridge,
   getLibraryBridge,
 } from '../utils/echoBridge';
@@ -538,6 +540,9 @@ export const SettingsPage = (): JSX.Element => {
   const [cacheDirectoryBusy, setCacheDirectoryBusy] = useState(false);
   const [cacheDirectoryResult, setCacheDirectoryResult] = useState<CoverCacheMigrationResult | null>(null);
   const [cacheDirectoryMessage, setCacheDirectoryMessage] = useState<string | null>(null);
+  const [downloadSettings, setDownloadSettings] = useState<DownloadSettings | null>(null);
+  const [downloadDirectoryBusy, setDownloadDirectoryBusy] = useState(false);
+  const [downloadDirectoryMessage, setDownloadDirectoryMessage] = useState<string | null>(null);
   const [pendingAlbumMergeStrategy, setPendingAlbumMergeStrategy] = useState<AlbumMergeStrategy | null>(null);
   const [albumGroupingBusy, setAlbumGroupingBusy] = useState(false);
   const [albumGroupingMessage, setAlbumGroupingMessage] = useState<string | null>(null);
@@ -546,6 +551,9 @@ export const SettingsPage = (): JSX.Element => {
   const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
   const [duplicateBusyAction, setDuplicateBusyAction] = useState<'toggle' | 'analyze' | null>(null);
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
+  const [bpmAnalysisJob, setBpmAnalysisJob] = useState<BpmAnalysisJobStatus | null>(null);
+  const [bpmAnalysisBusy, setBpmAnalysisBusy] = useState(false);
+  const [bpmAnalysisMessage, setBpmAnalysisMessage] = useState<string | null>(null);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
   const [fontPickerQuery, setFontPickerQuery] = useState('');
@@ -680,11 +688,18 @@ export const SettingsPage = (): JSX.Element => {
     void refreshAccountStatuses();
     void refreshDuplicateSummary();
     const app = getAppBridge();
+    const downloads = getDownloadsBridge();
     const diagnostics = getDiagnosticsBridge();
-    void app?.getSettings().then(setAppSettings).catch(() => undefined);
+    void app?.getSettings().then((settings) => {
+      setAppSettings(settings);
+      if (settings.appearancePreferences) {
+        setAppearancePreferences(updateAppearancePreferences(settings.appearancePreferences));
+      }
+    }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
     void app?.getDefaultCacheDirectory().then(setDefaultCacheDirectory).catch(() => undefined);
+    void downloads?.getSettings().then(setDownloadSettings).catch(() => undefined);
     void diagnostics?.getLastCrashSummary().then(setLastCrashSummary).catch(() => undefined);
     const timer = window.setInterval(() => {
       void refreshStatus();
@@ -701,6 +716,9 @@ export const SettingsPage = (): JSX.Element => {
       }
 
       setAppSettings((current) => (current ? { ...current, ...patch } : current));
+      if (patch.appearancePreferences) {
+        setAppearancePreferences(updateAppearancePreferences(patch.appearancePreferences));
+      }
     };
 
     window.addEventListener('settings:changed', handleSettingsChanged);
@@ -776,7 +794,7 @@ export const SettingsPage = (): JSX.Element => {
         devices.find((device) => device.id === nextDeviceId && (nextOutputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')) ?? null;
       const output: AudioOutputSettings = {
         outputMode: nextOutputMode,
-        latencyProfile: nextOutputMode === 'shared' ? 'stable' : 'balanced',
+        latencyProfile: 'lowLatency',
       };
 
       if (nextDevice) {
@@ -1294,6 +1312,34 @@ export const SettingsPage = (): JSX.Element => {
       : '默认目录读取中';
   const pendingResolvedCacheDirectory =
     pendingCacheDirectory === undefined ? null : pendingCacheDirectory ?? defaultCacheDirectory;
+  const currentDownloadDirectoryLabel = downloadSettings?.outputDirectory ?? '尚未选择下载文件夹';
+
+  const handleDownloadDirectoryChoose = async (): Promise<void> => {
+    try {
+      const downloads = getDownloadsBridge();
+
+      if (!downloads) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to choose a download directory.');
+        return;
+      }
+
+      setDownloadDirectoryBusy(true);
+      setDownloadDirectoryMessage(null);
+      setError(null);
+      const settings = await downloads.chooseOutputDirectory();
+
+      if (!settings) {
+        return;
+      }
+
+      setDownloadSettings(settings);
+      setDownloadDirectoryMessage('下载路径已更新。');
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : String(downloadError));
+    } finally {
+      setDownloadDirectoryBusy(false);
+    }
+  };
 
   const handleCacheDirectoryChoose = async (): Promise<void> => {
     try {
@@ -1511,6 +1557,63 @@ export const SettingsPage = (): JSX.Element => {
       setError(duplicateError instanceof Error ? duplicateError.message : String(duplicateError));
     } finally {
       setDuplicateBusyAction(null);
+    }
+  };
+
+  const pollBpmAnalysisJob = async (jobId: string): Promise<void> => {
+    const library = getLibraryBridge();
+    if (!library) {
+      return;
+    }
+
+    for (;;) {
+      const status = await library.getBpmAnalysisStatus(jobId);
+      setBpmAnalysisJob(status);
+      setBpmAnalysisMessage(
+        status.status === 'completed'
+          ? `BPM 分析完成：${status.updatedTracks}/${status.totalTracks} 首已更新`
+          : `BPM 分析中：${status.processedTracks}/${status.totalTracks}`,
+      );
+
+      if (status.status === 'completed' || status.status === 'failed') {
+        setBpmAnalysisBusy(false);
+        window.dispatchEvent(new Event('library:changed'));
+        return;
+      }
+
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 700);
+      });
+    }
+  };
+
+  const handleStartBpmAnalysis = async (): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to analyze BPM.');
+      return;
+    }
+
+    try {
+      setBpmAnalysisBusy(true);
+      setBpmAnalysisMessage(null);
+      setError(null);
+      const job = await library.startBpmAnalysis({ limit: 500 });
+      setBpmAnalysisJob(job);
+      setBpmAnalysisMessage(job.totalTracks > 0 ? `BPM 分析已开始：0/${job.totalTracks}` : '没有需要分析的歌曲');
+      if (job.totalTracks === 0) {
+        setBpmAnalysisBusy(false);
+        return;
+      }
+      void pollBpmAnalysisJob(job.id).catch((analysisError) => {
+        setBpmAnalysisBusy(false);
+        setError(analysisError instanceof Error ? analysisError.message : String(analysisError));
+      });
+    } catch (analysisError) {
+      setBpmAnalysisBusy(false);
+      setBpmAnalysisMessage(null);
+      setError(analysisError instanceof Error ? analysisError.message : String(analysisError));
     }
   };
 
@@ -2122,6 +2225,30 @@ export const SettingsPage = (): JSX.Element => {
               <LibraryFoldersPanel />
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
+                title="下载路径"
+                description="选择下载音频保存目录，下载页会同步使用这个位置。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--download">
+                  <div className="settings-cache-path">
+                    <em>当前下载文件夹</em>
+                    <strong title={currentDownloadDirectoryLabel}>{currentDownloadDirectoryLabel}</strong>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleDownloadDirectoryChoose()}
+                      disabled={downloadDirectoryBusy}
+                    >
+                      <FolderOpen size={15} />
+                      {downloadSettings?.outputDirectory ? '更换文件夹' : '选择文件夹'}
+                    </button>
+                  </div>
+                  {downloadDirectoryMessage ? <p className="settings-inline-note">{downloadDirectoryMessage}</p> : null}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
                 title="重复歌曲"
                 description="在歌曲列表中隐藏低音质重复版本，不会删除文件。"
               >
@@ -2321,6 +2448,49 @@ export const SettingsPage = (): JSX.Element => {
                       {label}
                     </ChipButton>
                   ))}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                title="BPM / Offset 分析"
+                description="默认关闭。开启后扫描结束会低优先级分析缺失 BPM 的歌曲，并把高置信 BPM 写入歌曲标签。"
+              >
+                <div className="settings-cache-panel">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>启用 BPM 分析</span>
+                      <ToggleButton
+                        active={appSettings?.audioAnalysisEnabled ?? false}
+                        disabled={!appSettings || bpmAnalysisBusy}
+                        onClick={() => patchAppSettings({ audioAnalysisEnabled: !(appSettings?.audioAnalysisEnabled ?? false) })}
+                      />
+                    </div>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={!appSettings?.audioAnalysisEnabled || bpmAnalysisBusy}
+                      onClick={() => void handleStartBpmAnalysis()}
+                    >
+                      <RotateCw className={bpmAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
+                      {bpmAnalysisBusy ? '分析中...' : '分析缺失 BPM'}
+                    </button>
+                  </div>
+                  <div className="settings-status-grid">
+                    <span>
+                      <em>状态</em>
+                      <strong>{appSettings?.audioAnalysisEnabled ? '已开启' : '默认关闭'}</strong>
+                    </span>
+                    <span>
+                      <em>进度</em>
+                      <strong>{bpmAnalysisJob ? `${bpmAnalysisJob.processedTracks}/${bpmAnalysisJob.totalTracks}` : '尚未运行'}</strong>
+                    </span>
+                    <span>
+                      <em>已更新</em>
+                      <strong>{bpmAnalysisJob?.updatedTracks ?? 0}</strong>
+                    </span>
+                  </div>
+                  {bpmAnalysisMessage ? <p className="settings-inline-note">{bpmAnalysisMessage}</p> : null}
+                  {bpmAnalysisJob?.errorCount ? <p className="settings-inline-error">分析错误 {bpmAnalysisJob.errorCount} 个，已跳过问题文件。</p> : null}
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.library.network.title')} description={t('settings.library.network.description')}>

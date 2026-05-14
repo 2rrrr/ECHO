@@ -389,6 +389,7 @@ describe('Library Core', () => {
       expect.arrayContaining([
         'folders',
         'tracks',
+        'tracks_fts',
         'albums',
         'album_tracks',
         'artists',
@@ -645,6 +646,41 @@ describe('Library Core', () => {
 
     harness.service.removePlaylistItem(secondItem.id);
     expect(harness.service.getPlaylist(updated.id)?.itemCount).toBe(1);
+
+    harness.cleanup();
+  }, 20000);
+
+  it('orders playlist items by the saved playlist sort mode', async () => {
+    const harness = createHarness();
+    const bravoPath = writeAudioFile(harness.folder, 'Bravo.flac');
+    const alphaPath = writeAudioFile(harness.folder, 'Alpha.flac');
+    const charliePath = writeAudioFile(harness.folder, 'Charlie.flac');
+    harness.metadataService.overrides.set(bravoPath, baseMetadata({ title: 'Bravo', artist: 'Zeta Artist', album: 'Album B' }));
+    harness.metadataService.overrides.set(alphaPath, baseMetadata({ title: 'Alpha', artist: 'Alpha Artist', album: 'Album A' }));
+    harness.metadataService.overrides.set(charliePath, baseMetadata({ title: 'Charlie', artist: 'Middle Artist', album: 'Album C' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const tracks = harness.service.getTracks({ pageSize: 10, sort: 'titleAsc' }).items;
+    const byTitle = new Map(tracks.map((track) => [track.title, track.id]));
+    const playlist = harness.service.createPlaylist({ name: 'Sorted Mix' });
+    harness.service.addTrackToPlaylist(playlist.id, byTitle.get('Bravo')!);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    harness.service.addTrackToPlaylist(playlist.id, byTitle.get('Alpha')!);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    harness.service.addTrackToPlaylist(playlist.id, byTitle.get('Charlie')!);
+
+    const readTitles = () => harness.service.getPlaylistItems(playlist.id, { pageSize: 10 }).items.map((item) => item.titleSnapshot);
+
+    expect(readTitles()).toEqual(['Bravo', 'Alpha', 'Charlie']);
+    harness.service.updatePlaylist({ playlistId: playlist.id, sortMode: 'titleAsc' });
+    expect(readTitles()).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    harness.service.updatePlaylist({ playlistId: playlist.id, sortMode: 'titleDesc' });
+    expect(readTitles()).toEqual(['Charlie', 'Bravo', 'Alpha']);
+    harness.service.updatePlaylist({ playlistId: playlist.id, sortMode: 'artistAsc' });
+    expect(readTitles()).toEqual(['Alpha', 'Charlie', 'Bravo']);
+    harness.service.updatePlaylist({ playlistId: playlist.id, sortMode: 'addedDesc' });
+    expect(readTitles()).toEqual(['Charlie', 'Alpha', 'Bravo']);
 
     harness.cleanup();
   }, 20000);
@@ -1375,6 +1411,31 @@ describe('Library Core', () => {
 
     expect(tracks.total).toBe(1);
     expect(tracks.items[0].path).toBe(filePath);
+    harness.cleanup();
+  });
+
+  it('getTracks search index follows track tag edits and deletes', async () => {
+    const harness = createHarness();
+    const filePath = writeAudioFile(harness.folder, 'indexed-song.flac');
+    harness.metadataService.overrides.set(filePath, baseMetadata({ title: 'Original Title', artist: 'Search Artist', album: 'Search Album' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const [track] = harness.service.getTracks({ search: 'original', pageSize: 10 }).items;
+
+    expect(track.title).toBe('Original Title');
+
+    harness.metadataService.overrides.set(filePath, baseMetadata({ title: 'Updated Needle', artist: 'Search Artist', album: 'Search Album' }));
+    writeFileSync(filePath, 'updated audio');
+    utimesSync(filePath, new Date('2024-01-02T00:00:00.000Z'), new Date('2024-01-02T00:00:00.000Z'));
+    await harness.scanFolder();
+
+    expect(harness.service.getTracks({ search: 'original', pageSize: 10 }).total).toBe(0);
+    expect(harness.service.getTracks({ search: 'updated needle', pageSize: 10 }).items[0].title).toBe('Updated Needle');
+
+    harness.service.deleteTrack(track.id);
+
+    expect(harness.service.getTracks({ search: 'updated', pageSize: 10 }).total).toBe(0);
     harness.cleanup();
   });
 

@@ -32,6 +32,7 @@ const audioExtensionValues = [
   '.ac3',
   '.dts',
   '.cue',
+  '.ncm',
 ] as const;
 
 export const SUPPORTED_AUDIO_EXTENSION_LIST = [...audioExtensionValues];

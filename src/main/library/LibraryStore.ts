@@ -137,6 +137,22 @@ const searchTerms = (search: string): string[] => {
   return Array.from(new Set(terms)).slice(0, 12);
 };
 
+const ftsBarewordPattern = /^[\p{L}\p{N}_]+$/u;
+const ftsReservedTerms = new Set(['and', 'or', 'not']);
+
+const ftsSearchTerms = (search: string): string[] =>
+  Array.from(new Set(search.normalize('NFKC').trim().split(searchSeparatorPattern).filter(Boolean))).slice(0, 12);
+
+const ftsTerm = (term: string): string => {
+  if (ftsBarewordPattern.test(term) && !ftsReservedTerms.has(term.toLocaleLowerCase())) {
+    return `${term}*`;
+  }
+
+  return `"${term.replace(/"/g, '""')}"`;
+};
+
+const buildFtsSearchQuery = (search: string): string => ftsSearchTerms(search).map(ftsTerm).join(' AND ');
+
 const buildSearchFilter = (
   search: string,
   predicates: SearchPredicate[],
@@ -464,6 +480,7 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
        FROM tracks
@@ -808,9 +825,10 @@ export class LibraryStore {
       `INSERT INTO tracks (
         id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist,
         track_no, disc_no, year, genre, duration, codec, sample_rate, bit_depth, bitrate,
+        bpm, bpm_confidence, beat_offset_ms, analysis_status, analysis_version, analysis_error, analysis_updated_at,
         cover_id, metadata_status, embedded_metadata_status, embedded_cover_status, network_metadata_status,
         field_sources_json, missing, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         folder_id = excluded.folder_id,
         size_bytes = excluded.size_bytes,
@@ -828,6 +846,13 @@ export class LibraryStore {
         sample_rate = excluded.sample_rate,
         bit_depth = excluded.bit_depth,
         bitrate = excluded.bitrate,
+        bpm = COALESCE(excluded.bpm, tracks.bpm),
+        bpm_confidence = COALESCE(excluded.bpm_confidence, tracks.bpm_confidence),
+        beat_offset_ms = COALESCE(excluded.beat_offset_ms, tracks.beat_offset_ms),
+        analysis_status = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_status ELSE tracks.analysis_status END,
+        analysis_version = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_version ELSE tracks.analysis_version END,
+        analysis_error = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_error ELSE tracks.analysis_error END,
+        analysis_updated_at = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_updated_at ELSE tracks.analysis_updated_at END,
         cover_id = excluded.cover_id,
         metadata_status = excluded.metadata_status,
         embedded_metadata_status = excluded.embedded_metadata_status,
@@ -854,6 +879,13 @@ export class LibraryStore {
       track.sampleRate,
       track.bitDepth,
       track.bitrate,
+      track.bpm,
+      track.bpm ? 1 : null,
+      null,
+      track.bpm ? 'complete' : 'none',
+      track.bpm ? 1 : 0,
+      null,
+      track.bpm ? track.updatedAt : null,
       track.coverId,
       track.metadataStatus ?? 'ok',
       track.embeddedMetadataStatus ?? 'pending',
@@ -870,6 +902,97 @@ export class LibraryStore {
 
   updateTrackCover(trackId: string, coverId: string | null, timestamp = nowIso()): void {
     this.run('UPDATE tracks SET cover_id = ?, updated_at = ? WHERE id = ?', coverId, timestamp, trackId);
+  }
+
+  findBpmAnalysisTargets(limit: number, trackIds?: string[], force = false): LibraryTrack[] {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+    const baseColumns = `SELECT
+        tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
+        tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
+        tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
+        tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        tracks.network_metadata_status, tracks.field_sources_json
+      FROM tracks`;
+
+    if (trackIds?.length) {
+      const placeholders = trackIds.map(() => '?').join(', ');
+      const rows = this.allRows(
+        `${baseColumns}
+         WHERE tracks.missing = 0 AND tracks.id IN (${placeholders})
+         ORDER BY tracks.title COLLATE NOCASE
+         LIMIT ?`,
+        ...trackIds,
+        safeLimit,
+      );
+      return rows.map((row) => this.mapTrack(row));
+    }
+
+    const rows = this.allRows(
+      `${baseColumns}
+       WHERE tracks.missing = 0
+         AND (? = 1 OR tracks.bpm IS NULL OR tracks.analysis_status IN ('none', 'error', 'low_confidence'))
+       ORDER BY tracks.updated_at DESC, tracks.title COLLATE NOCASE
+       LIMIT ?`,
+      force ? 1 : 0,
+      safeLimit,
+    );
+    return rows.map((row) => this.mapTrack(row));
+  }
+
+  markTrackAnalyzing(trackId: string, timestamp = nowIso()): void {
+    this.run(
+      `UPDATE tracks SET analysis_status = 'analyzing', analysis_error = NULL, analysis_updated_at = ?, updated_at = ?
+       WHERE id = ? AND missing = 0`,
+      timestamp,
+      timestamp,
+      trackId,
+    );
+  }
+
+  updateTrackBpmAnalysis(
+    trackId: string,
+    update: {
+      bpm: number | null;
+      confidence: number;
+      beatOffsetMs: number | null;
+      status: 'complete' | 'low_confidence' | 'error';
+      error?: string | null;
+      fieldSources?: Record<string, string>;
+    },
+    timestamp = nowIso(),
+  ): LibraryTrack | null {
+    const current = this.getTrack(trackId);
+    const fieldSources = update.fieldSources ?? {
+      ...(current?.fieldSources ?? {}),
+      bpm: update.bpm !== null ? 'audio_analysis' : current?.fieldSources.bpm ?? 'unknown',
+      beatOffsetMs: update.beatOffsetMs !== null ? 'audio_analysis' : current?.fieldSources.beatOffsetMs ?? 'unknown',
+    };
+
+    this.run(
+      `UPDATE tracks SET
+        bpm = ?,
+        bpm_confidence = ?,
+        beat_offset_ms = ?,
+        analysis_status = ?,
+        analysis_version = 1,
+        analysis_error = ?,
+        analysis_updated_at = ?,
+        field_sources_json = ?,
+        updated_at = ?
+      WHERE id = ? AND missing = 0`,
+      update.bpm,
+      update.confidence,
+      update.beatOffsetMs,
+      update.status,
+      update.error ?? null,
+      timestamp,
+      JSON.stringify(fieldSources),
+      timestamp,
+      trackId,
+    );
+
+    return this.getTrack(trackId);
   }
 
   updateCoverCachePaths(oldDir: string, newDir: string, warnings: string[] = []): number {
@@ -1219,6 +1342,7 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM tracks
@@ -1235,6 +1359,7 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
        FROM tracks
@@ -1251,6 +1376,7 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM tracks
@@ -1621,14 +1747,8 @@ export class LibraryStore {
     const offset = (page - 1) * pageSize;
     const hideDuplicates = query?.hideDuplicates === true;
     const duplicateMode = query?.duplicateMode === 'strict' ? query.duplicateMode : 'strict';
-    const searchFilter = buildSearchFilter(search, [
-      likePredicate('tracks.title'),
-      likePredicate('tracks.artist'),
-      likePredicate('tracks.album'),
-      likePredicate('tracks.album_artist'),
-      likePredicate('COALESCE(tracks.genre, \'\')'),
-      likePredicate('tracks.path'),
-    ]);
+    const searchQuery = buildFtsSearchQuery(search);
+    const searchJoinSql = searchQuery ? 'INNER JOIN tracks_fts ON tracks_fts.rowid = tracks.rowid' : '';
     const duplicateJoinSql = hideDuplicates
       ? `LEFT JOIN duplicate_track_members AS duplicate_members
           ON duplicate_members.track_id = tracks.id
@@ -1637,20 +1757,25 @@ export class LibraryStore {
           )`
       : '';
     const duplicateFilterSql = hideDuplicates ? ' AND COALESCE(duplicate_members.hidden, 0) = 0' : '';
-    const whereSql = searchFilter.sql
-      ? `WHERE tracks.missing = 0${duplicateFilterSql} AND ${searchFilter.sql}`
+    const whereSql = searchQuery
+      ? `WHERE tracks.missing = 0${duplicateFilterSql} AND tracks_fts MATCH ?`
       : `WHERE tracks.missing = 0${duplicateFilterSql}`;
-    const baseParams = hideDuplicates ? [duplicateMode, ...searchFilter.params] : searchFilter.params;
+    const baseParams = [
+      ...(hideDuplicates ? [duplicateMode] : []),
+      ...(searchQuery ? [searchQuery] : []),
+    ];
     const orderSql = this.trackOrderSql(sort);
-    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${duplicateJoinSql} ${whereSql}`, ...baseParams);
+    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${searchJoinSql} ${duplicateJoinSql} ${whereSql}`, ...baseParams);
     const rows = this.allRows(
       `SELECT
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM tracks
+      ${searchJoinSql}
       ${duplicateJoinSql}
       ${whereSql}
       ${orderSql}
@@ -1834,6 +1959,7 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM artist_tracks
@@ -1913,6 +2039,7 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM album_tracks
@@ -2060,6 +2187,8 @@ export class LibraryStore {
     ]);
     const whereSql = searchFilter.sql ? `playlist_items.playlist_id = ? AND ${searchFilter.sql}` : 'playlist_items.playlist_id = ?';
     const params = [playlistId, ...searchFilter.params];
+    const playlist = this.getPlaylist(playlistId);
+    const orderSql = this.playlistItemsOrderSql(playlist?.sortMode ?? 'manual');
     const totalRow = this.getRow(
       `SELECT COUNT(*) AS total
        FROM playlist_items
@@ -2086,6 +2215,11 @@ export class LibraryStore {
         tracks.sample_rate AS track_sample_rate,
         tracks.bit_depth AS track_bit_depth,
         tracks.bitrate AS track_bitrate,
+        tracks.bpm AS track_bpm,
+        tracks.bpm_confidence AS track_bpm_confidence,
+        tracks.beat_offset_ms AS track_beat_offset_ms,
+        tracks.analysis_status AS track_analysis_status,
+        tracks.analysis_updated_at AS track_analysis_updated_at,
         tracks.cover_id AS track_cover_id,
         tracks.metadata_status AS track_metadata_status,
         tracks.embedded_metadata_status AS track_embedded_metadata_status,
@@ -2093,6 +2227,7 @@ export class LibraryStore {
         tracks.network_metadata_status AS track_network_metadata_status,
         tracks.field_sources_json AS track_field_sources_json,
         tracks.missing AS track_missing,
+        streaming_tracks.cover_url AS streaming_cover_url,
         albums.id AS album_id,
         albums.album_key AS album_key,
         albums.title AS album_title,
@@ -2103,9 +2238,12 @@ export class LibraryStore {
         albums.cover_id AS album_cover_id
       FROM playlist_items
       LEFT JOIN tracks ON tracks.id = playlist_items.media_id
+      LEFT JOIN streaming_tracks
+        ON streaming_tracks.provider = playlist_items.source_provider
+       AND streaming_tracks.provider_track_id = playlist_items.source_item_id
       LEFT JOIN albums ON albums.id = playlist_items.media_id
       WHERE ${whereSql}
-      ORDER BY playlist_items.position ASC, playlist_items.added_at ASC
+      ${orderSql}
       LIMIT ? OFFSET ?`,
       ...params,
       pageSize,
@@ -2129,6 +2267,59 @@ export class LibraryStore {
     }
 
     return item;
+  }
+
+  addStreamingTrackToPlaylist(
+    playlistId: string,
+    track: Pick<LibraryTrack, 'id' | 'provider' | 'providerTrackId' | 'stableKey' | 'title' | 'artist' | 'album' | 'duration' | 'unavailable'>,
+    timestamp = nowIso(),
+  ): LibraryPlaylistItem {
+    return this.transaction(() => {
+      const playlist = this.getPlaylist(playlistId);
+      if (!playlist) {
+        throw new Error(`Unknown playlist ${playlistId}`);
+      }
+
+      const provider = textOrNull(track.provider);
+      const providerTrackId = textOrNull(track.providerTrackId);
+      if (!provider || !providerTrackId) {
+        throw new Error('Streaming track provider and providerTrackId are required');
+      }
+
+      const itemId = randomUUID();
+      const nextPosition = Number(this.getRow('SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM playlist_items WHERE playlist_id = ?', playlistId)?.next_position ?? 0);
+      this.run(
+        `INSERT INTO playlist_items (
+          id, playlist_id, media_type, media_id, source_provider, source_item_id,
+          title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
+          cover_id, position, added_at, added_from, unavailable
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        itemId,
+        playlistId,
+        'stream_track',
+        textOrNull(track.stableKey) ?? textOrNull(track.id) ?? `streaming:${provider}:${providerTrackId}`,
+        provider,
+        providerTrackId,
+        track.title,
+        track.artist,
+        track.album,
+        Number.isFinite(track.duration) ? track.duration : null,
+        null,
+        nextPosition,
+        timestamp,
+        'streaming',
+        track.unavailable ? 1 : 0,
+      );
+
+      this.refreshPlaylistItemCount(playlistId, timestamp);
+      const itemRow = this.getPlaylistItemRow(itemId);
+      const item = itemRow ? this.mapPlaylistItem(itemRow) : null;
+      if (!item) {
+        throw new Error(`Failed to add streaming track ${providerTrackId} to playlist ${playlistId}`);
+      }
+
+      return item;
+    });
   }
 
   addTracksToPlaylist(playlistId: string, trackIds: string[], timestamp = nowIso()): LibraryPlaylistItem[] {
@@ -2462,6 +2653,7 @@ export class LibraryStore {
     scanPerformanceMode: LibraryDiagnostics['scanPerformanceMode'];
     metadataConcurrency: number;
     coverConcurrency: number;
+    audioAnalysisEnabled?: boolean;
   }): LibraryDiagnostics {
     const lastScanRow = this.getRow(
       `SELECT status, phase, discovered_count, parsed_count, skipped_count, cover_count, error_count, started_at, finished_at
@@ -2757,6 +2949,11 @@ export class LibraryStore {
         tracks.sample_rate AS track_sample_rate,
         tracks.bit_depth AS track_bit_depth,
         tracks.bitrate AS track_bitrate,
+        tracks.bpm AS track_bpm,
+        tracks.bpm_confidence AS track_bpm_confidence,
+        tracks.beat_offset_ms AS track_beat_offset_ms,
+        tracks.analysis_status AS track_analysis_status,
+        tracks.analysis_updated_at AS track_analysis_updated_at,
         tracks.cover_id AS track_cover_id,
         tracks.metadata_status AS track_metadata_status,
         tracks.embedded_metadata_status AS track_embedded_metadata_status,
@@ -2857,6 +3054,7 @@ export class LibraryStore {
   private mapPlaylist(row: DbRow): LibraryPlaylist {
     const coverId = textOrNull(row.cover_id);
     const displayCoverId = coverId ?? this.getPlaylistFallbackCoverId(String(row.id));
+    const remoteCoverUrl = textOrNull(row.cover_url) ?? this.getPlaylistFallbackRemoteCoverUrl(String(row.id));
 
     return {
       id: String(row.id),
@@ -2866,7 +3064,7 @@ export class LibraryStore {
       sourceProvider: this.mapPlaylistSourceProvider(row.source_provider),
       sourcePlaylistId: textOrNull(row.source_playlist_id),
       coverId,
-      coverThumb: displayCoverId ? this.toCoverUrl(displayCoverId, 'album') : null,
+      coverThumb: displayCoverId ? this.toCoverUrl(displayCoverId, 'album') : remoteCoverUrl,
       sortMode: this.mapPlaylistSortMode(row.sort_mode),
       itemCount: Number(row.item_count ?? 0),
       createdAt: String(row.created_at),
@@ -2890,14 +3088,34 @@ export class LibraryStore {
     return textOrNull(row?.cover_id);
   }
 
+  private getPlaylistFallbackRemoteCoverUrl(playlistId: string): string | null {
+    const row = this.getRow(
+      `SELECT streaming_tracks.cover_url AS cover_url
+       FROM playlist_items
+       INNER JOIN streaming_tracks
+         ON streaming_tracks.provider = playlist_items.source_provider
+        AND streaming_tracks.provider_track_id = playlist_items.source_item_id
+       WHERE playlist_items.playlist_id = ?
+         AND playlist_items.media_type = 'stream_track'
+         AND streaming_tracks.cover_url IS NOT NULL
+       ORDER BY playlist_items.position ASC, playlist_items.added_at ASC
+       LIMIT 1`,
+      playlistId,
+    );
+
+    return textOrNull(row?.cover_url);
+  }
+
   private mapPlaylistItem(row: DbRow): LibraryPlaylistItem {
     const coverId = textOrNull(row.cover_id) ?? textOrNull(row.track_cover_id) ?? textOrNull(row.album_cover_id);
+    const streamingCoverUrl = textOrNull(row.streaming_cover_url);
     const trackMissing = Number(row.track_missing ?? 1) !== 0;
     const hasTrack = textOrNull(row.track_id) !== null && !trackMissing;
     const hasAlbum = textOrNull(row.album_id) !== null;
     const isRemoteTrackItem = row.media_type === 'track' && row.source_provider === 'remote';
+    const isStreamingTrackItem = row.media_type === 'stream_track';
     const unavailable =
-      Number(row.unavailable ?? 0) !== 0 ||
+      (!isStreamingTrackItem && Number(row.unavailable ?? 0) !== 0) ||
       (row.media_type === 'track' && !isRemoteTrackItem && (!hasTrack || !textOrNull(row.media_id))) ||
       (row.media_type === 'album' && (!hasAlbum || !textOrNull(row.media_id)));
 
@@ -2913,7 +3131,7 @@ export class LibraryStore {
       albumSnapshot: textOrNull(row.album_snapshot),
       durationSnapshot: numberOrNull(row.duration_snapshot),
       coverId,
-      coverThumb: coverId ? this.toCoverUrl(coverId, 'thumb') : null,
+      coverThumb: coverId ? this.toCoverUrl(coverId, 'thumb') : streamingCoverUrl,
       position: Number(row.position ?? 0),
       addedAt: String(row.added_at),
       addedFrom: textOrNull(row.added_from),
@@ -2935,6 +3153,11 @@ export class LibraryStore {
             sample_rate: row.track_sample_rate,
             bit_depth: row.track_bit_depth,
             bitrate: row.track_bitrate,
+            bpm: row.track_bpm,
+            bpm_confidence: row.track_bpm_confidence,
+            beat_offset_ms: row.track_beat_offset_ms,
+            analysis_status: row.track_analysis_status,
+            analysis_updated_at: row.track_analysis_updated_at,
             cover_id: row.track_cover_id,
             metadata_status: row.track_metadata_status,
             embedded_metadata_status: row.track_embedded_metadata_status,
@@ -3042,23 +3265,30 @@ export class LibraryStore {
     }
   }
 
-  private likedItemsOrderSql(sort: string): string {
+  private playlistItemsOrderSql(sort: string): string {
     switch (sort) {
+      case 'addedDesc':
       case 'recent':
         return 'ORDER BY playlist_items.added_at DESC, playlist_items.position ASC';
       case 'titleDesc':
-        return "ORDER BY COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE DESC";
+        return "ORDER BY COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE DESC, playlist_items.position ASC";
       case 'titleAsc':
       case 'title':
-        return "ORDER BY COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC";
+        return "ORDER BY COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC, playlist_items.position ASC";
+      case 'artistAsc':
       case 'artist':
-        return "ORDER BY COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, '') COLLATE NOCASE ASC";
+        return "ORDER BY COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, '') COLLATE NOCASE ASC, COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC, playlist_items.position ASC";
       case 'album':
         return "ORDER BY COALESCE(playlist_items.album_snapshot, tracks.album, albums.title, '') COLLATE NOCASE ASC";
+      case 'manual':
       case 'default':
       default:
         return 'ORDER BY playlist_items.position ASC, playlist_items.added_at ASC';
     }
+  }
+
+  private likedItemsOrderSql(sort: string): string {
+    return this.playlistItemsOrderSql(sort);
   }
 
   private artistTrackOrderSql(sort: string): string {
@@ -3251,6 +3481,11 @@ export class LibraryStore {
       sampleRate: numberOrNull(row.sample_rate),
       bitDepth: numberOrNull(row.bit_depth),
       bitrate: numberOrNull(row.bitrate),
+      bpm: numberOrNull(row.bpm),
+      bpmConfidence: numberOrNull(row.bpm_confidence),
+      beatOffsetMs: numberOrNull(row.beat_offset_ms),
+      analysisStatus: this.mapAnalysisStatus(row.analysis_status),
+      analysisUpdatedAt: textOrNull(row.analysis_updated_at),
       coverId: textOrNull(row.cover_id),
       coverThumb: this.toCoverUrl(row.cover_id, 'thumb'),
       metadataStatus: textOrNull(row.metadata_status) ?? 'ok',
@@ -3292,6 +3527,20 @@ export class LibraryStore {
       value === 'candidate_found' ||
       value === 'applied_missing_only' ||
       value === 'rejected' ||
+      value === 'error'
+    ) {
+      return value;
+    }
+
+    return 'none';
+  }
+
+  private mapAnalysisStatus(value: unknown): LibraryTrack['analysisStatus'] {
+    if (
+      value === 'pending' ||
+      value === 'analyzing' ||
+      value === 'complete' ||
+      value === 'low_confidence' ||
       value === 'error'
     ) {
       return value;

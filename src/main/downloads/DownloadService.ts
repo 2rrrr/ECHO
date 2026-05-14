@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -24,6 +24,7 @@ import type { AccountCredentials, AccountProvider } from '../../shared/types/acc
 import { isSupportedAudioExtension } from '../../shared/constants/audioExtensions';
 import { getAccountService } from '../accounts/AccountService';
 import { getLibraryService } from '../library/LibraryService';
+import { getNcmConverter } from '../library/NcmConverter';
 import { getMvService } from '../mv/MvService';
 
 const defaultSettings: DownloadSettings = {
@@ -94,10 +95,33 @@ type YtDlpProbeResult = {
   webpage_url?: unknown;
 };
 
-type DownloadJobOptions = Required<Pick<DownloadSettings, 'importToLibrary' | 'bindMvAfterImport'>>;
+type DownloadJobOptions = Required<Pick<DownloadSettings, 'importToLibrary' | 'bindMvAfterImport'>> & {
+  requestHeaders: Record<string, string>;
+  suggestedTitle: string | null;
+  suggestedArtist: string | null;
+  suggestedAlbum: string | null;
+  suggestedAlbumArtist: string | null;
+  suggestedCoverUrl: string | null;
+  webpageUrl: string | null;
+  directAudio: boolean;
+  directAudioMimeType: string | null;
+  directAudioExtension: string | null;
+};
 
 type DownloadServiceDependencies = {
-  importAudioFile?: (filePath: string, options?: { folderPath?: string }) => Promise<{ id: string }>;
+  importAudioFile?: (
+    filePath: string,
+    options?: {
+      folderPath?: string;
+      metadata?: {
+        title?: string;
+        artist?: string;
+        album?: string;
+        albumArtist?: string;
+      };
+      coverUrl?: string | null;
+    },
+  ) => Promise<{ id: string }>;
   bindMvUrl?: (trackId: string, url: string) => unknown;
   streamingCommandRunner?: StreamingCommandRunner;
   fetch?: typeof fetch;
@@ -182,6 +206,88 @@ const sanitizeSettings = (value: Partial<DownloadSettings> | null | undefined, f
         ? null
         : fallback.outputDirectory,
 });
+
+const sanitizeTextOption = (value: unknown, maxLength: number): string | null =>
+  typeof value === 'string' && value.trim() ? value.trim().slice(0, maxLength) : null;
+
+const sanitizeRequestHeaders = (value: unknown): Record<string, string> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const headers: Record<string, string> = {};
+  for (const [rawName, rawValue] of Object.entries(value)) {
+    const name = rawName.trim();
+    const headerValue = typeof rawValue === 'string' ? rawValue.trim() : '';
+    if (!name || !headerValue || /[\r\n]/u.test(name) || /[\r\n]/u.test(headerValue) || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u.test(name)) {
+      continue;
+    }
+
+    headers[name] = headerValue;
+  }
+
+  return headers;
+};
+
+const sanitizeFilePart = (value: string): string => {
+  const cleaned = value
+    .replace(/[<>:"/\\|?*]/gu, ' ')
+    .split('')
+    .map((character) => (character.charCodeAt(0) < 32 ? ' ' : character))
+    .join('')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/[. ]+$/u, '');
+
+  return (cleaned || 'Untitled download').slice(0, 160);
+};
+
+const sanitizeExtension = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toLocaleLowerCase().replace(/^\./u, '');
+  return /^[a-z0-9]{2,5}$/u.test(normalized) ? normalized : null;
+};
+
+const extensionFromMimeType = (mimeType: string | null): string | null => {
+  const normalized = mimeType?.split(';')[0]?.trim().toLocaleLowerCase();
+  switch (normalized) {
+    case 'audio/flac':
+    case 'audio/x-flac':
+      return 'flac';
+    case 'audio/mp4':
+    case 'audio/x-m4a':
+      return 'm4a';
+    case 'audio/aac':
+      return 'aac';
+    case 'audio/ogg':
+      return 'ogg';
+    case 'audio/opus':
+      return 'opus';
+    case 'audio/wav':
+    case 'audio/wave':
+    case 'audio/x-wav':
+      return 'wav';
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return 'mp3';
+    default:
+      return null;
+  }
+};
+
+const extensionFromUrl = (url: string): string | null => {
+  try {
+    return sanitizeExtension(new URL(url).pathname.split('/').pop()?.split('.').pop());
+  } catch {
+    return null;
+  }
+};
+
+const hasHeader = (headers: Record<string, string>, name: string): boolean =>
+  Object.keys(headers).some((headerName) => headerName.toLocaleLowerCase() === name.toLocaleLowerCase());
 
 const getDownloadsSettingsPath = (): string | null => {
   try {
@@ -331,9 +437,18 @@ export class DownloadService extends EventEmitter {
 
     const outputStat = existsSync(outputDirectory) ? statSync(outputDirectory) : null;
     if (!outputStat?.isDirectory()) {
-      throw new Error(`下载文件夹不可用: ${outputDirectory}`);
+      throw new Error(`涓嬭浇鏂囦欢澶逛笉鍙敤: ${outputDirectory}`);
     }
 
+    const requestHeaders = sanitizeRequestHeaders(options.requestHeaders);
+    const suggestedTitle = sanitizeTextOption(options.title, 180);
+    const suggestedArtist = sanitizeTextOption(options.artist, 180);
+    const suggestedAlbum = sanitizeTextOption(options.album, 180);
+    const suggestedAlbumArtist = sanitizeTextOption(options.albumArtist, 180);
+    const suggestedCoverUrl = sanitizeTextOption(options.coverUrl, 2048);
+    const webpageUrl = sanitizeTextOption(options.webpageUrl, 2048);
+    const directAudioMimeType = sanitizeTextOption(options.directAudioMimeType, 128);
+    const directAudioExtension = sanitizeExtension(options.directAudioExtension);
     const now = new Date().toISOString();
     const job: DownloadJob = {
       id: randomUUID(),
@@ -341,10 +456,10 @@ export class DownloadService extends EventEmitter {
       provider: inferProvider(sourceUrl),
       audioStrategy: 'best_available',
       status: 'queued',
-      title: null,
+      title: suggestedTitle,
       durationSeconds: null,
-      thumbnailUrl: null,
-      webpageUrl: null,
+      thumbnailUrl: suggestedCoverUrl,
+      webpageUrl,
       outputPath: null,
       downloadedBytes: null,
       totalBytes: null,
@@ -361,6 +476,16 @@ export class DownloadService extends EventEmitter {
     this.jobOptions.set(job.id, {
       importToLibrary: options.importToLibrary ?? this.settings.importToLibrary,
       bindMvAfterImport: options.bindMvAfterImport ?? this.settings.bindMvAfterImport,
+      requestHeaders,
+      suggestedTitle,
+      suggestedArtist,
+      suggestedAlbum,
+      suggestedAlbumArtist,
+      suggestedCoverUrl,
+      webpageUrl,
+      directAudio: options.directAudio === true,
+      directAudioMimeType,
+      directAudioExtension,
     });
     this.jobs = [job, ...this.jobs];
     this.queuedJobIds.push(job.id);
@@ -415,7 +540,7 @@ export class DownloadService extends EventEmitter {
     const nextSettings = sanitizeSettings(patch, this.settings);
 
     if (nextSettings.outputDirectory && (!existsSync(nextSettings.outputDirectory) || !statSync(nextSettings.outputDirectory).isDirectory())) {
-      throw new Error(`下载文件夹不可用: ${nextSettings.outputDirectory}`);
+      throw new Error(`涓嬭浇鏂囦欢澶逛笉鍙敤: ${nextSettings.outputDirectory}`);
     }
 
     this.settings = nextSettings;
@@ -607,7 +732,7 @@ export class DownloadService extends EventEmitter {
     const rawMessage = result.stderr.trim() || result.stdout.trim() || `${provider} search failed`;
     const singleLineMessage = rawMessage.replace(/\s+/gu, ' ').trim();
     if (/could not copy .*cookie database/iu.test(singleLineMessage)) {
-      return '无法读取浏览器 Cookie，已尝试不使用登录状态搜索。';
+      return 'Unable to read browser cookies; retried search without login state.';
     }
 
     return singleLineMessage.length > 220 ? `${singleLineMessage.slice(0, 217)}...` : singleLineMessage;
@@ -867,7 +992,9 @@ export class DownloadService extends EventEmitter {
 
   private async runJob(jobId: string): Promise<void> {
     try {
-      await this.probe(jobId);
+      if (!this.jobOptions.get(jobId)?.directAudio) {
+        await this.probe(jobId);
+      }
       await this.download(jobId);
       await this.importAndBind(jobId);
       this.updateJob(jobId, {
@@ -900,7 +1027,8 @@ export class DownloadService extends EventEmitter {
     }
 
     const job = this.requireJob(jobId);
-    const command = this.commandRunner(ytDlpPath, ['--dump-json', '--no-playlist', job.sourceUrl]);
+    const options = this.jobOptions.get(jobId);
+    const command = this.commandRunner(ytDlpPath, [...this.headerArgs(options?.requestHeaders ?? {}), '--dump-json', '--no-playlist', job.sourceUrl]);
     this.runningCommands.set(jobId, command);
     const result = await command.promise;
     if (this.runningCommands.get(jobId) !== command) {
@@ -913,16 +1041,23 @@ export class DownloadService extends EventEmitter {
     }
 
     const metadata = this.parseProbeResult(result.stdout);
+    const metadataTitle = metadata.title && metadata.title !== 'Untitled download' ? metadata.title : (options?.suggestedTitle ?? metadata.title);
     this.updateJob(jobId, {
-      title: metadata.title,
+      title: metadataTitle ?? job.title,
       durationSeconds: metadata.durationSeconds,
       thumbnailUrl: metadata.thumbnailUrl,
-      webpageUrl: metadata.webpageUrl,
+      webpageUrl: options?.webpageUrl ?? metadata.webpageUrl,
     });
   }
 
   private async download(jobId: string): Promise<void> {
     const job = this.requireJob(jobId);
+    const options = this.jobOptions.get(jobId);
+    if (options?.directAudio) {
+      await this.downloadDirectAudio(jobId, options);
+      return;
+    }
+
     const ytDlpPath = this.ytDlpPathResolver();
     const ffmpegPath = this.getFfmpegPath();
     const outputDirectory = this.settings.outputDirectory;
@@ -944,6 +1079,7 @@ export class DownloadService extends EventEmitter {
       '--no-playlist',
       '--no-mtime',
       '--restrict-filenames',
+      ...this.headerArgs(this.jobOptions.get(jobId)?.requestHeaders ?? {}),
       '-f',
       'bestaudio/best',
       '--extract-audio',
@@ -990,13 +1126,154 @@ export class DownloadService extends EventEmitter {
     if (!outputPath) {
       throw new Error('Download finished but no audio file was produced');
     }
+    const decodedOutputPath = await getNcmConverter().convertIfNeeded(outputPath);
 
     this.updateJob(jobId, {
       status: 'extracting_audio',
-      outputPath,
+      outputPath: decodedOutputPath,
       progress: 96,
-      downloadedBytes: this.safeFileSize(outputPath),
+      downloadedBytes: this.safeFileSize(decodedOutputPath),
     });
+  }
+
+  private async downloadDirectAudio(jobId: string, options: DownloadJobOptions): Promise<void> {
+    const job = this.requireJob(jobId);
+    const outputDirectory = this.settings.outputDirectory;
+    const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
+    const requestHeaders = this.directAudioRequestHeaders(job, options);
+
+    if (!outputDirectory) {
+      throw new Error('请选择下载文件夹');
+    }
+
+    if (!fetchRunner) {
+      throw new Error('fetch is not available for direct audio downloads');
+    }
+
+    this.updateJob(jobId, { status: 'downloading', progress: Math.max(job.progress, 1) });
+    const response = await fetchRunner(job.sourceUrl, { headers: requestHeaders });
+    if (!response.ok) {
+      throw new Error(`Direct audio download failed: HTTP ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type');
+    const extension =
+      options.directAudioExtension ?? extensionFromMimeType(options.directAudioMimeType) ?? extensionFromMimeType(contentType) ?? extensionFromUrl(job.sourceUrl) ?? 'mp3';
+    const outputName = [options.suggestedArtist, options.suggestedTitle ?? job.title].filter(Boolean).join(' - ') || 'Streaming audio';
+    const outputPath = this.uniqueOutputPath(outputDirectory, `${sanitizeFilePart(outputName)}.${extension}`);
+    const totalBytes = Number(response.headers.get('content-length'));
+    this.updateJob(jobId, {
+      outputPath,
+      totalBytes: Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : null,
+    });
+
+    await this.writeResponseBodyToFile(jobId, response, outputPath);
+    const decodedOutputPath = await getNcmConverter().convertIfNeeded(outputPath);
+    this.updateJob(jobId, {
+      status: 'extracting_audio',
+      outputPath: decodedOutputPath,
+      progress: 96,
+      downloadedBytes: this.safeFileSize(decodedOutputPath),
+    });
+  }
+
+  private async writeResponseBodyToFile(jobId: string, response: Response, outputPath: string): Promise<void> {
+    const writer = createWriteStream(outputPath);
+    let downloadedBytes = 0;
+    const totalBytes = Number(response.headers.get('content-length'));
+    const safeTotalBytes = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : null;
+
+    try {
+      if (!response.body) {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        writer.write(buffer);
+        downloadedBytes = buffer.byteLength;
+      } else {
+        const reader = response.body.getReader();
+        try {
+          let reading = true;
+          while (reading) {
+            const { done, value } = await reader.read();
+            if (done) {
+              reading = false;
+              break;
+            }
+
+            const chunk = Buffer.from(value);
+            downloadedBytes += chunk.byteLength;
+            if (!writer.write(chunk)) {
+              await new Promise<void>((resolveDrain, rejectDrain) => {
+                writer.once('drain', resolveDrain);
+                writer.once('error', rejectDrain);
+              });
+            }
+
+            this.updateJob(
+              jobId,
+              {
+                status: 'downloading',
+                progress: safeTotalBytes ? Math.min(95, Math.max(1, (downloadedBytes / safeTotalBytes) * 95)) : Math.max(1, this.requireJob(jobId).progress),
+                downloadedBytes,
+                totalBytes: safeTotalBytes,
+              },
+              false,
+            );
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      }
+    } catch (error) {
+      writer.destroy();
+      throw error;
+    }
+
+    await new Promise<void>((resolveFinish, rejectFinish) => {
+      writer.once('finish', resolveFinish);
+      writer.once('error', rejectFinish);
+      writer.end();
+    });
+  }
+
+  private directAudioRequestHeaders(job: DownloadJob, options: DownloadJobOptions): Record<string, string> {
+    const headers = { ...options.requestHeaders };
+    const url = `${job.webpageUrl ?? ''} ${job.sourceUrl}`.toLocaleLowerCase();
+    const provider: Extract<AccountProvider, 'netease' | 'qqmusic'> | null =
+      url.includes('music.163.com') || url.includes('music.126.net')
+        ? 'netease'
+        : url.includes('y.qq.com') || url.includes('qqmusic.qq.com') || url.includes('gtimg.cn')
+          ? 'qqmusic'
+          : null;
+
+    if (!hasHeader(headers, 'User-Agent')) {
+      headers['User-Agent'] =
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    }
+
+    if (provider === 'netease') {
+      if (!hasHeader(headers, 'Referer')) {
+        headers.Referer = 'https://music.163.com/';
+      }
+      if (!hasHeader(headers, 'Origin')) {
+        headers.Origin = 'https://music.163.com';
+      }
+    } else if (provider === 'qqmusic') {
+      if (!hasHeader(headers, 'Referer')) {
+        headers.Referer = 'https://y.qq.com/';
+      }
+      if (!hasHeader(headers, 'Origin')) {
+        headers.Origin = 'https://y.qq.com';
+      }
+    }
+
+    if (provider && !hasHeader(headers, 'Cookie')) {
+      const cookie = this.getCredentials(provider).cookie?.trim();
+      if (cookie) {
+        headers.Cookie = cookie;
+      }
+    }
+
+    return headers;
   }
 
   private async importAndBind(jobId: string): Promise<void> {
@@ -1004,6 +1281,16 @@ export class DownloadService extends EventEmitter {
     const options = this.jobOptions.get(jobId) ?? {
       importToLibrary: this.settings.importToLibrary,
       bindMvAfterImport: this.settings.bindMvAfterImport,
+      requestHeaders: {},
+      suggestedTitle: null,
+      suggestedArtist: null,
+      suggestedAlbum: null,
+      suggestedAlbumArtist: null,
+      suggestedCoverUrl: null,
+      webpageUrl: null,
+      directAudio: false,
+      directAudioMimeType: null,
+      directAudioExtension: null,
     };
 
     if (!options.importToLibrary) {
@@ -1016,7 +1303,18 @@ export class DownloadService extends EventEmitter {
 
     this.updateJob(jobId, { status: 'importing', progress: 98 });
     const importAudioFile = this.dependencies.importAudioFile ?? ((filePath, importOptions) => getLibraryService().importAudioFile(filePath, importOptions));
-    const track = await importAudioFile(job.outputPath, { folderPath: this.settings.outputDirectory ?? dirname(job.outputPath) });
+    const track = await importAudioFile(job.outputPath, {
+      folderPath: this.settings.outputDirectory ?? dirname(job.outputPath),
+      metadata: options.directAudio
+        ? {
+            title: options.suggestedTitle ?? undefined,
+            artist: options.suggestedArtist ?? undefined,
+            album: options.suggestedAlbum ?? undefined,
+            albumArtist: options.suggestedAlbumArtist ?? options.suggestedArtist ?? undefined,
+          }
+        : undefined,
+      coverUrl: options.directAudio ? options.suggestedCoverUrl : undefined,
+    });
     this.updateJob(jobId, { importedTrackId: track.id });
 
     if (!options.bindMvAfterImport) {
@@ -1056,6 +1354,10 @@ export class DownloadService extends EventEmitter {
       },
       false,
     );
+  }
+
+  private headerArgs(headers: Record<string, string>): string[] {
+    return Object.entries(headers).flatMap(([name, value]) => ['--add-header', `${name}: ${value}`]);
   }
 
   private updateJob(jobId: string, patch: Partial<DownloadJob>, immediate = true): void {
@@ -1240,6 +1542,21 @@ export class DownloadService extends EventEmitter {
     return entries[0] ?? null;
   }
 
+  private uniqueOutputPath(outputDirectory: string, fileName: string): string {
+    const parsed = fileName.match(/^(.*?)(\.[^.]+)$/u);
+    const baseName = parsed?.[1] ?? fileName;
+    const extension = parsed?.[2] ?? '';
+    let candidate = resolve(outputDirectory, fileName);
+    let suffix = 2;
+
+    while (existsSync(candidate)) {
+      candidate = resolve(outputDirectory, `${baseName} (${suffix})${extension}`);
+      suffix += 1;
+    }
+
+    return candidate;
+  }
+
   private isSupportedAudioPath(filePath: string): boolean {
     return isSupportedAudioExtension(filePath);
   }
@@ -1268,7 +1585,9 @@ export class DownloadService extends EventEmitter {
         entryStat.isFile() &&
         entryStat.mtimeMs >= createdAtMs - 1000 &&
         (entry.endsWith('.part') || entry.endsWith('.ytdl'));
-      const shouldDelete = isRecentPartial || (jobIdMatch ? entry.includes(`[${jobIdMatch}]`) && !this.isSupportedAudioPath(entryPath) : false);
+      const isJobOutput =
+        Boolean(job.outputPath) && resolve(entryPath) === resolve(job.outputPath ?? '') && Number.isFinite(createdAtMs) && entryStat.mtimeMs >= createdAtMs - 1000;
+      const shouldDelete = isJobOutput || isRecentPartial || (jobIdMatch ? entry.includes(`[${jobIdMatch}]`) && !this.isSupportedAudioPath(entryPath) : false);
       if (shouldDelete) {
         rmSync(entryPath, { force: true, recursive: true, maxRetries: 3, retryDelay: 50 });
       }

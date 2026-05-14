@@ -74,10 +74,10 @@ const sharedStabilityProfiles: Record<
   Pick<NativeOutputStartOptions, 'bufferSizeFrames' | 'fifoCapacityMs' | 'startupPrebufferMs' | 'startupPrebufferTimeoutMs'>
 > = {
   standard: {
-    bufferSizeFrames: 2048,
-    fifoCapacityMs: 750,
-    startupPrebufferMs: 120,
-    startupPrebufferTimeoutMs: 600,
+    bufferSizeFrames: 1024,
+    fifoCapacityMs: 350,
+    startupPrebufferMs: 0,
+    startupPrebufferTimeoutMs: 0,
   },
   recovery: {
     bufferSizeFrames: 4096,
@@ -105,8 +105,7 @@ const latencyProfiles: Record<AudioLatencyProfile, Pick<NativeOutputStartOptions
   },
 };
 
-const defaultLatencyProfileForMode = (outputMode: AudioOutputMode): AudioLatencyProfile =>
-  outputMode === 'shared' ? 'stable' : 'balanced';
+const defaultLatencyProfileForMode = (_outputMode: AudioOutputMode): AudioLatencyProfile => 'lowLatency';
 
 const defaultLogger = (message: string): void => {
   console.warn(message);
@@ -254,7 +253,7 @@ const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
   outputDeviceType: null,
   outputBackend: null,
   outputMode: 'shared',
-  latencyProfile: 'stable',
+  latencyProfile: 'lowLatency',
   volume: 1,
   playbackRate: 1,
   playbackSpeedMode: 'nightcore',
@@ -417,7 +416,7 @@ export class AudioSession extends EventEmitter {
   private outputSettings: Required<Pick<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'>> &
     Omit<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'> = {
     outputMode: 'shared',
-    latencyProfile: 'stable',
+    latencyProfile: 'lowLatency',
     volume: 1,
     playbackRate: 1,
     playbackSpeedMode: 'nightcore',

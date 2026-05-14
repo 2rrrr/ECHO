@@ -1,19 +1,35 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { ChevronDown, Disc3, RefreshCw, Search } from 'lucide-react';
+import { Check, ChevronDown, Disc3, ListFilter, RefreshCw, Search } from 'lucide-react';
 import type { LibraryAlbum, LibrarySort } from '../../shared/types/library';
 import { AlbumDetailView } from '../components/album/AlbumDetailView';
 import { InfiniteScrollSentinel, readPageScrollTop, writePageScrollTop } from '../components/ui/InfiniteScrollSentinel';
 import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../components/ui/MediaWallScrollSpacer';
+import { useI18n } from '../i18n/I18nProvider';
+import type { TranslationKey } from '../i18n/locales';
 
 const pageSize = 60;
+const albumSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
+  { value: 'default', labelKey: 'library.sort.default' },
+  { value: 'titleAsc', labelKey: 'library.albums.sort.titleAsc' },
+  { value: 'titleDesc', labelKey: 'library.albums.sort.titleDesc' },
+  { value: 'artist', labelKey: 'library.albums.sort.artist' },
+  { value: 'createdAsc', labelKey: 'library.sort.createdAsc' },
+  { value: 'createdDesc', labelKey: 'library.sort.createdDesc' },
+  { value: 'durationAsc', labelKey: 'library.sort.durationAsc' },
+  { value: 'durationDesc', labelKey: 'library.sort.durationDesc' },
+  { value: 'recent', labelKey: 'library.sort.recent' },
+  { value: 'random', labelKey: 'library.sort.random' },
+];
 
 export const AlbumsPage = (): JSX.Element => {
+  const { t } = useI18n();
   const [albums, setAlbums] = useState<LibraryAlbum[]>([]);
   const [total, setTotal] = useState(0);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<LibrarySort>('default');
+  const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
@@ -22,6 +38,7 @@ export const AlbumsPage = (): JSX.Element => {
   const [failedCoverUrls, setFailedCoverUrls] = useState<Record<string, string>>({});
   const pageRootRef = useRef<HTMLDivElement | null>(null);
   const pageScrollTopRef = useRef(0);
+  const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const shouldRestorePageScrollRef = useRef(false);
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
@@ -41,6 +58,21 @@ export const AlbumsPage = (): JSX.Element => {
 
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (!isSortOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!sortMenuRef.current?.contains(event.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [isSortOpen]);
 
   const loadAlbums = useCallback(
     async (nextPage: number, mode: 'replace' | 'append') => {
@@ -62,7 +94,7 @@ export const AlbumsPage = (): JSX.Element => {
           setPage(1);
           setTotal(0);
           setHasMore(false);
-          setError('Desktop bridge unavailable. Open ECHO Next in Electron to read albums.');
+          setError(t('library.albums.error.desktopBridge'));
           return;
         }
 
@@ -95,7 +127,7 @@ export const AlbumsPage = (): JSX.Element => {
         }
       }
     },
-    [search, sort],
+    [search, sort, t],
   );
 
   useEffect(() => {
@@ -181,10 +213,10 @@ export const AlbumsPage = (): JSX.Element => {
     <div ref={pageRootRef} className="albums-page">
       <header className="songs-header">
         <div className="songs-title-group">
-          <h1>Albums</h1>
-          <span>{total} total</span>
+          <h1>{t('library.albums.title')}</h1>
+          <span>{t('library.count.total', { count: total })}</span>
         </div>
-        <button className="tool-button album-refresh" type="button" aria-label="Refresh" title="Refresh" onClick={handleRefresh}>
+        <button className="tool-button album-refresh" type="button" aria-label={t('library.action.refresh')} title={t('library.action.refresh')} onClick={handleRefresh}>
           <RefreshCw size={17} />
         </button>
       </header>
@@ -194,30 +226,48 @@ export const AlbumsPage = (): JSX.Element => {
           <Search size={18} aria-hidden="true" />
           <input
             type="search"
-            placeholder="Search albums / artists"
+            placeholder={t('library.albums.searchPlaceholder')}
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
           />
         </label>
 
-        <label className="sort-button sort-select">
-          <select value={sort} onChange={(event) => setSort(event.target.value as LibrarySort)}>
-            <option value="default">Default</option>
-            <option value="titleAsc">Title A-Z</option>
-            <option value="titleDesc">Title Z-A</option>
-            <option value="artist">Artist</option>
-            <option value="createdAsc">Created Oldest</option>
-            <option value="createdDesc">Created Newest</option>
-            <option value="durationAsc">Duration Shortest</option>
-            <option value="durationDesc">Duration Longest</option>
-            <option value="recent">Recent</option>
-            <option value="random">Random</option>
-          </select>
-          <ChevronDown size={15} />
-        </label>
+        <div className="sort-select" ref={sortMenuRef}>
+          <button
+            className="sort-button"
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={isSortOpen}
+            onClick={() => setIsSortOpen((current) => !current)}
+          >
+            <ListFilter className="sort-button-icon" size={16} aria-hidden="true" />
+            <span className="sort-button-label">{t(albumSortOptions.find((option) => option.value === sort)?.labelKey ?? 'library.sort.default')}</span>
+            <ChevronDown className="sort-button-chevron" size={15} aria-hidden="true" />
+          </button>
+          {isSortOpen ? (
+            <div className="sort-menu" role="listbox" aria-label={t('library.albums.sort.aria')}>
+              {albumSortOptions.map((option) => (
+                <button
+                  key={option.value}
+                  className="sort-option"
+                  type="button"
+                  role="option"
+                  aria-selected={sort === option.value}
+                  onClick={() => {
+                    setSort(option.value);
+                    setIsSortOpen(false);
+                  }}
+                >
+                  <span>{t(option.labelKey)}</span>
+                  {sort === option.value ? <Check size={14} /> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <section ref={albumWallRef} className="album-wall" aria-label="Album list">
+      <section ref={albumWallRef} className="album-wall" aria-label={t('library.albums.listAria')}>
         {albums.map((album) => {
           const shouldShowCover = Boolean(album.coverThumb && failedCoverUrls[album.id] !== album.coverThumb);
 
@@ -249,7 +299,7 @@ export const AlbumsPage = (): JSX.Element => {
               <div className="album-copy">
                 <strong>{album.title}</strong>
                 <span>{album.albumArtist}</span>
-                <small>{album.trackCount} tracks</small>
+                <small>{t('library.albums.card.tracks', { count: album.trackCount })}</small>
               </div>
             </article>
           );
@@ -260,7 +310,7 @@ export const AlbumsPage = (): JSX.Element => {
 
       {error || isLoading ? (
         <div className="list-footer">
-          <span>{error ?? 'Loading albums...'}</span>
+          <span>{error ?? t('library.albums.loading')}</span>
         </div>
       ) : null}
       <MediaWallScrollSpacer height={spacerHeight} />

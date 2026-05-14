@@ -440,6 +440,8 @@ describe('MvSettingsDrawer', () => {
 
     const playingLink = await screen.findByRole('link', { name: /Now playing: Bilibili - BV1MNV/ });
     expect(playingLink.getAttribute('href')).toBe('https://www.bilibili.com/video/BV1MNV');
+    fireEvent.click(playingLink);
+    expect(window.echo.mv.openExternal).toHaveBeenCalledWith('video-1');
 
     const badgeRow = screen.getByText('Direct stream (DASH)').closest('.mv-custom-badges');
     expect(badgeRow).toBeTruthy();

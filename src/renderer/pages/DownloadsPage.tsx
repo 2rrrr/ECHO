@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Download, FileAudio, FolderOpen, Link2, Search, Settings2, Square, Wrench, XCircle } from 'lucide-react';
 import type {
   DownloadJob,
@@ -222,6 +222,7 @@ export const DownloadsPage = (): JSX.Element => {
   const [error, setError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<'create' | 'clear' | 'tools' | 'folder' | 'search' | null>(null);
   const [needsFolder, setNeedsFolder] = useState(false);
+  const jobStatusRef = useRef<Map<string, DownloadJobStatus>>(new Map());
 
   const bridge = getDownloadsBridge();
   const completedCount = useMemo(() => jobs.filter((job) => terminalStatuses.has(job.status)).length, [jobs]);
@@ -240,7 +241,9 @@ export const DownloadsPage = (): JSX.Element => {
     }
 
     try {
-      setJobs(await bridge.getJobs());
+      const nextJobs = await bridge.getJobs();
+      jobStatusRef.current = new Map(nextJobs.map((job) => [job.id, job.status]));
+      setJobs(nextJobs);
     } catch (jobsError) {
       setError(formatError(jobsError));
     }
@@ -273,6 +276,15 @@ export const DownloadsPage = (): JSX.Element => {
     void refreshTools();
 
     return bridge.onJobsUpdated?.((nextJobs) => {
+      for (const job of nextJobs) {
+        const previousStatus = jobStatusRef.current.get(job.id);
+        if (previousStatus && previousStatus !== 'completed' && job.status === 'completed') {
+          setMessage(`下载完成：${job.title ?? job.sourceUrl}`);
+          setError(null);
+          break;
+        }
+      }
+      jobStatusRef.current = new Map(nextJobs.map((job) => [job.id, job.status]));
       setJobs(nextJobs);
     });
   }, [bridge, refreshJobs, refreshTools]);
@@ -294,6 +306,7 @@ export const DownloadsPage = (): JSX.Element => {
         importToLibrary: settings.importToLibrary,
         bindMvAfterImport: settings.bindMvAfterImport,
       });
+      jobStatusRef.current.set(job.id, job.status);
       setJobs((current) => (current.some((item) => item.id === job.id) ? current : [job, ...current]));
       setNeedsFolder(false);
       return job;

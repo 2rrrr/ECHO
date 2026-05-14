@@ -6,6 +6,7 @@ import { ensureTray, isAppQuitRequested } from './tray';
 import { clearMainWindow, setMainWindow } from './windowManager';
 
 const mainOutputDir = import.meta.dirname;
+const appIconPath = join(mainOutputDir, '../../software.ico');
 
 export const resolvePreloadPath = (baseDir = mainOutputDir): string => {
   const mjsPreload = join(baseDir, '../preload/index.mjs');
@@ -24,6 +25,7 @@ export const createMainWindow = (): BrowserWindow => {
     minWidth: 1120,
     minHeight: 760,
     title: 'ECHO NEXT',
+    icon: existsSync(appIconPath) ? appIconPath : undefined,
     backgroundColor: '#f7f9fc',
     frame: false,
     show: false,

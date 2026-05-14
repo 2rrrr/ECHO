@@ -781,7 +781,7 @@ export class MvService {
     const settings = this.getSettings();
     let variants = this.getValidStreamRows(row.id);
 
-    if (variants.length === 0) {
+    if (variants.length === 0 || this.shouldRefreshResolvedStreams(row, variants, settings)) {
       const provider = this.onlineProviderMap.get(providerId);
       if (!provider) {
         throw new Error(`MV provider ${providerId} is unavailable`);
@@ -1159,6 +1159,17 @@ export class MvService {
 
   private isExpired(variant: TrackVideoStreamRow): boolean {
     return Boolean(variant.expires_at && Date.parse(variant.expires_at) <= Date.now());
+  }
+
+  private shouldRefreshResolvedStreams(row: TrackVideoRow, variants: TrackVideoStreamRow[], settings: MvSettings): boolean {
+    if (row.provider !== 'bilibili' || variants.length === 0 || maxQualityHeight(settings.maxQuality) <= 720) {
+      return false;
+    }
+
+    return !variants.some((variant) => {
+      const raw = parseJson(variant.raw_json);
+      return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>).resolver === 'bilibili-dash-v2');
+    });
   }
 
   private chooseAutoCandidate<T extends Pick<TrackVideo | MvMatchCandidate, 'id' | 'provider' | 'playableInApp' | 'score'> & { viewCount?: number | null }>(

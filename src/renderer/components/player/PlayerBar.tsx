@@ -440,10 +440,6 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     window.dispatchEvent(new Event('app:navigate:queue'));
   }, []);
 
-  const handleOpenNowPlaying = useCallback((): void => {
-    window.dispatchEvent(new Event('app:navigate:now-playing'));
-  }, []);
-
   const handleOpenLyrics = useCallback((): void => {
     window.dispatchEvent(new Event('app:navigate:lyrics'));
   }, []);
@@ -551,9 +547,9 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           className="player-cover"
           data-empty={!artworkUrl}
           type="button"
-          aria-label="Open Now Playing"
-          title="Open Now Playing"
-          onClick={handleOpenNowPlaying}
+          aria-label="打开歌词"
+          title="打开歌词"
+          onClick={handleOpenLyrics}
         >
           {artworkUrl ? (
             <img alt="" src={artworkUrl} />
@@ -595,7 +591,6 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           durationSeconds={durationSeconds}
           positionSeconds={displayedPositionSeconds}
           onCommit={(nextPositionSeconds) => void commitSeek(nextPositionSeconds)}
-          onPreview={setSeekPreviewSeconds}
         />
         {error ? <span className="player-error">{error}</span> : null}
       </div>

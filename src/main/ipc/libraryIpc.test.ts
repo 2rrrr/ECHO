@@ -81,6 +81,66 @@ const installLibraryService = () => {
   };
   const service = {
     getTrack: vi.fn(() => track),
+    getPlaylist: vi.fn(() => ({
+      id: 'playlist-1',
+      name: 'Export Mix',
+      description: 'For export',
+      kind: 'manual',
+      sourceProvider: 'local',
+      sourcePlaylistId: null,
+      coverId: null,
+      coverThumb: null,
+      sortMode: 'manual',
+      itemCount: 2,
+      createdAt: '2026-05-14T00:00:00.000Z',
+      updatedAt: '2026-05-14T00:00:00.000Z',
+    })),
+    getPlaylistItems: vi.fn(() => ({
+      items: [
+        {
+          id: 'item-1',
+          playlistId: 'playlist-1',
+          mediaType: 'track',
+          mediaId: 'track-1',
+          sourceProvider: 'local',
+          sourceItemId: null,
+          titleSnapshot: 'Local, Song',
+          artistSnapshot: 'Suara',
+          albumSnapshot: 'Music',
+          durationSnapshot: 123,
+          coverId: null,
+          coverThumb: null,
+          position: 0,
+          addedAt: '2026-05-14T00:00:00.000Z',
+          addedFrom: 'manual',
+          unavailable: false,
+          track,
+        },
+        {
+          id: 'item-2',
+          playlistId: 'playlist-1',
+          mediaType: 'stream_track',
+          mediaId: 'stream-1',
+          sourceProvider: 'netease',
+          sourceItemId: 'song-1',
+          titleSnapshot: 'Stream "Song"',
+          artistSnapshot: 'Net Artist',
+          albumSnapshot: 'Net Album',
+          durationSnapshot: 456,
+          coverId: null,
+          coverThumb: null,
+          position: 1,
+          addedAt: '2026-05-14T00:00:01.000Z',
+          addedFrom: 'streaming-playlist',
+          unavailable: false,
+          track: null,
+        },
+      ],
+      page: 1,
+      pageSize: 500,
+      total: 2,
+      hasMore: false,
+    })),
     resolveCoverAsset: vi.fn(() => null),
     addFolder: vi.fn(),
     getFolders: vi.fn(),
@@ -196,6 +256,51 @@ describe('library IPC', () => {
     );
     expect(existsSync(outputPath)).toBe(true);
     expect(readFileSync(outputPath).subarray(1, 4).toString()).toBe('PNG');
+  });
+
+  it('exports playlists as json, txt, m3u8, and csv', async () => {
+    const service = installLibraryService();
+    const root = makeTempRoot();
+    const formats = ['json', 'txt', 'm3u8', 'csv'] as const;
+
+    for (const format of formats) {
+      const outputPath = join(root, `playlist.${format}`);
+      showSaveDialogMock.mockResolvedValueOnce({ canceled: false, filePath: outputPath });
+
+      const result = await handlers[IpcChannels.LibraryExportPlaylist]!(null, { playlistId: 'playlist-1', format });
+
+      expect(result).toBe(outputPath);
+      expect(existsSync(outputPath)).toBe(true);
+      const content = readFileSync(outputPath, 'utf8');
+      if (format === 'json') {
+        expect(JSON.parse(content)).toMatchObject({
+          playlist: { id: 'playlist-1', name: 'Export Mix' },
+          tracks: [{ title: 'Local, Song', path: 'D:\\Music\\song.flac' }],
+        });
+      } else if (format === 'txt') {
+        expect(content).toContain('Export Mix');
+        expect(content).toContain('1. Local, Song - Suara');
+      } else if (format === 'm3u8') {
+        expect(content).toContain('#EXTM3U');
+        expect(content).toContain('D:\\Music\\song.flac');
+        expect(content).toContain('# Stream "Song" - Net Artist (netease:song-1)');
+      } else {
+        expect(content).toContain('title,artist,album,duration,path,provider,sourceItemId,unavailable');
+        expect(content).toContain('"Local, Song",Suara,Music,123,D:\\Music\\song.flac,local,,false');
+        expect(content).toContain('"Stream ""Song""",Net Artist,Net Album,456,,netease,song-1,false');
+      }
+    }
+
+    expect(service.getPlaylist).toHaveBeenCalledWith('playlist-1');
+    expect(service.getPlaylistItems).toHaveBeenCalledWith('playlist-1', { page: 1, pageSize: 500 });
+  });
+
+  it('returns null when playlist export is cancelled', async () => {
+    showSaveDialogMock.mockResolvedValue({ canceled: true, filePath: undefined });
+
+    const result = await handlers[IpcChannels.LibraryExportPlaylist]!(null, { playlistId: 'playlist-1', format: 'json' });
+
+    expect(result).toBeNull();
   });
 
   it('refreshes album grouping through IPC', async () => {

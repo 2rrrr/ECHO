@@ -44,6 +44,8 @@ const writeStoredSort = (sort: LibrarySort): void => {
   } catch {
     // Sort memory should not block the song list in restricted storage environments.
   }
+
+  void window.echo?.app.setSettings({ songsSort: sort }).catch(() => undefined);
 };
 
 type TrackMenuState = {
@@ -89,6 +91,38 @@ export const SongsPage = (): JSX.Element => {
     () => ({ type: 'songs' as const, label: '歌曲列表', search: search || undefined, sort, hideDuplicates }),
     [hideDuplicates, search, sort],
   );
+
+  useEffect(() => {
+    let isMounted = true;
+    const appBridge = window.echo?.app;
+
+    if (!appBridge) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    void appBridge
+      .getSettings()
+      .then((settings) => {
+        if (!isMounted) {
+          return;
+        }
+
+        const localSort = readStoredSort();
+        const nextSort = (settings.appMemoryVersion ?? 0) < 1 && localSort !== 'default' ? localSort : (settings.songsSort ?? 'default');
+
+        if (validSortValues.has(nextSort)) {
+          setSort(nextSort);
+          writeStoredSort(nextSort);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

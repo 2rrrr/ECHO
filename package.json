@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@fontsource/outfit": "^5.2.8",
+    "@neteasecloudmusicapienhanced/api": "^4.31.0",
     "@tanstack/react-virtual": "^3.13.24",
     "@vitejs/plugin-react": "^5.1.4",
     "better-sqlite3": "^12.9.0",
@@ -74,12 +75,13 @@
     "appId": "app.echo.next",
     "productName": "ECHO NEXT",
     "executableName": "ECHO NEXT",
-    "icon": "software.png",
+    "icon": "software.ico",
     "directories": {
       "output": "dist"
     },
     "files": [
       "out/**",
+      "software.ico",
       "package.json"
     ],
     "extraResources": [
@@ -104,7 +106,7 @@
       "node_modules/sharp/**/*"
     ],
     "win": {
-      "icon": "software.png",
+      "icon": "software.ico",
       "publish": [
         {
           "provider": "github",
@@ -172,7 +174,9 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "software.ico",
+      "uninstallerIcon": "software.ico"
     }
   }
 }

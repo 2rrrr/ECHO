@@ -63,7 +63,14 @@ const tagsFromTrack = (track: LibraryTrack): HifiTag[] => {
     });
   }
 
-  return tags.slice(0, 4);
+  if (track.bpm) {
+    tags.push({
+      label: `${Math.round(track.bpm)} BPM`,
+      kind: 'bpm',
+    });
+  }
+
+  return tags.slice(0, 5);
 };
 
 const tagClassNameByKind: Record<HifiTagKind, string> = {

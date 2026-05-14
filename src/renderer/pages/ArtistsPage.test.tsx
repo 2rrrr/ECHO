@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ArtistsPage } from './ArtistsPage';
 import type { LibraryArtist, LibraryPage } from '../../shared/types/library';
+import { I18nProvider } from '../i18n/I18nProvider';
 
 vi.mock('../components/artist/ArtistDetailView', () => ({
   ArtistDetailView: ({ artist, onBack }: { artist: LibraryArtist; onBack: () => void }) => (
@@ -67,9 +68,11 @@ const installLibrary = (
 
 const renderArtistsPage = (): ReturnType<typeof render> =>
   render(
-    <main className="page-surface">
-      <ArtistsPage />
-    </main>,
+    <I18nProvider>
+      <main className="page-surface">
+        <ArtistsPage />
+      </main>
+    </I18nProvider>,
   );
 
 const setScrollablePageSurface = (element: HTMLElement): void => {
@@ -79,6 +82,7 @@ const setScrollablePageSurface = (element: HTMLElement): void => {
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', undefined);
+  window.localStorage.setItem('echo-next.locale', 'en-US');
 });
 
 afterEach(() => {
@@ -141,7 +145,8 @@ describe('ArtistsPage', () => {
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(2));
     expect(getArtists).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 96, search: '2hollis', sort: 'default' });
 
-    fireEvent.change(screen.getByDisplayValue('Default'), { target: { value: 'frequent' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Default' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Most Tracks' }));
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(3));
     expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '2hollis', sort: 'frequent' });
   });
@@ -167,7 +172,8 @@ describe('ArtistsPage', () => {
     expect(pageSurface.scrollTop).toBe(0);
 
     pageSurface.scrollTop = 520;
-    fireEvent.change(screen.getByDisplayValue('Default'), { target: { value: 'frequent' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Default' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Most Tracks' }));
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(3));
     expect(pageSurface.scrollTop).toBe(0);
   });

@@ -16,6 +16,7 @@ import {
   eqMinGainDb,
   eqMinPreampDb,
 } from '../../shared/types/eq';
+import type { StreamingPlaylistImportResult } from '../../shared/types/streaming';
 
 export const getEchoBridge = (): Window['echo'] | null => window.echo ?? null;
 
@@ -387,4 +388,47 @@ export const getPlaybackBridge = (): Window['echo']['playback'] | null => getEch
 
 export const getRemoteSourcesBridge = (): Window['echo']['remoteSources'] | null => getEchoBridge()?.remoteSources ?? null;
 
-export const getStreamingBridge = (): Window['echo']['streaming'] | null => getEchoBridge()?.streaming ?? null;
+type StreamingBridgeApi = NonNullable<Window['echo']>['streaming'];
+
+const devApiBaseUrl = 'http://127.0.0.1:5174';
+
+const importPlaylistFromDevApi = async (url: string): Promise<StreamingPlaylistImportResult> => {
+  const response = await fetch(`${devApiBaseUrl}/streaming/import-playlist`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ url }),
+  }).catch(() => {
+    throw new Error('本地开发接口未启动，请重启 npm run dev 后再添加歌单。');
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? '添加流媒体歌单失败');
+  }
+
+  return payload as StreamingPlaylistImportResult;
+};
+
+const browserStreamingBridge: StreamingBridgeApi = {
+  search: async () => {
+    throw new Error('桌面桥接不可用，请在 ECHO Next 客户端窗口中搜索流媒体。');
+  },
+  getTrack: async () => {
+    throw new Error('桌面桥接不可用，请在 ECHO Next 客户端窗口中读取流媒体歌曲。');
+  },
+  resolvePlayback: async () => {
+    throw new Error('桌面桥接不可用，请在 ECHO Next 客户端窗口中播放流媒体。');
+  },
+  getLyrics: async () => {
+    throw new Error('桌面桥接不可用，请在 ECHO Next 客户端窗口中读取歌词。');
+  },
+  getMv: async () => {
+    throw new Error('桌面桥接不可用，请在 ECHO Next 客户端窗口中读取 MV。');
+  },
+  getProviders: async () => [],
+  importPlaylistFromUrl: importPlaylistFromDevApi,
+};
+
+export const getStreamingBridge = (): Window['echo']['streaming'] | null => getEchoBridge()?.streaming ?? browserStreamingBridge;

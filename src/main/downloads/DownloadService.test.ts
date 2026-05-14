@@ -26,6 +26,22 @@ const flushMicrotasks = async (): Promise<void> => {
   }
 };
 
+const waitForJob = async (service: DownloadService, jobId: string): Promise<ReturnType<DownloadService['getJobs']>[number]> => {
+  for (let index = 0; index < 20; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const job = service.getJobs().find((item) => item.id === jobId);
+    if (job && (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled')) {
+      return job;
+    }
+  }
+
+  const job = service.getJobs().find((item) => item.id === jobId);
+  if (!job) {
+    throw new Error(`Missing job ${jobId}`);
+  }
+  return job;
+};
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
@@ -433,9 +449,7 @@ describe('DownloadService', () => {
     service.setSettings({ outputDirectory, importToLibrary: false });
 
     const job = service.createUrlJob('https://www.youtube.com/watch?v=probe', { importToLibrary: false });
-    await flushMicrotasks();
-
-    const completedJob = service.getJobs().find((item) => item.id === job.id)!;
+    const completedJob = await waitForJob(service, job.id);
     expect(commandRunner).toHaveBeenCalledWith(ytDlpPath, ['--dump-json', '--no-playlist', 'https://www.youtube.com/watch?v=probe']);
     expect(streamingCommandRunner).toHaveBeenCalled();
     expect(completedJob.title).toBe('Probe Song');
@@ -443,6 +457,220 @@ describe('DownloadService', () => {
     expect(completedJob.thumbnailUrl).toBe('https://img.example/cover.jpg');
     expect(completedJob.status).toBe('completed');
     expect(completedJob.outputPath).toBe(outputPath);
+  });
+
+  it('passes direct streaming headers to yt-dlp and keeps the suggested source metadata', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const outputPath = join(outputDirectory, 'Streaming Song [direct].m4a');
+    const commandRunner = vi.fn(() => ({
+      promise: Promise.resolve({
+        stdout: JSON.stringify({
+          duration: 180,
+          webpage_url: 'https://cdn.example/audio.m4a',
+        }),
+        stderr: '',
+        exitCode: 0,
+      }),
+      kill: vi.fn(),
+    }));
+    const streamingCommandRunner = vi.fn((_command, _args, listeners) => {
+      writeFileSync(outputPath, 'audio');
+      listeners.onStdout?.(outputPath);
+      return {
+        promise: Promise.resolve({ stdout: outputPath, stderr: '', exitCode: 0 }),
+        kill: vi.fn(),
+      };
+    });
+    const service = new DownloadService(commandRunner, () => ytDlpPath, { streamingCommandRunner });
+    service.setSettings({ outputDirectory, importToLibrary: false });
+
+    const job = service.createUrlJob('https://cdn.example/audio.m4a?token=abc', {
+      importToLibrary: false,
+      title: 'Streaming Song - Artist',
+      webpageUrl: 'https://music.163.com/#/song?id=123',
+      requestHeaders: {
+        Referer: 'https://music.163.com/',
+        'User-Agent': 'ECHO Test',
+      },
+    });
+    const completedJob = await waitForJob(service, job.id);
+    expect(commandRunner).toHaveBeenCalledWith(ytDlpPath, [
+      '--add-header',
+      'Referer: https://music.163.com/',
+      '--add-header',
+      'User-Agent: ECHO Test',
+      '--dump-json',
+      '--no-playlist',
+      'https://cdn.example/audio.m4a?token=abc',
+    ]);
+    expect(streamingCommandRunner).toHaveBeenCalledWith(
+      ytDlpPath,
+      expect.arrayContaining(['--add-header', 'Referer: https://music.163.com/', '--add-header', 'User-Agent: ECHO Test']),
+      expect.any(Object),
+    );
+    expect(completedJob.title).toBe('Streaming Song - Artist');
+    expect(completedJob.webpageUrl).toBe('https://music.163.com/#/song?id=123');
+    expect(completedJob.status).toBe('completed');
+  });
+
+  it('downloads direct streaming audio without probing through yt-dlp', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const commandRunner = vi.fn(() => ({
+      promise: Promise.resolve({ stdout: '', stderr: 'should not run', exitCode: 1 }),
+      kill: vi.fn(),
+    }));
+    const fetchRunner = vi.fn(async () => {
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: {
+          'content-length': '4',
+          'content-type': 'audio/flac',
+        },
+      });
+    });
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      fetch: fetchRunner,
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+    service.setSettings({ outputDirectory, importToLibrary: false });
+
+    const job = service.createUrlJob('https://cdn.example/audio?token=abc', {
+      importToLibrary: false,
+      title: 'Streaming Song - Artist',
+      webpageUrl: 'https://music.163.com/#/song?id=123',
+      requestHeaders: {
+        Referer: 'https://music.163.com/',
+      },
+      directAudio: true,
+      directAudioMimeType: 'audio/flac',
+      directAudioExtension: 'flac',
+    });
+    const completedJob = await waitForJob(service, job.id);
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(fetchRunner).toHaveBeenCalledWith(
+      'https://cdn.example/audio?token=abc',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Origin: 'https://music.163.com',
+          Referer: 'https://music.163.com/',
+          'User-Agent': expect.stringContaining('Mozilla/5.0'),
+        }),
+      }),
+    );
+    expect(completedJob.status).toBe('completed');
+    expect(completedJob.outputPath).toContain('Streaming Song - Artist');
+    expect(completedJob.outputPath).toMatch(/\.flac$/u);
+    expect(completedJob.downloadedBytes).toBe(4);
+    expect(existsSync(completedJob.outputPath!)).toBe(true);
+  });
+
+  it('adds provider auth headers to direct NetEase audio downloads in the main process', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const fetchRunner = vi.fn(async () => {
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: {
+          'content-length': '4',
+          'content-type': 'audio/mpeg',
+        },
+      });
+    });
+    const service = new DownloadService(
+      vi.fn(() => ({
+        promise: Promise.resolve({ stdout: '', stderr: 'should not run', exitCode: 1 }),
+        kill: vi.fn(),
+      })),
+      () => ytDlpPath,
+      {
+        fetch: fetchRunner,
+        getAccountCredentials: (provider) => (provider === 'netease' ? { provider, cookie: 'MUSIC_U=secret' } : { provider }),
+      },
+    );
+    service.setSettings({ outputDirectory, importToLibrary: false });
+
+    const job = service.createUrlJob('https://m801.music.126.net/audio.mp3', {
+      importToLibrary: false,
+      title: 'Streaming Song - Artist',
+      webpageUrl: 'https://music.163.com/#/song?id=123',
+      directAudio: true,
+      directAudioMimeType: 'audio/mpeg',
+      directAudioExtension: 'mp3',
+    });
+    const completedJob = await waitForJob(service, job.id);
+
+    expect(fetchRunner).toHaveBeenCalledWith(
+      'https://m801.music.126.net/audio.mp3',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Cookie: 'MUSIC_U=secret',
+          Origin: 'https://music.163.com',
+          Referer: 'https://music.163.com/',
+          'User-Agent': expect.stringContaining('Mozilla/5.0'),
+        }),
+      }),
+    );
+    expect(completedJob.status).toBe('completed');
+  });
+
+  it('does not bind MV links for imported direct streaming audio', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const bindMvUrl = vi.fn(() => {
+      throw new Error('Unsupported MV link. Paste a YouTube or Bilibili video URL.');
+    });
+    const importAudioFile = vi.fn(async () => ({ id: 'track-1' }));
+    const service = new DownloadService(
+      vi.fn(() => ({
+        promise: Promise.resolve({ stdout: '', stderr: 'should not run', exitCode: 1 }),
+        kill: vi.fn(),
+      })),
+      () => ytDlpPath,
+      {
+        bindMvUrl,
+        fetch: vi.fn(async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { 'content-type': 'audio/mpeg' } })),
+        importAudioFile,
+        getAccountCredentials: (provider) => ({ provider }),
+      },
+    );
+    service.setSettings({ outputDirectory, importToLibrary: true, bindMvAfterImport: true });
+
+    const job = service.createUrlJob('https://m801.music.126.net/audio.mp3', {
+      title: 'Streaming Song',
+      artist: 'Artist',
+      album: 'Streaming Album',
+      albumArtist: 'Artist',
+      coverUrl: 'echo-image://remote/https%3A%2F%2Fp.music.126.net%2Fcover.jpg?referer=https%3A%2F%2Fmusic.163.com%2F',
+      webpageUrl: 'https://music.163.com/#/song?id=123',
+      bindMvAfterImport: false,
+      directAudio: true,
+      directAudioMimeType: 'audio/mpeg',
+      directAudioExtension: 'mp3',
+    });
+    const completedJob = await waitForJob(service, job.id);
+
+    expect(completedJob.status).toBe('completed');
+    expect(completedJob.importedTrackId).toBe('track-1');
+    expect(completedJob.outputPath).toContain('Artist - Streaming Song');
+    expect(service.getJobs()[0].thumbnailUrl).toBe('echo-image://remote/https%3A%2F%2Fp.music.126.net%2Fcover.jpg?referer=https%3A%2F%2Fmusic.163.com%2F');
+    expect(service.getJobs()[0].title).toBe('Streaming Song');
+    expect(service.getJobs()[0].outputPath).not.toContain(completedJob.id);
+    expect(importAudioFile).toHaveBeenCalledWith(
+      completedJob.outputPath,
+      expect.objectContaining({
+        folderPath: outputDirectory,
+        metadata: {
+          title: 'Streaming Song',
+          artist: 'Artist',
+          album: 'Streaming Album',
+          albumArtist: 'Artist',
+        },
+        coverUrl: 'echo-image://remote/https%3A%2F%2Fp.music.126.net%2Fcover.jpg?referer=https%3A%2F%2Fmusic.163.com%2F',
+      }),
+    );
+    expect(bindMvUrl).not.toHaveBeenCalled();
   });
 
   it('marks the job failed when yt-dlp probe fails', async () => {

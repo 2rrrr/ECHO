@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { DragEvent } from 'react';
+import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react';
 import {
   Check,
   ChevronDown,
@@ -552,6 +552,18 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
     }
   }, [selectedVideo]);
 
+  const openSelectedProviderUrl = useCallback(
+    (event: ReactMouseEvent<HTMLAnchorElement>): void => {
+      if (!selectedVideo || !window.echo?.mv?.openExternal) {
+        return;
+      }
+
+      event.preventDefault();
+      void openExternal();
+    },
+    [openExternal, selectedVideo],
+  );
+
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
@@ -747,7 +759,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
             </div>
             {selectedVideo?.providerUrl ? (
               <div className="mv-custom-status">
-                <a href={selectedVideo.providerUrl} target="_blank" rel="noreferrer">
+                <a href={selectedVideo.providerUrl} target="_blank" rel="noreferrer" onClick={openSelectedProviderUrl}>
                   {t('mvSettings.custom.playing', { provider: providerLabelForVideo(selectedVideo), sourceId: selectedVideo.sourceId ?? selectedVideo.id })}
                   <ExternalLink size={12} />
                 </a>

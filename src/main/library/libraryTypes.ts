@@ -31,6 +31,11 @@ import type {
   FinishPlaybackHistoryRequest,
   CreatePlaylistRequest,
   UpdatePlaylistRequest,
+  ExportPlaylistRequest,
+  PlaylistExportFormat,
+  BpmAnalysisJobStatus,
+  BpmAnalysisResult,
+  BpmAnalysisStartOptions,
 } from '../../shared/types/library';
 
 export type {
@@ -66,6 +71,11 @@ export type {
   FinishPlaybackHistoryRequest,
   CreatePlaylistRequest,
   UpdatePlaylistRequest,
+  ExportPlaylistRequest,
+  PlaylistExportFormat,
+  BpmAnalysisJobStatus,
+  BpmAnalysisResult,
+  BpmAnalysisStartOptions,
 };
 
 export type ScannedAudioFile = {
@@ -112,6 +122,7 @@ export type MetadataFields = {
   sampleRate: number | null;
   bitDepth: number | null;
   bitrate: number | null;
+  bpm?: number | null;
 };
 
 export type MetadataStatus = 'ok' | 'fallback' | 'error';

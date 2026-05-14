@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPage } from './SettingsPage';
 import type { AppSettings } from '../../shared/types/appSettings';
+import type { DownloadSettings } from '../../shared/types/downloads';
 
 const settings: AppSettings = {
   albumMergeStrategy: 'standard',
@@ -80,6 +81,15 @@ const resetSettingsMock = vi.fn();
 const clearCacheMock = vi.fn();
 const chooseLyricsWallpaperMock = vi.fn();
 const chooseAppWallpaperMock = vi.fn();
+const getDownloadSettingsMock = vi.fn();
+const chooseDownloadOutputDirectoryMock = vi.fn();
+
+const downloadSettings: DownloadSettings = {
+  audioStrategy: 'best_available',
+  importToLibrary: true,
+  bindMvAfterImport: true,
+  outputDirectory: 'D:\\Downloads',
+};
 
 vi.mock('../i18n/I18nProvider', () => ({
   useI18n: () => ({
@@ -121,6 +131,10 @@ vi.mock('../utils/echoBridge', () => ({
     openDiagnosticsFolder: vi.fn(),
     openCrashReport: vi.fn().mockResolvedValue('D:\\Echo\\crash-report.md'),
     openAudioCrashReport: vi.fn().mockResolvedValue('D:\\Echo\\audio-crash-report.md'),
+  }),
+  getDownloadsBridge: () => ({
+    getSettings: getDownloadSettingsMock,
+    chooseOutputDirectory: chooseDownloadOutputDirectoryMock,
   }),
   getLibraryBridge: () => ({
     clearCache: clearCacheMock,
@@ -166,6 +180,8 @@ vi.mock('../components/settings/RemoteSourcesPanel', () => ({
 }));
 
 beforeEach(() => {
+  getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+  chooseDownloadOutputDirectoryMock.mockResolvedValue({ ...downloadSettings, outputDirectory: 'E:\\Music Downloads' });
   window.echo = {
     app: {
       getSettings: getSettingsMock,
@@ -190,6 +206,8 @@ describe('SettingsPage', () => {
     setSettingsMock.mockResolvedValue({ ...settings, artistWallAlbumArtwork: true });
     resetSettingsMock.mockResolvedValue(settings);
     clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+    chooseDownloadOutputDirectoryMock.mockResolvedValue({ ...downloadSettings, outputDirectory: 'E:\\Music Downloads' });
     window.addEventListener('settings:changed', settingsChanged);
 
     render(<SettingsPage />);
@@ -203,6 +221,27 @@ describe('SettingsPage', () => {
     expect(settingsChanged).toHaveBeenCalledTimes(1);
 
     window.removeEventListener('settings:changed', settingsChanged);
+  });
+
+  it('chooses the download folder from Settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+    chooseDownloadOutputDirectoryMock.mockResolvedValue({ ...downloadSettings, outputDirectory: 'E:\\Music Downloads' });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.library.label')[0]);
+    expect(await screen.findByText('D:\\Downloads')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '更换文件夹' }));
+
+    await waitFor(() => expect(chooseDownloadOutputDirectoryMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('E:\\Music Downloads')).toBeTruthy();
+    expect(screen.getByText('下载路径已更新。')).toBeTruthy();
   });
 
   it('saves the lyrics player bar drawer setting from Settings', async () => {

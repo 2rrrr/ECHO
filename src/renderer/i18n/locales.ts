@@ -84,6 +84,37 @@ export type TranslationKey =
   | 'common.ready'
   | 'common.unavailable'
   | 'common.yes'
+  | 'library.action.refresh'
+  | 'library.albums.card.tracks'
+  | 'library.albums.error.desktopBridge'
+  | 'library.albums.listAria'
+  | 'library.albums.loading'
+  | 'library.albums.searchPlaceholder'
+  | 'library.albums.sort.aria'
+  | 'library.albums.sort.artist'
+  | 'library.albums.sort.titleAsc'
+  | 'library.albums.sort.titleDesc'
+  | 'library.albums.title'
+  | 'library.artists.error.desktopBridge'
+  | 'library.artists.listAria'
+  | 'library.artists.loading'
+  | 'library.artists.meta.albums'
+  | 'library.artists.meta.noTracks'
+  | 'library.artists.meta.tracks'
+  | 'library.artists.searchPlaceholder'
+  | 'library.artists.sort.aria'
+  | 'library.artists.sort.frequent'
+  | 'library.artists.sort.nameAsc'
+  | 'library.artists.sort.nameDesc'
+  | 'library.artists.title'
+  | 'library.count.total'
+  | 'library.sort.createdAsc'
+  | 'library.sort.createdDesc'
+  | 'library.sort.default'
+  | 'library.sort.durationAsc'
+  | 'library.sort.durationDesc'
+  | 'library.sort.random'
+  | 'library.sort.recent'
   | 'folders.action.addScan'
   | 'folders.action.browse'
   | 'folders.action.cancel'
@@ -728,6 +759,37 @@ const zhCN: TranslationMap = {
   'common.ready': '就绪',
   'common.unavailable': '暂不可用',
   'common.yes': '是',
+  'library.action.refresh': '刷新',
+  'library.albums.card.tracks': '{count} 首歌',
+  'library.albums.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面版中读取专辑。',
+  'library.albums.listAria': '专辑列表',
+  'library.albums.loading': '正在加载专辑...',
+  'library.albums.searchPlaceholder': '搜索专辑 / 艺术家',
+  'library.albums.sort.aria': '专辑排序',
+  'library.albums.sort.artist': '艺术家',
+  'library.albums.sort.titleAsc': '标题 A-Z',
+  'library.albums.sort.titleDesc': '标题 Z-A',
+  'library.albums.title': '专辑',
+  'library.artists.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面版中读取艺术家。',
+  'library.artists.listAria': '艺术家列表',
+  'library.artists.loading': '正在加载艺术家...',
+  'library.artists.meta.albums': '{count} 张专辑',
+  'library.artists.meta.noTracks': '暂无歌曲',
+  'library.artists.meta.tracks': '{count} 首歌',
+  'library.artists.searchPlaceholder': '搜索艺术家',
+  'library.artists.sort.aria': '艺术家排序',
+  'library.artists.sort.frequent': '歌曲最多',
+  'library.artists.sort.nameAsc': '名称 A-Z',
+  'library.artists.sort.nameDesc': '名称 Z-A',
+  'library.artists.title': '艺术家',
+  'library.count.total': '共 {count} 个',
+  'library.sort.createdAsc': '创建最早',
+  'library.sort.createdDesc': '创建最新',
+  'library.sort.default': '默认',
+  'library.sort.durationAsc': '时长最短',
+  'library.sort.durationDesc': '时长最长',
+  'library.sort.random': '随机',
+  'library.sort.recent': '最近',
   'folders.action.addScan': '添加并扫描',
   'folders.action.browse': '浏览',
   'folders.action.cancel': '取消',
@@ -1296,6 +1358,37 @@ const zhCN: TranslationMap = {
 
 const zhTW: TranslationMap = {
   ...zhCN,
+  'library.action.refresh': '重新整理',
+  'library.albums.card.tracks': '{count} 首歌',
+  'library.albums.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取專輯。',
+  'library.albums.listAria': '專輯列表',
+  'library.albums.loading': '正在載入專輯...',
+  'library.albums.searchPlaceholder': '搜尋專輯 / 藝術家',
+  'library.albums.sort.aria': '專輯排序',
+  'library.albums.sort.artist': '藝術家',
+  'library.albums.sort.titleAsc': '標題 A-Z',
+  'library.albums.sort.titleDesc': '標題 Z-A',
+  'library.albums.title': '專輯',
+  'library.artists.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取藝術家。',
+  'library.artists.listAria': '藝術家列表',
+  'library.artists.loading': '正在載入藝術家...',
+  'library.artists.meta.albums': '{count} 張專輯',
+  'library.artists.meta.noTracks': '暫無歌曲',
+  'library.artists.meta.tracks': '{count} 首歌',
+  'library.artists.searchPlaceholder': '搜尋藝術家',
+  'library.artists.sort.aria': '藝術家排序',
+  'library.artists.sort.frequent': '歌曲最多',
+  'library.artists.sort.nameAsc': '名稱 A-Z',
+  'library.artists.sort.nameDesc': '名稱 Z-A',
+  'library.artists.title': '藝術家',
+  'library.count.total': '共 {count} 個',
+  'library.sort.createdAsc': '建立最早',
+  'library.sort.createdDesc': '建立最新',
+  'library.sort.default': '預設',
+  'library.sort.durationAsc': '時長最短',
+  'library.sort.durationDesc': '時長最長',
+  'library.sort.random': '隨機',
+  'library.sort.recent': '最近',
   'audioDrawer.action.close': '關閉音訊設定',
   'audioDrawer.action.copiedDiagnostics': '已複製播放診斷資訊',
   'audioDrawer.action.copyDiagnostics': '複製播放診斷資訊',
@@ -1699,6 +1792,37 @@ const zhTW: TranslationMap = {
 
 const jaJP: TranslationMap = {
   ...zhCN,
+  'library.action.refresh': '更新',
+  'library.albums.card.tracks': '{count} 曲',
+  'library.albums.error.desktopBridge': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアルバムを読み込んでください。',
+  'library.albums.listAria': 'アルバム一覧',
+  'library.albums.loading': 'アルバムを読み込み中...',
+  'library.albums.searchPlaceholder': 'アルバム / アーティストを検索',
+  'library.albums.sort.aria': 'アルバムの並び替え',
+  'library.albums.sort.artist': 'アーティスト',
+  'library.albums.sort.titleAsc': 'タイトル A-Z',
+  'library.albums.sort.titleDesc': 'タイトル Z-A',
+  'library.albums.title': 'アルバム',
+  'library.artists.error.desktopBridge': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアーティストを読み込んでください。',
+  'library.artists.listAria': 'アーティスト一覧',
+  'library.artists.loading': 'アーティストを読み込み中...',
+  'library.artists.meta.albums': '{count} アルバム',
+  'library.artists.meta.noTracks': '曲なし',
+  'library.artists.meta.tracks': '{count} 曲',
+  'library.artists.searchPlaceholder': 'アーティストを検索',
+  'library.artists.sort.aria': 'アーティストの並び替え',
+  'library.artists.sort.frequent': '曲数が多い順',
+  'library.artists.sort.nameAsc': '名前 A-Z',
+  'library.artists.sort.nameDesc': '名前 Z-A',
+  'library.artists.title': 'アーティスト',
+  'library.count.total': '全 {count} 件',
+  'library.sort.createdAsc': '作成が古い順',
+  'library.sort.createdDesc': '作成が新しい順',
+  'library.sort.default': 'デフォルト',
+  'library.sort.durationAsc': '短い順',
+  'library.sort.durationDesc': '長い順',
+  'library.sort.random': 'ランダム',
+  'library.sort.recent': '最近',
   'app.navigation.main': 'メインナビゲーション',
   'app.navigation.utility': 'ユーティリティナビゲーション',
   'app.toolbar.quickActions': 'クイック操作',
@@ -2187,6 +2311,37 @@ const jaJP: TranslationMap = {
 
 const enUS: TranslationMap = {
   ...zhCN,
+  'library.action.refresh': 'Refresh',
+  'library.albums.card.tracks': '{count} tracks',
+  'library.albums.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next in Electron to read albums.',
+  'library.albums.listAria': 'Album list',
+  'library.albums.loading': 'Loading albums...',
+  'library.albums.searchPlaceholder': 'Search albums / artists',
+  'library.albums.sort.aria': 'Album sort',
+  'library.albums.sort.artist': 'Artist',
+  'library.albums.sort.titleAsc': 'Title A-Z',
+  'library.albums.sort.titleDesc': 'Title Z-A',
+  'library.albums.title': 'Albums',
+  'library.artists.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next in Electron to read artists.',
+  'library.artists.listAria': 'Artist list',
+  'library.artists.loading': 'Loading artists...',
+  'library.artists.meta.albums': '{count} albums',
+  'library.artists.meta.noTracks': 'No tracks',
+  'library.artists.meta.tracks': '{count} tracks',
+  'library.artists.searchPlaceholder': 'Search artists',
+  'library.artists.sort.aria': 'Artist sort',
+  'library.artists.sort.frequent': 'Most Tracks',
+  'library.artists.sort.nameAsc': 'Name A-Z',
+  'library.artists.sort.nameDesc': 'Name Z-A',
+  'library.artists.title': 'Artists',
+  'library.count.total': '{count} total',
+  'library.sort.createdAsc': 'Created Oldest',
+  'library.sort.createdDesc': 'Created Newest',
+  'library.sort.default': 'Default',
+  'library.sort.durationAsc': 'Duration Shortest',
+  'library.sort.durationDesc': 'Duration Longest',
+  'library.sort.random': 'Random',
+  'library.sort.recent': 'Recent',
   'app.navigation.main': 'Main navigation',
   'app.navigation.utility': 'Utility navigation',
   'app.toolbar.quickActions': 'Quick actions',

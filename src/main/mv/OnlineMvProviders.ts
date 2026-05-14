@@ -55,6 +55,8 @@ const bilibiliQualityMap: Record<number, { tier: Exclude<MvQualityTier, 'auto'>;
   127: { tier: '4320p', label: '8K' },
 };
 
+const bilibiliDashFnval = '4048';
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -72,6 +74,11 @@ const text = (value: unknown): string | null => {
 const number = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const nullableNumber = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 };
 
 const metricNumber = (value: unknown): number | null => {
@@ -170,6 +177,34 @@ const normalizeUrl = (value: unknown): string | null => {
   }
 
   return raw;
+};
+
+const firstUrl = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    const direct = normalizeUrl(value);
+    if (direct) {
+      return direct;
+    }
+
+    const backup = asArray(value).map(normalizeUrl).find(Boolean);
+    if (backup) {
+      return backup;
+    }
+  }
+
+  return null;
+};
+
+const fpsFromDashStream = (stream: Record<string, unknown>, label: string): number | null => {
+  const frameRate = text(stream.frameRate ?? stream.frame_rate);
+  if (frameRate) {
+    const numericRate = Number(frameRate.replace(/fps$/i, ''));
+    if (Number.isFinite(numericRate) && numericRate > 0) {
+      return Math.round(numericRate);
+    }
+  }
+
+  return label.includes('60fps') ? 60 : null;
 };
 
 const makeQualityVariant = (
@@ -362,7 +397,8 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       playUrl.searchParams.set('bvid', bvid);
       playUrl.searchParams.set('cid', String(cid));
       playUrl.searchParams.set('qn', String(qn));
-      playUrl.searchParams.set('fnval', '0');
+      playUrl.searchParams.set('fnval', bilibiliDashFnval);
+      playUrl.searchParams.set('fnver', '0');
       playUrl.searchParams.set('fourk', '1');
 
       try {
@@ -370,37 +406,55 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
         const playData = isRecord(playPayload) ? playPayload.data : null;
         const actualQn = number(isRecord(playData) ? playData.quality : null) ?? qn;
         const actualQuality = bilibiliQualityMap[actualQn] ?? quality;
+        const dash = isRecord(playData) && isRecord(playData.dash) ? playData.dash : null;
+        const dashStreams = asArray(dash?.video)
+          .filter(isRecord)
+          .filter((stream) => (number(stream.id) ?? actualQn) === actualQn);
         const durl = asArray(isRecord(playData) ? playData.durl : null).find(isRecord);
-        const streamUrl = normalizeUrl(durl?.url);
+        const streamCandidates = dashStreams.length > 0 ? dashStreams : durl ? [durl] : [];
 
-        if (!streamUrl || variants.some((variant) => variant.id === `bilibili-qn-${actualQn}` || variant.url === streamUrl)) {
-          continue;
+        for (const stream of streamCandidates) {
+          const streamQn = number(stream.id) ?? actualQn;
+          const streamQuality = bilibiliQualityMap[streamQn] ?? actualQuality;
+          const streamUrl = firstUrl(stream.baseUrl, stream.base_url, stream.url, stream.backupUrl, stream.backup_url);
+          const streamId = `bilibili-qn-${streamQn}`;
+
+          if (!streamUrl || variants.some((variant) => variant.id === streamId || variant.url === streamUrl)) {
+            continue;
+          }
+
+          const streamHeight = nullableNumber(stream.height) ?? qualityHeight[streamQuality.tier];
+          const streamWidth = nullableNumber(stream.width);
+          const variantFps = fpsFromDashStream(stream, streamQuality.label);
+
+          variants.push({
+            ...makeQualityVariant(streamId, streamQuality.label, streamQuality.tier, {
+              width: streamWidth,
+              height: streamHeight,
+              fps: variantFps,
+              codec: text(stream.codecs),
+              container: 'mp4',
+              mimeType: 'video/mp4',
+              protocol: 'direct',
+              playableInApp: true,
+              requiresAccount: streamQn >= 112 && !this.credentials(this.id).cookie,
+              expiresAt,
+            }),
+            url: streamUrl,
+            headers: {
+              ...this.cookieHeaders(this.id),
+              Referer: video.providerUrl ?? `https://www.bilibili.com/video/${bvid}`,
+              'User-Agent': userAgent,
+            },
+            rawProviderJson: {
+              provider: this.id,
+              resolver: 'bilibili-dash-v2',
+              requestedQn: qn,
+              qn: streamQn,
+              cid,
+            },
+          });
         }
-
-        const variantFps = actualQuality.label.includes('60fps') ? 60 : null;
-
-        variants.push({
-          ...makeQualityVariant(`bilibili-qn-${actualQn}`, actualQuality.label, actualQuality.tier, {
-            fps: variantFps,
-            container: 'mp4',
-            mimeType: 'video/mp4',
-            protocol: 'direct',
-            playableInApp: true,
-            requiresAccount: actualQn >= 112 && !this.credentials(this.id).cookie,
-            expiresAt,
-          }),
-          url: streamUrl,
-          headers: {
-            Referer: video.providerUrl ?? `https://www.bilibili.com/video/${bvid}`,
-            'User-Agent': userAgent,
-          },
-          rawProviderJson: {
-            provider: this.id,
-            requestedQn: qn,
-            qn: actualQn,
-            cid,
-          },
-        });
       } catch {
         // Lower qualities may still resolve even when a higher one is account gated.
       }

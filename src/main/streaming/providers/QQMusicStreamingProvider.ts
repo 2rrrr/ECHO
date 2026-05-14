@@ -5,6 +5,7 @@ import type {
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylistDetail,
   StreamingProviderDescriptor,
   StreamingSearchRequest,
   StreamingSearchResult,
@@ -131,26 +132,36 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
-    const params = new URLSearchParams({
-      ct: '24',
-      qqmusic_ver: '1298',
-      new_json: '1',
-      remoteplace: 'txt.yqq.song',
-      t: '0',
-      aggr: '1',
-      cr: '1',
-      catZhida: '1',
-      lossless: '0',
-      flag_qc: '0',
-      p: String(page),
-      n: String(pageSize),
-      w: request.query,
-      format: 'json',
-    });
-    const data = asRecord(await jsonFetch(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${params.toString()}`, { headers: qqHeaders(accountCookie()) }));
-    const songData = asRecord(asRecord(data.data).song);
+    const body = {
+      comm: {
+        ct: '19',
+        cv: '1859',
+        uin: uinFromCookie(accountCookie()),
+      },
+      req_1: {
+        module: 'music.search.SearchCgiService',
+        method: 'DoSearchForQQMusicDesktop',
+        param: {
+          query: request.query,
+          page_num: page,
+          num_per_page: pageSize,
+          search_type: 0,
+        },
+      },
+    };
+    const data = asRecord(
+      await jsonFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+        method: 'POST',
+        headers: qqHeaders(accountCookie()),
+        body,
+      }),
+    );
+    const payload = asRecord(asRecord(data.req_1).data);
+    const bodyData = asRecord(payload.body);
+    const songData = asRecord(bodyData.song);
+    const meta = asRecord(payload.meta);
     const songs = Array.isArray(songData.list) ? songData.list : [];
-    const total = integer(songData.totalnum ?? songData.total);
+    const total = integer(songData.totalnum ?? songData.total ?? meta.sum ?? meta.estimate_sum);
 
     return {
       provider,
@@ -170,6 +181,58 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   async getTrack(input: { providerTrackId: string }): Promise<StreamingTrack> {
     const song = await this.fetchSong(input.providerTrackId);
     return mapSong(song);
+  }
+
+  async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
+    const page = Math.max(1, Math.floor(input.page ?? 1));
+    const pageSize = Math.min(500, Math.max(1, Math.floor(input.pageSize ?? 100)));
+    const begin = (page - 1) * pageSize;
+    const params = new URLSearchParams({
+      type: '1',
+      json: '1',
+      utf8: '1',
+      onlysong: '0',
+      disstid: input.providerPlaylistId,
+      format: 'json',
+      g_tk: '5381',
+      loginUin: uinFromCookie(accountCookie()),
+      hostUin: '0',
+      inCharset: 'utf8',
+      outCharset: 'utf-8',
+      notice: '0',
+      platform: 'yqq',
+      needNewCode: '0',
+      song_begin: String(begin),
+      song_num: String(pageSize),
+    });
+    const data = asRecord(
+      await jsonFetch(`https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${params.toString()}`, {
+        headers: qqHeaders(accountCookie()),
+        timeoutMs: 12_000,
+      }),
+    );
+    const cd = asRecord((Array.isArray(data.cdlist) ? data.cdlist : [])[0]);
+    const songlist = Array.isArray(cd.songlist) ? cd.songlist : [];
+    const total = integer(cd.total_song_num ?? cd.songnum) ?? songlist.length;
+    const logo = text(cd.logo) ?? text(cd.picurl);
+    const coverUrl = logo ? streamingImageProxyUrl(logo, qqReferer) : null;
+
+    return {
+      id: streamingStableKey(provider, `playlist:${input.providerPlaylistId}`),
+      provider,
+      providerPlaylistId: input.providerPlaylistId,
+      title: text(cd.dissname) ?? 'QQ Music Playlist',
+      description: text(cd.desc),
+      creator: text(asRecord(cd.headurl).nick) ?? text(cd.nickname),
+      coverUrl,
+      coverThumb: coverUrl,
+      trackCount: total,
+      tracks: songlist.map(mapSong),
+      page,
+      pageSize,
+      total,
+      hasMore: begin + songlist.length < total,
+    };
   }
 
   async getLyrics(input: { providerTrackId: string }): Promise<StreamingLyricsResult> {

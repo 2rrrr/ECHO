@@ -156,8 +156,8 @@ export const appRoutes: AppRoute[] = [
   },
   {
     id: 'streaming',
-    label: 'Streaming',
-    description: 'Streaming music sources.',
+    label: '流媒体',
+    description: '流媒体音乐源。',
     icon: Radio,
     placement: 'main',
     element: <StreamingSearchPage />,

@@ -22,7 +22,7 @@ const createFallbackDiagnostics = (status: AudioStatus | null): AudioDiagnostics
   state: status?.state ?? 'idle',
   host: status?.host ?? 'not-initialized',
   outputMode: status?.outputMode ?? 'shared',
-  latencyProfile: status?.latencyProfile ?? 'stable',
+  latencyProfile: status?.latencyProfile ?? 'lowLatency',
   outputBackend: status?.outputBackend ?? null,
   outputDeviceName: status?.outputDeviceName ?? null,
   currentFilePath: status?.currentFilePath ?? null,

@@ -3,7 +3,7 @@ import { isCueFile, isSupportedAudioExtension, SUPPORTED_AUDIO_DIALOG_EXTENSIONS
 
 describe('audio extension constants', () => {
   it('supports common, hifi, dsd, container, and cue formats', () => {
-    const supported = ['.flac', '.mp3', '.m4a', '.alac', '.opus', '.cue', '.dsf', '.dff', '.ape', '.wv', '.mka', '.mkv', '.mp4', '.tta', '.tak'];
+    const supported = ['.flac', '.mp3', '.m4a', '.alac', '.opus', '.cue', '.ncm', '.dsf', '.dff', '.ape', '.wv', '.mka', '.mkv', '.mp4', '.tta', '.tak'];
 
     for (const extension of supported) {
       expect(isSupportedAudioExtension(`D:\\Music\\Track${extension}`)).toBe(true);

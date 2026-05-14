@@ -1,12 +1,7 @@
-export type AppearancePreferences = {
-  mainFontFamily: string;
-  mainFontFilePath: string | null;
-  chineseFontFamily: string;
-  chineseFontFilePath: string | null;
-  baseFontSize: number;
-  lineHeight: number;
-  textDepth: number;
-};
+import type { AppearancePreferences } from '../../shared/types/appSettings';
+import { getAppBridge } from '../utils/echoBridge';
+
+export type { AppearancePreferences } from '../../shared/types/appSettings';
 
 export type AppearanceFontSlot = 'main' | 'chinese';
 
@@ -86,6 +81,30 @@ export const writeAppearancePreferences = (preferences: AppearancePreferences): 
   return normalized;
 };
 
+export const loadPersistedAppearancePreferences = async (): Promise<AppearancePreferences> => {
+  const appBridge = getAppBridge();
+  const localPreferences = readAppearancePreferences();
+
+  if (!appBridge) {
+    return localPreferences;
+  }
+
+  const settings = await appBridge.getSettings();
+  const shouldMigrateLocalPreferences =
+    (settings.appMemoryVersion ?? 0) < 1 && JSON.stringify(localPreferences) !== JSON.stringify(defaultAppearancePreferences);
+  const preferences = shouldMigrateLocalPreferences
+    ? localPreferences
+    : normalizePreferences(settings.appearancePreferences ?? defaultAppearancePreferences);
+
+  writeAppearancePreferences(preferences);
+
+  if (shouldMigrateLocalPreferences) {
+    void appBridge.setSettings({ appearancePreferences: preferences }).catch(() => undefined);
+  }
+
+  return preferences;
+};
+
 export const applyAppearancePreferences = (preferences: AppearancePreferences): void => {
   const normalized = normalizePreferences(preferences);
   const root = document.documentElement;
@@ -135,5 +154,6 @@ export const registerAppearanceFontFile = async (slot: AppearanceFontSlot, fontF
 export const updateAppearancePreferences = (preferences: AppearancePreferences): AppearancePreferences => {
   const normalized = writeAppearancePreferences(preferences);
   applyAppearancePreferences(normalized);
+  void getAppBridge()?.setSettings({ appearancePreferences: normalized }).catch(() => undefined);
   return normalized;
 };

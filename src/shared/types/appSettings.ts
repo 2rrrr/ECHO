@@ -1,12 +1,38 @@
-import type { ChannelBalanceState, PlaybackSpeedMode } from './audio';
+import type { AudioLatencyProfile, AudioOutputMode, ChannelBalanceState, PlaybackSpeedMode } from './audio';
 import type { DuplicateTrackMode } from './library';
+import type { LibrarySort } from './library';
 import type { LyricsProviderId } from './lyrics';
 import type { MvMaxQuality, NetworkMvProviderId } from './mv';
 
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
+export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
+
+export type AppearancePreferences = {
+  mainFontFamily: string;
+  mainFontFilePath: string | null;
+  chineseFontFamily: string;
+  chineseFontFilePath: string | null;
+  baseFontSize: number;
+  lineHeight: number;
+  textDepth: number;
+};
+
+export type RememberedAudioOutput = {
+  enabled: boolean;
+  outputMode: AudioOutputMode;
+  latencyProfile?: AudioLatencyProfile;
+  deviceIndex?: number;
+  deviceName?: string;
+};
 
 export type AppSettings = {
+  appMemoryVersion?: number;
+  locale?: AppLocale;
+  appearancePreferences?: AppearancePreferences;
+  songsSort?: LibrarySort;
+  rememberedAudioOutput?: RememberedAudioOutput;
+  hiddenAudioDeviceKeys?: string[];
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
   artistWallAlbumArtwork: boolean;
   autoUpdateEnabled?: boolean;
@@ -20,6 +46,7 @@ export type AppSettings = {
   appWallpaperUnifiedOpacityEnabled: boolean;
   networkMetadataEnabled: boolean;
   networkMetadataProviders: Array<'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music'>;
+  audioAnalysisEnabled?: boolean;
   lyricsNetworkEnabled: boolean;
   lyricsPreferredProvider: 'lrclib';
   lyricsEnabledProviders?: LyricsProviderId[];

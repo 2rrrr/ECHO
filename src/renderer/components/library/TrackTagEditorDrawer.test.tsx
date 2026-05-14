@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { TrackTagEditorDrawer, applyNetworkCandidateToForm, defaultNetworkFieldSelection } from './TrackTagEditorDrawer';
 import type { LibraryTrack, NetworkTagCandidate } from '../../../shared/types/library';
 
@@ -144,19 +144,42 @@ describe('TrackTagEditorDrawer network tags', () => {
     });
   });
 
-  it('selecting a network candidate updates the visible form but does not save the file', async () => {
+  it('renders professional Chinese field labels', () => {
+    installEcho();
+
+    render(<TrackTagEditorDrawer track={track()} isOpen isSaving={false} error={null} onClose={vi.fn()} onSave={vi.fn()} />);
+
+    expect(screen.getByRole('heading', { name: '编辑标签' })).toBeTruthy();
+    expect(screen.getByLabelText('标题')).toBeTruthy();
+    expect(screen.getByLabelText('艺术家')).toBeTruthy();
+    expect(screen.getByLabelText('专辑')).toBeTruthy();
+    expect(screen.getByLabelText('专辑艺术家')).toBeTruthy();
+    expect(screen.getByLabelText('音轨号')).toBeTruthy();
+    expect(screen.getByLabelText('碟号')).toBeTruthy();
+    expect(screen.getByLabelText('年份')).toBeTruthy();
+    expect(screen.getByLabelText('流派')).toBeTruthy();
+  });
+
+  it('selecting a network candidate shows comparison, updates the visible form, and does not save the file', async () => {
     const onSave = vi.fn();
     const searchNetworkTagCandidates = vi.fn().mockResolvedValue([candidate({ confidence: 0.96 })]);
     installEcho(searchNetworkTagCandidates);
 
     render(<TrackTagEditorDrawer track={track()} isOpen isSaving={false} error={null} onClose={vi.fn()} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /从网络加载/ }));
+    fireEvent.click(screen.getByRole('button', { name: '搜索候选' }));
     await screen.findByText('Network Song');
     fireEvent.click(screen.getByText('Network Song'));
-    fireEvent.click(screen.getByRole('button', { name: /应用到表单/ }));
 
-    await waitFor(() => expect((document.querySelector('.tag-editor-grid input') as HTMLInputElement).value).toBe('Network Song'));
+    const comparePanel = screen.getByLabelText('网络候选对比');
+    expect(within(comparePanel).getByText('当前')).toBeTruthy();
+    expect(within(comparePanel).getByText('候选')).toBeTruthy();
+    expect(within(comparePanel).getByText('Local Song')).toBeTruthy();
+    expect(within(comparePanel).getAllByText('Network Song').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: '应用到表单' }));
+
+    await waitFor(() => expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('Network Song'));
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -166,7 +189,7 @@ describe('TrackTagEditorDrawer network tags', () => {
 
     render(<TrackTagEditorDrawer track={track()} isOpen isSaving={false} error={null} onClose={vi.fn()} onSave={vi.fn()} />);
 
-    fireEvent.click(document.querySelectorAll('.tag-editor-file button')[2]);
+    fireEvent.click(screen.getByRole('button', { name: '搜索候选' }));
     await screen.findByText('Network Song');
     fireEvent.click(screen.getByText('Network Song'));
 
@@ -175,8 +198,38 @@ describe('TrackTagEditorDrawer network tags', () => {
 
     fireEvent.click(selectAll);
 
-    const fieldCheckboxes = document.querySelectorAll('.tag-editor-network-fields > div input[type="checkbox"]');
+    const fieldCheckboxes = document.querySelectorAll('.tag-editor-compare-row input[type="checkbox"]:not(:disabled)');
     expect([...fieldCheckboxes].every((checkbox) => (checkbox as HTMLInputElement).checked)).toBe(true);
+  });
+
+  it('blocks saving invalid positive integer fields', () => {
+    const onSave = vi.fn();
+    installEcho();
+
+    render(<TrackTagEditorDrawer track={track()} isOpen isSaving={false} error={null} onClose={vi.fn()} onSave={onSave} />);
+
+    fireEvent.change(screen.getByLabelText('年份'), { target: { value: 'twenty' } });
+    fireEvent.submit(document.querySelector('.tag-editor-drawer')!);
+
+    expect(screen.getByText('年份必须是正整数或留空')).toBeTruthy();
+    expect(screen.getByText('请先修正标红字段，再保存标签。')).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('asks for confirmation before closing with unsaved changes', () => {
+    const onClose = vi.fn();
+    installEcho();
+
+    render(<TrackTagEditorDrawer track={track()} isOpen isSaving={false} error={null} onClose={onClose} onSave={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: 'Changed Song' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '关闭编辑标签' })[1]);
+
+    expect(screen.getByText('有未保存更改，确认关闭并丢弃吗？')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '丢弃更改' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('shows a friendly error when the network provider fails', async () => {
@@ -184,7 +237,7 @@ describe('TrackTagEditorDrawer network tags', () => {
 
     render(<TrackTagEditorDrawer track={track()} isOpen isSaving={false} error={null} onClose={vi.fn()} onSave={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /从网络加载/ }));
+    fireEvent.click(screen.getByRole('button', { name: '搜索候选' }));
 
     expect(await screen.findByText('网络来源暂时不可用，请稍后再试。')).toBeTruthy();
   });

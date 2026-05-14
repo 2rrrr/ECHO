@@ -55,6 +55,13 @@ CREATE TABLE IF NOT EXISTS tracks (
   sample_rate INTEGER,
   bit_depth INTEGER,
   bitrate INTEGER,
+  bpm REAL,
+  bpm_confidence REAL,
+  beat_offset_ms REAL,
+  analysis_status TEXT NOT NULL DEFAULT 'none',
+  analysis_version INTEGER NOT NULL DEFAULT 0,
+  analysis_error TEXT,
+  analysis_updated_at TEXT,
   cover_id TEXT,
   metadata_status TEXT NOT NULL DEFAULT 'ok',
   embedded_metadata_status TEXT NOT NULL DEFAULT 'pending',
@@ -69,6 +76,37 @@ CREATE TABLE IF NOT EXISTS tracks (
   FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE,
   FOREIGN KEY (cover_id) REFERENCES covers(id) ON DELETE SET NULL
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+  title,
+  artist,
+  album,
+  album_artist,
+  genre,
+  path,
+  tokenize = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_after_insert
+AFTER INSERT ON tracks
+BEGIN
+  INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path)
+  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_after_delete
+AFTER DELETE ON tracks
+BEGIN
+  DELETE FROM tracks_fts WHERE rowid = old.rowid;
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_after_update
+AFTER UPDATE OF title, artist, album, album_artist, genre, path ON tracks
+BEGIN
+  DELETE FROM tracks_fts WHERE rowid = old.rowid;
+  INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path)
+  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path);
+END;
 
 CREATE TABLE IF NOT EXISTS albums (
   id TEXT PRIMARY KEY,
@@ -220,6 +258,7 @@ CREATE TABLE IF NOT EXISTS playlists (
   source_provider TEXT NOT NULL DEFAULT 'local',
   source_playlist_id TEXT,
   cover_id TEXT,
+  cover_url TEXT,
   sort_mode TEXT NOT NULL DEFAULT 'manual',
   item_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -517,6 +556,7 @@ CREATE INDEX IF NOT EXISTS idx_tracks_folder_id ON tracks(folder_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
 CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
+CREATE INDEX IF NOT EXISTS idx_tracks_analysis_status ON tracks(analysis_status);
 CREATE INDEX IF NOT EXISTS idx_albums_album_key ON albums(album_key);
 CREATE INDEX IF NOT EXISTS idx_album_tracks_album_id ON album_tracks(album_id);
 CREATE INDEX IF NOT EXISTS idx_album_tracks_track_id ON album_tracks(track_id);

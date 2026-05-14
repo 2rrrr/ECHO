@@ -98,6 +98,13 @@ const sanitizePlaybackSource = (source: StreamingPlaybackSource): StreamingPlayb
 
 export const registerStreamingIpc = (): void => {
   ipcMain.handle(IpcChannels.StreamingGetProviders, () => getStreamingService().getProviders());
+  ipcMain.handle(IpcChannels.StreamingImportPlaylistFromUrl, async (_event, url: unknown) => {
+    try {
+      return await getStreamingService().importPlaylistFromUrl(requireText(url, 'playlist URL'));
+    } catch (error) {
+      throw friendlyError(error, 'Streaming playlist import failed.');
+    }
+  });
   ipcMain.handle(IpcChannels.StreamingSearch, async (_event, request: unknown) => {
     try {
       return await getStreamingService().search(normalizeSearchRequest(request));

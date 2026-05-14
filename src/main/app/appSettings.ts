@@ -1,8 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
-import type { AppSettings, LyricsBackgroundMode } from '../../shared/types/appSettings';
+import type {
+  AppLocale,
+  AppearancePreferences,
+  AppSettings,
+  LyricsBackgroundMode,
+  RememberedAudioOutput,
+} from '../../shared/types/appSettings';
 import type { LyricsProviderId } from '../../shared/types/lyrics';
+import type { LibrarySort } from '../../shared/types/library';
 import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
 import {
   channelBalanceMaxBalance,
@@ -19,6 +26,41 @@ const defaultLyricsColor = '#314054';
 const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
 const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'musixmatch', 'genius', 'manual'];
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
+const appMemoryVersion = 1;
+const locales: AppLocale[] = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'];
+const librarySorts: LibrarySort[] = [
+  'default',
+  'createdAsc',
+  'createdDesc',
+  'titleAsc',
+  'titleDesc',
+  'durationAsc',
+  'durationDesc',
+  'qualityAsc',
+  'qualityDesc',
+  'frequent',
+  'random',
+  'title',
+  'artist',
+  'album',
+  'recent',
+];
+
+export const defaultAppearancePreferences: AppearancePreferences = {
+  mainFontFamily: 'Outfit',
+  mainFontFilePath: null,
+  chineseFontFamily: 'Microsoft YaHei',
+  chineseFontFilePath: null,
+  baseFontSize: 14,
+  lineHeight: 1.35,
+  textDepth: 62,
+};
+
+const defaultRememberedAudioOutput: RememberedAudioOutput = {
+  enabled: false,
+  outputMode: 'shared',
+  latencyProfile: 'lowLatency',
+};
 
 export const getLyricsWallpaperDirectory = (): string => join(app.getPath('userData'), 'lyrics-wallpapers');
 export const getAppWallpaperDirectory = (): string => join(app.getPath('userData'), 'app-wallpapers');
@@ -41,6 +83,12 @@ export const defaultChannelBalanceSettings: ChannelBalanceState = {
 };
 
 export const defaultSettings: AppSettings = {
+  appMemoryVersion,
+  locale: 'zh-CN',
+  appearancePreferences: { ...defaultAppearancePreferences },
+  songsSort: 'default',
+  rememberedAudioOutput: { ...defaultRememberedAudioOutput },
+  hiddenAudioDeviceKeys: [],
   albumMergeStrategy: 'standard',
   artistWallAlbumArtwork: false,
   autoUpdateEnabled: true,
@@ -54,6 +102,7 @@ export const defaultSettings: AppSettings = {
   appWallpaperUnifiedOpacityEnabled: false,
   networkMetadataEnabled: false,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
+  audioAnalysisEnabled: false,
   lyricsNetworkEnabled: true,
   lyricsPreferredProvider: 'lrclib',
   lyricsEnabledProviders: [...defaultLyricsProviderOrder],
@@ -142,6 +191,85 @@ const normalizeOptionalText = (value: unknown): string | null => {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeRequiredText = (value: unknown, fallback: string): string => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value.replace(/[\r\n;]/g, '').trim();
+  return normalized || fallback;
+};
+
+const normalizeFontPath = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.replace(/[\r\n]/g, '').trim();
+  return normalized || null;
+};
+
+const normalizeLocale = (value: unknown): AppLocale =>
+  locales.includes(value as AppLocale) ? (value as AppLocale) : 'zh-CN';
+
+const normalizeSongsSort = (value: unknown): LibrarySort =>
+  librarySorts.includes(value as LibrarySort) ? (value as LibrarySort) : 'default';
+
+const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...defaultAppearancePreferences };
+  }
+
+  const input = value as Partial<AppearancePreferences>;
+  const baseFontSize = Number(input.baseFontSize);
+  const lineHeight = Number(input.lineHeight);
+  const textDepth = Number(input.textDepth);
+
+  return {
+    mainFontFamily: normalizeRequiredText(input.mainFontFamily, defaultAppearancePreferences.mainFontFamily),
+    mainFontFilePath: normalizeFontPath(input.mainFontFilePath),
+    chineseFontFamily: normalizeRequiredText(input.chineseFontFamily, defaultAppearancePreferences.chineseFontFamily),
+    chineseFontFilePath: normalizeFontPath(input.chineseFontFilePath),
+    baseFontSize: Number.isFinite(baseFontSize)
+      ? clamp(baseFontSize, 12, 18)
+      : defaultAppearancePreferences.baseFontSize,
+    lineHeight: Number.isFinite(lineHeight)
+      ? clamp(lineHeight, 1.1, 1.8)
+      : defaultAppearancePreferences.lineHeight,
+    textDepth: Number.isFinite(textDepth)
+      ? clamp(textDepth, 35, 100)
+      : defaultAppearancePreferences.textDepth,
+  };
+};
+
+const normalizeRememberedAudioOutput = (value: unknown): RememberedAudioOutput => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...defaultRememberedAudioOutput };
+  }
+
+  const input = value as Partial<RememberedAudioOutput>;
+  const outputMode = input.outputMode === 'exclusive' || input.outputMode === 'asio' ? input.outputMode : 'shared';
+  const latencyProfile = input.latencyProfile === 'stable' ? input.latencyProfile : 'lowLatency';
+  const deviceIndex = Number(input.deviceIndex);
+  const deviceName = normalizeOptionalText(input.deviceName) ?? undefined;
+
+  return {
+    enabled: input.enabled === true,
+    outputMode,
+    latencyProfile,
+    deviceIndex: Number.isInteger(deviceIndex) ? deviceIndex : undefined,
+    deviceName,
+  };
+};
+
+const normalizeHiddenAudioDeviceKeys = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(new Set(value.filter((key): key is string => typeof key === 'string' && key.trim().length > 0)));
 };
 
 const normalizeLyricsColor = (value: unknown): string => {
@@ -233,6 +361,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   }
 
   const settings = value as Partial<AppSettings>;
+  const normalizedAppMemoryVersion = Number(settings.appMemoryVersion);
   const playerVolume = Number(settings.playerVolume);
   const playbackSpeed = Number(settings.playbackSpeed);
   const albumMergeStrategy =
@@ -292,6 +421,14 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   );
 
   return {
+    appMemoryVersion: Number.isFinite(normalizedAppMemoryVersion)
+      ? Math.max(0, Math.round(normalizedAppMemoryVersion))
+      : 0,
+    locale: normalizeLocale(settings.locale),
+    appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
+    songsSort: normalizeSongsSort(settings.songsSort),
+    rememberedAudioOutput: normalizeRememberedAudioOutput(settings.rememberedAudioOutput),
+    hiddenAudioDeviceKeys: normalizeHiddenAudioDeviceKeys(settings.hiddenAudioDeviceKeys),
     albumMergeStrategy,
     artistWallAlbumArtwork: settings.artistWallAlbumArtwork === true,
     autoUpdateEnabled: settings.autoUpdateEnabled !== false,
@@ -313,6 +450,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled === true,
     networkMetadataEnabled: settings.networkMetadataEnabled === true,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
+    audioAnalysisEnabled: settings.audioAnalysisEnabled === true,
     lyricsNetworkEnabled: settings.lyricsNetworkEnabled !== false,
     lyricsPreferredProvider: 'lrclib',
     lyricsEnabledProviders: lyricsEnabledProviders.length ? lyricsEnabledProviders : (defaultSettings.lyricsEnabledProviders ?? ['local', 'lrclib', 'netease', 'qqmusic']),

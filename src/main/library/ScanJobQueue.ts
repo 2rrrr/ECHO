@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { AlbumMergeStrategy, AlbumService } from './AlbumService';
 import type { LibraryStore } from './LibraryStore';
@@ -16,6 +16,7 @@ import type {
 import type { CoverExtractor } from './workers/CoverExtractor';
 import type { FileScanner } from './workers/FileScanner';
 import type { MetadataReader } from './workers/MetadataReader';
+import { getNcmConverter } from './NcmConverter';
 
 type ParsedScanItem = {
   file: ScannedAudioFile;
@@ -413,7 +414,11 @@ export class ScanJobQueue {
     try {
       for await (const file of this.fileScanner.scanFolder(folder.path)) {
         this.throwIfCancelled(jobId);
-        files.push(this.withFolderId(file, folder.id));
+        try {
+          files.push(await this.normalizeScannedFile(file, folder.id));
+        } catch (error) {
+          errors.push(`${file.path}: ncm: ${error instanceof Error ? error.message : String(error)}`);
+        }
 
         if (files.length % 100 === 0) {
           progress.update({
@@ -510,6 +515,21 @@ export class ScanJobQueue {
     return {
       ...file,
       folderId,
+    };
+  }
+
+  private async normalizeScannedFile(file: ScannedFile, folderId: string): Promise<ScannedAudioFile> {
+    const decodedPath = await getNcmConverter().convertIfNeeded(file.path);
+    if (decodedPath === file.path) {
+      return this.withFolderId(file, folderId);
+    }
+
+    const fileStat = statSync(decodedPath);
+    return {
+      path: resolve(decodedPath),
+      folderId,
+      sizeBytes: fileStat.size,
+      mtimeMs: Math.round(fileStat.mtimeMs),
     };
   }
 

@@ -10,9 +10,11 @@ import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
 import { LibraryStore } from './LibraryStore';
 import { inflateMetadataResult } from './MetadataService';
+import { getNcmConverter } from './NcmConverter';
 import { getRecommendedScanConcurrency } from './ScanConcurrency';
 import { ScanJobQueue } from './ScanJobQueue';
 import { NetworkMetadataService, type NetworkCandidateList, type NetworkRepairResult } from './network/NetworkMetadataService';
+import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
 import type { MetadataService } from './MetadataService';
 import type {
   LibraryAlbum,
@@ -49,6 +51,8 @@ import type {
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
   DuplicateTrackMode,
+  BpmAnalysisJobStatus,
+  BpmAnalysisStartOptions,
 } from './libraryTypes';
 import type {
   EmbeddedTrackTagsLoadResult,
@@ -94,6 +98,7 @@ export class LibraryService {
     private readonly coverExtractor: CoverExtractor = new TsCoverExtractor(),
     private readonly metadataReader: MetadataReader = new TsMetadataReader(),
     private readonly networkMetadataService: NetworkMetadataService | null = null,
+    private readonly bpmAnalysisJobQueue: BpmAnalysisJobQueue | null = null,
     private readonly readAppSettings: () => AppSettings = getAppSettingsSafe,
     private readonly scanConcurrency: ScanConcurrencyRecommendation = getRecommendedScanConcurrency(),
   ) {}
@@ -140,7 +145,16 @@ export class LibraryService {
       throw new Error(`Unknown library folder ${folderId}`);
     }
 
-    return this.scanJobQueue.scanFolder(folder);
+    const job = this.scanJobQueue.scanFolder(folder);
+    if (this.readAppSettings().audioAnalysisEnabled) {
+      void this.scanJobQueue.waitForIdle(job.id).then(() => {
+        if (this.readAppSettings().audioAnalysisEnabled) {
+          this.startBpmAnalysis({ limit: 500 });
+        }
+      }).catch(() => undefined);
+    }
+
+    return job;
   }
 
   getScanStatus(jobId: string): LibraryScanStatus {
@@ -217,6 +231,13 @@ export class LibraryService {
 
   addTrackToPlaylist(playlistId: string, trackId: string): LibraryPlaylistItem {
     return this.store.addTrackToPlaylist(playlistId, trackId);
+  }
+
+  addStreamingTrackToPlaylist(
+    playlistId: string,
+    track: Pick<LibraryTrack, 'id' | 'provider' | 'providerTrackId' | 'stableKey' | 'title' | 'artist' | 'album' | 'duration' | 'unavailable'>,
+  ): LibraryPlaylistItem {
+    return this.store.addStreamingTrackToPlaylist(playlistId, track);
   }
 
   addTracksToPlaylist(playlistId: string, trackIds: string[]): LibraryPlaylistItem[] {
@@ -351,6 +372,7 @@ export class LibraryService {
       scanPerformanceMode: this.scanConcurrency.mode === 'custom' ? 'balanced' : this.scanConcurrency.mode,
       metadataConcurrency: this.scanConcurrency.metadataConcurrency,
       coverConcurrency: this.scanConcurrency.coverConcurrency,
+      audioAnalysisEnabled: this.readAppSettings().audioAnalysisEnabled,
     });
   }
 
@@ -375,8 +397,15 @@ export class LibraryService {
     return this.store.getTrackByPath(filePath);
   }
 
-  async importAudioFile(filePath: string, options: { folderPath?: string } = {}): Promise<LibraryTrack> {
-    const normalizedPath = resolve(filePath);
+  async importAudioFile(
+    filePath: string,
+    options: {
+      folderPath?: string;
+      metadata?: Partial<Pick<EditableTrackTags, 'title' | 'artist' | 'album' | 'albumArtist'>>;
+      coverUrl?: string | null;
+    } = {},
+  ): Promise<LibraryTrack> {
+    const normalizedPath = await getNcmConverter().convertIfNeeded(resolve(filePath));
 
     if (!existsSync(normalizedPath)) {
       throw new Error(`Track file is missing: ${normalizedPath}`);
@@ -389,13 +418,29 @@ export class LibraryService {
 
     const folder = this.store.addFolder(resolve(options.folderPath ?? dirname(normalizedPath)));
     const metadata = await this.metadataReader.read(normalizedPath);
+    const metadataOverrides = {
+      title: cleanNullableText(options.metadata?.title ?? null) ?? undefined,
+      artist: cleanNullableText(options.metadata?.artist ?? null) ?? undefined,
+      album: cleanNullableText(options.metadata?.album ?? null) ?? undefined,
+      albumArtist: cleanNullableText(options.metadata?.albumArtist ?? null) ?? undefined,
+    };
+    const metadataFields = {
+      ...metadata.fields,
+      ...Object.fromEntries(Object.entries(metadataOverrides).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+    };
+    const fieldSources: MetadataResult['fieldSources'] = {
+      ...metadata.fieldSources,
+      ...Object.fromEntries(Object.keys(metadataOverrides).filter((key) => metadataOverrides[key as keyof typeof metadataOverrides]).map((key) => [key, 'technical'])),
+    };
     let coverId: string | null = null;
     let coverErrors: string[] = [];
 
     try {
+      const coverUrl = cleanNullableText(options.coverUrl ?? null);
+      const coverData = coverUrl ? await readCoverImageFromUrl(coverUrl, null).catch(() => null) : null;
       const cover = await this.coverExtractor.extract(normalizedPath, {
         cacheRoot: this.coverCacheDir,
-        metadata,
+        metadata: coverData ? metadataWithEmbeddedCover(coverData.data, coverData.mimeType) : metadata,
       });
       coverId = this.store.upsertCover(cover);
       coverErrors = cover.errors;
@@ -412,10 +457,10 @@ export class LibraryService {
         folderId: folder.id,
         sizeBytes: fileStat.size,
         mtimeMs: Math.round(fileStat.mtimeMs),
-        ...metadata.fields,
+        ...metadataFields,
         id: trackId,
         coverId,
-        fieldSources: metadata.fieldSources,
+        fieldSources,
         embeddedMetadataStatus: metadata.embeddedMetadataStatus,
         embeddedCoverStatus: metadata.embeddedCoverStatus,
         metadataStatus: metadata.status,
@@ -429,6 +474,10 @@ export class LibraryService {
       const track = this.store.getTrack(trackId) ?? this.store.getTrackByPath(normalizedPath);
       if (!track) {
         throw new Error(`Failed to import audio file: ${normalizedPath}`);
+      }
+
+      if (this.readAppSettings().audioAnalysisEnabled) {
+        this.startBpmAnalysis({ trackIds: [track.id], force: true });
       }
 
       return track;
@@ -859,6 +908,20 @@ export class LibraryService {
     return this.coverCacheDir;
   }
 
+  startBpmAnalysis(options: BpmAnalysisStartOptions = {}): BpmAnalysisJobStatus {
+    if (!this.bpmAnalysisJobQueue) {
+      throw new Error('BPM analysis service is unavailable');
+    }
+    return this.bpmAnalysisJobQueue.start(options);
+  }
+
+  getBpmAnalysisStatus(jobId: string): BpmAnalysisJobStatus {
+    if (!this.bpmAnalysisJobQueue) {
+      throw new Error('BPM analysis service is unavailable');
+    }
+    return this.bpmAnalysisJobQueue.getStatus(jobId);
+  }
+
   getDefaultCoverCacheDir(): string {
     return getDefaultCoverCacheDir(this.databasePath);
   }
@@ -930,6 +993,7 @@ export const createLibraryService = (
   });
 
   const networkMetadataService = new NetworkMetadataService(database);
+  const bpmAnalysisJobQueue = new BpmAnalysisJobQueue(store);
 
   return new LibraryService(
     store,
@@ -941,6 +1005,7 @@ export const createLibraryService = (
     coverExtractor,
     metadataReader,
     networkMetadataService,
+    bpmAnalysisJobQueue,
     readSettings,
     scanConcurrency,
   );
@@ -1024,12 +1089,22 @@ const mimeTypeForImageUrl = (url: string): string => {
 };
 
 const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): Promise<{ data: Uint8Array; mimeType: string }> => {
+  let coverUrl = url;
+  let referer = 'https://www.bilibili.com/';
+  if (url.startsWith('echo-image://remote/')) {
+    const proxied = new URL(url);
+    coverUrl = decodeURIComponent(proxied.pathname.replace(/^\/+/u, ''));
+    referer = proxied.searchParams.get('referer') ?? referer;
+  }
+
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(coverUrl, {
       headers: {
         Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*',
-        'User-Agent': 'ECHO-Next/0.1',
+        Referer: referer,
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       },
     });
   } catch (error) {
@@ -1041,7 +1116,7 @@ const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): 
   }
 
   const contentType = response.headers.get('content-type');
-  const mimeType = supportedImageMimeType(mimeTypeHint) ?? supportedImageMimeType(contentType) ?? mimeTypeForImageUrl(url);
+  const mimeType = supportedImageMimeType(mimeTypeHint) ?? supportedImageMimeType(contentType) ?? mimeTypeForImageUrl(coverUrl);
   return {
     data: new Uint8Array(await response.arrayBuffer()),
     mimeType,
@@ -1080,6 +1155,7 @@ const metadataWithEmbeddedCover = (data: Uint8Array, mimeType: string): Metadata
       sampleRate: null,
       bitDepth: null,
       bitrate: null,
+      bpm: null,
     },
     fieldSources: {},
     embeddedCover: { data, mimeType },

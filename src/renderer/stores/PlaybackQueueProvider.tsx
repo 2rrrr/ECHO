@@ -423,7 +423,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       throw new Error('Desktop bridge unavailable. Open ECHO Next in Electron to play local files.');
     }
 
-    await finishPlaybackHistorySession();
+    void finishPlaybackHistorySession();
     const status =
       (track.mediaType === 'remote' || track.mediaType === 'streaming') && playback.playMediaItem
         ? await playback.playMediaItem({

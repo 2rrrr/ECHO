@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import type { AccountStatus } from '../../../shared/types/accounts';
 import type {
   StreamingArtistRef,
@@ -5,6 +6,7 @@ import type {
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylistDetail,
   StreamingProviderDescriptor,
   StreamingSearchRequest,
   StreamingSearchResult,
@@ -17,12 +19,57 @@ import { asRecord, integer, jsonFetch, linesFromLyrics, number, splitLyricsByKin
 
 const provider = 'netease' as const;
 const neteaseReferer = 'https://music.163.com/';
+const require = createRequire(import.meta.url);
 
 const neteaseHeaders = (cookie?: string): Record<string, string> => ({
   Referer: neteaseReferer,
   Origin: 'https://music.163.com',
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   ...(cookie ? { Cookie: cookie } : {}),
 });
+
+type NeteaseRequestedQuality = NonNullable<StreamingPlaybackRequest['quality']> | 'fallback';
+type NeteaseApi = {
+  song_url_v1?: (request: Record<string, unknown>) => Promise<{ body?: { data?: unknown[] } }>;
+};
+type NeteaseResolvedSource = {
+  url: string;
+  type: string;
+  br: number;
+  level: string;
+};
+let ncmApiForTests: NeteaseApi | null | undefined;
+
+const neteaseQualityLevels: Record<NeteaseRequestedQuality, Array<{ level: string; bitrate: number; quality: NonNullable<StreamingPlaybackSource['codec']> }>> = {
+  hires: [
+    { level: 'jymaster', bitrate: 2000000, quality: 'flac' },
+    { level: 'sky', bitrate: 1500000, quality: 'flac' },
+    { level: 'jyeffect', bitrate: 1500000, quality: 'flac' },
+    { level: 'hires', bitrate: 999000, quality: 'flac' },
+    { level: 'lossless', bitrate: 999000, quality: 'flac' },
+    { level: 'exhigh', bitrate: 320000, quality: 'mp3' },
+    { level: 'higher', bitrate: 192000, quality: 'mp3' },
+    { level: 'standard', bitrate: 128000, quality: 'mp3' },
+  ],
+  lossless: [
+    { level: 'lossless', bitrate: 999000, quality: 'flac' },
+    { level: 'exhigh', bitrate: 320000, quality: 'mp3' },
+    { level: 'higher', bitrate: 192000, quality: 'mp3' },
+    { level: 'standard', bitrate: 128000, quality: 'mp3' },
+  ],
+  high: [
+    { level: 'exhigh', bitrate: 320000, quality: 'mp3' },
+    { level: 'higher', bitrate: 192000, quality: 'mp3' },
+    { level: 'standard', bitrate: 128000, quality: 'mp3' },
+  ],
+  standard: [{ level: 'standard', bitrate: 128000, quality: 'mp3' }],
+  fallback: [
+    { level: 'exhigh', bitrate: 320000, quality: 'mp3' },
+    { level: 'higher', bitrate: 192000, quality: 'mp3' },
+    { level: 'standard', bitrate: 128000, quality: 'mp3' },
+  ],
+};
 
 const imageUrl = (value: unknown, size = 300): string | null => {
   const raw = text(value);
@@ -34,6 +81,101 @@ const neteaseImageUrl = (value: unknown, size: number): string | null => streami
 const accountStatus = (): AccountStatus => getAccountService().getStatus(provider);
 
 const accountCookie = (): string | undefined => getAccountService().getCredentials(provider).cookie?.trim() || undefined;
+
+const getNcmApi = (): NeteaseApi | null => {
+  if (ncmApiForTests !== undefined) {
+    return ncmApiForTests;
+  }
+
+  try {
+    return require('@neteasecloudmusicapienhanced/api') as NeteaseApi;
+  } catch {
+    return null;
+  }
+};
+
+export const setNeteaseApiForTests = (api: NeteaseApi | null | undefined): void => {
+  ncmApiForTests = api;
+};
+
+const cookieValue = (cookie: string | undefined, name: string): string | null => {
+  if (!cookie) {
+    return null;
+  }
+
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${escapedName}=([^;]*)`, 'u'));
+  if (!match) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+};
+
+const toPlaybackSource = (
+  request: StreamingPlaybackRequest,
+  source: NeteaseResolvedSource,
+  candidate: { bitrate: number; quality: NonNullable<StreamingPlaybackSource['codec']> },
+): StreamingPlaybackSource => {
+  const type = source.type.toLocaleLowerCase() || candidate.quality || 'mp3';
+
+  return {
+    provider,
+    providerTrackId: request.providerTrackId,
+    url: source.url,
+    expiresAt: new Date(Date.now() + 4 * 60 * 1000).toISOString(),
+    mimeType: type === 'flac' ? 'audio/flac' : 'audio/mpeg',
+    bitrate: source.br || candidate.bitrate,
+    sampleRate: null,
+    bitDepth: null,
+    codec: type,
+    headers: {},
+    requiresProxy: false,
+    supportsRange: true,
+  };
+};
+
+const resolveWithNcmApi = async (
+  request: StreamingPlaybackRequest,
+  candidate: { level: string; bitrate: number; quality: NonNullable<StreamingPlaybackSource['codec']> },
+  cookie: string | undefined,
+): Promise<NeteaseResolvedSource | null> => {
+  const ncm = getNcmApi();
+  if (!ncm?.song_url_v1) {
+    return null;
+  }
+
+  const id = Number(request.providerTrackId);
+  if (!Number.isFinite(id) || id <= 0) {
+    return null;
+  }
+
+  try {
+    const response = await ncm.song_url_v1({
+      id,
+      level: candidate.level,
+      ...(cookie ? { cookie } : {}),
+    });
+    const entry = asRecord(Array.isArray(response.body?.data) ? response.body?.data[0] : null);
+    const url = text(entry.url);
+    if (!url) {
+      return null;
+    }
+
+    return {
+      url,
+      type: text(entry.type) ?? candidate.quality,
+      br: integer(entry.br) ?? candidate.bitrate,
+      level: text(entry.level) ?? candidate.level,
+    };
+  } catch {
+    return null;
+  }
+};
 
 const artistRefs = (artistsValue: unknown): StreamingArtistRef[] => {
   const artists = Array.isArray(artistsValue) ? artistsValue.map(asRecord) : [];
@@ -86,7 +228,7 @@ const mapSong = (songValue: unknown, detailCoverUrl: string | null = null): Stre
     qualities: fee === 1 ? ['standard', 'high'] : ['standard', 'high', 'lossless'],
     explicit: false,
     playable,
-    unavailableReason: playable ? null : '这首歌暂时不可播放',
+    unavailableReason: playable ? null : 'This NetEase track is temporarily unavailable.',
     lyricsStatus: 'available',
     mvStatus: integer(song.mvid ?? song.mv) ? 'available' : 'unknown',
   };
@@ -158,6 +300,48 @@ export class NeteaseStreamingProvider implements StreamingProvider {
     return mapSong(song);
   }
 
+  async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
+    const page = Math.max(1, Math.floor(input.page ?? 1));
+    const pageSize = Math.min(500, Math.max(1, Math.floor(input.pageSize ?? 100)));
+    const params = new URLSearchParams({ id: input.providerPlaylistId });
+    const data = asRecord(
+      await jsonFetch(`https://music.163.com/api/v6/playlist/detail?${params.toString()}`, {
+        headers: neteaseHeaders(accountCookie()),
+        timeoutMs: 12_000,
+      }),
+    );
+    const playlist = asRecord(data.playlist ?? data.result);
+    const trackIds = Array.isArray(playlist.trackIds)
+      ? playlist.trackIds.map((item) => String(asRecord(item).id ?? '').trim()).filter(Boolean)
+      : [];
+    const embeddedTracks = Array.isArray(playlist.tracks) ? playlist.tracks : [];
+    const total = trackIds.length || integer(playlist.trackCount) || embeddedTracks.length;
+    const offset = (page - 1) * pageSize;
+    const pageTrackIds = trackIds.slice(offset, offset + pageSize);
+    let tracks = embeddedTracks.slice(offset, offset + pageSize);
+
+    if (pageTrackIds.length > 0) {
+      tracks = await this.fetchSongs(pageTrackIds).catch(() => tracks);
+    }
+
+    return {
+      id: streamingStableKey(provider, `playlist:${input.providerPlaylistId}`),
+      provider,
+      providerPlaylistId: input.providerPlaylistId,
+      title: text(playlist.name) ?? 'NetEase Playlist',
+      description: text(playlist.description),
+      creator: text(asRecord(playlist.creator).nickname),
+      coverUrl: neteaseImageUrl(playlist.coverImgUrl ?? playlist.picUrl, 600),
+      coverThumb: neteaseImageUrl(playlist.coverImgUrl ?? playlist.picUrl, 160),
+      trackCount: total,
+      tracks: tracks.map((track) => mapSong(track)),
+      page,
+      pageSize,
+      total,
+      hasMore: offset + tracks.length < total,
+    };
+  }
+
   private async findDetailCoverUrls(songIds: unknown[]): Promise<Map<string, string>> {
     const ids = songIds.map((id) => String(id)).filter(Boolean);
     if (ids.length === 0) {
@@ -181,6 +365,21 @@ export class NeteaseStreamingProvider implements StreamingProvider {
     } catch {
       return new Map();
     }
+  }
+
+  private async fetchSongs(songIds: string[]): Promise<unknown[]> {
+    if (songIds.length === 0) {
+      return [];
+    }
+
+    const params = new URLSearchParams({ id: songIds[0], ids: JSON.stringify(songIds) });
+    const data = asRecord(
+      await jsonFetch(`https://music.163.com/api/song/detail/?${params.toString()}`, {
+        headers: neteaseHeaders(accountCookie()),
+        timeoutMs: 12_000,
+      }),
+    );
+    return Array.isArray(data.songs) ? data.songs : [];
   }
 
   async getLyrics(input: { providerTrackId: string }): Promise<StreamingLyricsResult> {
@@ -237,39 +436,56 @@ export class NeteaseStreamingProvider implements StreamingProvider {
   }
 
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {
-    const bitrate = request.quality === 'lossless' || request.quality === 'hires' ? 999000 : request.quality === 'standard' ? 128000 : 320000;
-    const params = new URLSearchParams({
-      ids: JSON.stringify([request.providerTrackId]),
-      br: String(bitrate),
-    });
-    const data = asRecord(
-      await jsonFetch(`https://music.163.com/api/song/enhance/player/url?${params.toString()}`, {
-        headers: neteaseHeaders(accountCookie()),
-      }),
-    );
-    const source = asRecord((Array.isArray(data.data) ? data.data : [])[0]);
-    const url = text(source.url);
+    const cookie = accountCookie();
+    const csrfToken = cookieValue(cookie, '__csrf') ?? cookieValue(cookie, 'csrf') ?? '';
+    const candidates = neteaseQualityLevels[request.quality ?? 'fallback'] ?? neteaseQualityLevels.fallback;
+    let lastSource: Record<string, unknown> = {};
+    const attemptedLevels: string[] = [];
 
-    if (!url) {
-      throw new Error('这首歌暂时不可播放，可能需要会员或版权不可用');
+    for (const candidate of candidates) {
+      attemptedLevels.push(candidate.level);
+      const ncmSource = await resolveWithNcmApi(request, candidate, cookie);
+      if (ncmSource) {
+        return toPlaybackSource(request, ncmSource, candidate);
+      }
+
+      const params = new URLSearchParams({
+        ids: JSON.stringify([request.providerTrackId]),
+        level: candidate.level,
+        br: String(candidate.bitrate),
+        encodeType: candidate.quality === 'flac' ? 'flac' : 'mp3',
+        csrf_token: csrfToken,
+        os: 'pc',
+      });
+      const data = asRecord(
+        await jsonFetch(`https://music.163.com/api/song/enhance/player/url/v1?${params.toString()}`, {
+          headers: neteaseHeaders(cookie),
+        }).catch(() =>
+          jsonFetch(`https://music.163.com/api/song/enhance/player/url?${params.toString()}`, {
+            headers: neteaseHeaders(cookie),
+          }),
+        ),
+      );
+      const source = asRecord((Array.isArray(data.data) ? data.data : [])[0]);
+      lastSource = source;
+      const url = text(source.url);
+      if (url) {
+        return toPlaybackSource(
+          request,
+          {
+            url,
+            type: text(source.type)?.toLocaleLowerCase() ?? candidate.quality,
+            br: integer(source.br) ?? candidate.bitrate,
+            level: text(source.level) ?? candidate.level,
+          },
+          candidate,
+        );
+      }
     }
 
-    const resolvedBitrate = integer(source.br) ?? bitrate;
-    const type = text(source.type)?.toLocaleLowerCase() ?? 'mp3';
-
-    return {
-      provider,
-      providerTrackId: request.providerTrackId,
-      url,
-      expiresAt: new Date(Date.now() + 4 * 60 * 1000).toISOString(),
-      mimeType: type === 'flac' ? 'audio/flac' : 'audio/mpeg',
-      bitrate: resolvedBitrate,
-      sampleRate: null,
-      bitDepth: null,
-      codec: type,
-      headers: {},
-      requiresProxy: false,
-      supportsRange: true,
-    };
+    const message = text(lastSource.message) ?? text(lastSource.msg) ?? null;
+    const code = integer(lastSource.code);
+    throw new Error(message ?? `这首歌暂时不可播放，已尝试 ${attemptedLevels.join(' / ')} 音质${code ? `（网易返回 ${code}）` : ''}`);
   }
 }
+

@@ -5,7 +5,7 @@ import { AudioSettingsDrawer } from '../components/player/AudioSettingsDrawer';
 import { LyricsSettingsDrawer } from '../components/lyrics/LyricsSettingsDrawer';
 import { MvSettingsDrawer } from '../components/lyrics/MvSettingsDrawer';
 import { DragDropImportOverlay } from '../components/import/DragDropImportOverlay';
-import { readRememberedAudioOutput } from '../components/player/audioOutputMemory';
+import { loadPersistedRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
 import { AppTitleBar } from '../components/layout/AppTitleBar';
 import type { AppRoute, AppRouteId } from './routes';
@@ -296,19 +296,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       return;
     }
 
-    const remembered = readRememberedAudioOutput();
+    void loadPersistedRememberedAudioOutput()
+      .then((remembered) => {
+        if (!remembered.enabled) {
+          return null;
+        }
 
-    if (!remembered.enabled) {
-      return;
-    }
-
-    void audio
-      .setOutput({
-        outputMode: remembered.outputMode,
-        deviceIndex: remembered.deviceIndex,
-        deviceName: remembered.deviceName,
+        return audio
+          .setOutput({
+            outputMode: remembered.outputMode,
+            latencyProfile: remembered.latencyProfile,
+            deviceIndex: remembered.deviceIndex,
+            deviceName: remembered.deviceName,
+          })
+          .then(setAudioDrawerStatus);
       })
-      .then(setAudioDrawerStatus)
       .catch((error) => {
         console.error('Failed to restore remembered audio output', error);
       });
@@ -478,6 +480,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           routes={routes}
           activeRouteId={activeRouteId}
           onRouteChange={navigateRoute}
+          onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
+          onOpenLyricsSettings={() => setIsLyricsDrawerOpen(true)}
           onImportFolder={() => void handleImportFolder()}
           onImportFile={() => void handleImportFile()}
         />

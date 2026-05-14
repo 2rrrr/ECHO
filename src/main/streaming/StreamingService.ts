@@ -6,6 +6,7 @@ import type {
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylistImportResult,
   StreamingProviderDescriptor,
   StreamingProviderName,
   StreamingSearchRequest,
@@ -30,10 +31,17 @@ const fallbackPlaybackTtlMs = 2 * 60 * 1000;
 const providerTimeoutMs = 10 * 1000;
 const searchCacheVersion = 'v2';
 const lyricsCacheVersion = 'v2';
+const playlistImportPageSize = 500;
+const maxPlaylistImportTracks = 20_000;
 
 type StreamingTrackRequest = {
   provider: StreamingProviderName;
   providerTrackId: string;
+};
+
+type StreamingPlaylistUrlTarget = {
+  provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>;
+  providerPlaylistId: string;
 };
 
 const expiresAtFromTtl = (ttlMs: number): string => new Date(Date.now() + ttlMs).toISOString();
@@ -66,6 +74,54 @@ const lyricsCacheKey = (provider: StreamingProviderName, providerTrackId: string
 
 const mvCacheKey = (provider: StreamingProviderName, providerTrackId: string): string =>
   `mv:streaming:${provider}:${providerTrackId}`;
+
+const playlistIdFromUrl = (rawUrl: string): StreamingPlaylistUrlTarget => {
+  const trimmed = rawUrl.trim();
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error('Please enter a valid streaming playlist URL.');
+  }
+
+  const host = url.hostname.toLocaleLowerCase();
+  const hashUrl = url.hash.startsWith('#') ? url.hash.slice(1) : '';
+  const combinedPath = `${url.pathname}${hashUrl}`;
+  const findParam = (...names: string[]): string | null => {
+    for (const name of names) {
+      const value = url.searchParams.get(name);
+      if (value?.trim()) {
+        return value.trim();
+      }
+
+      if (hashUrl.includes('?')) {
+        const hashSearch = new URLSearchParams(hashUrl.slice(hashUrl.indexOf('?') + 1));
+        const hashValue = hashSearch.get(name);
+        if (hashValue?.trim()) {
+          return hashValue.trim();
+        }
+      }
+    }
+
+    return null;
+  };
+
+  if (host.includes('music.163.com') || host.includes('163cn.tv')) {
+    const id = findParam('id', 'playlistId') ?? combinedPath.match(/playlist\/(\d+)/iu)?.[1] ?? null;
+    if (id) {
+      return { provider: 'netease', providerPlaylistId: id };
+    }
+  }
+
+  if (host.includes('y.qq.com') || host.includes('qq.com')) {
+    const id = findParam('id', 'disstid', 'playlistId') ?? combinedPath.match(/playlist\/([A-Za-z0-9]+)/iu)?.[1] ?? null;
+    if (id) {
+      return { provider: 'qqmusic', providerPlaylistId: id };
+    }
+  }
+
+  throw new Error('Only NetEase Cloud Music and QQ Music playlist links are supported.');
+};
 
 const cleanError = (error: unknown, fallback: string): Error => {
   if (error instanceof Error && error.message.trim()) {
@@ -258,6 +314,68 @@ export class StreamingService {
       this.cacheStore.setApiCache(request.provider, 'mv', key, result, expiresAtFromTtl(trackDetailTtlMs));
       return this.memoryCache.set(key, result, trackDetailTtlMs);
     });
+  }
+
+  async importPlaylistFromUrl(url: string): Promise<StreamingPlaylistImportResult> {
+    const target = playlistIdFromUrl(url);
+    const provider = this.registry.get(target.provider);
+    if (!provider.getPlaylist) {
+      throw new Error('This streaming provider does not support playlist import.');
+    }
+
+    let page = 1;
+    let importedCount = 0;
+    let nextPosition = 0;
+    let playlistName = 'Streaming Playlist';
+    let playlistId: string | null = null;
+
+    while (importedCount < maxPlaylistImportTracks) {
+      const detail = await this.callProvider(
+        provider,
+        () =>
+          provider.getPlaylist!({
+            providerPlaylistId: target.providerPlaylistId,
+            page,
+            pageSize: playlistImportPageSize,
+          }),
+        'Streaming playlist import',
+      );
+      const normalizedTracks = detail.tracks.map((track) => this.normalizeTrack(detail.provider, track));
+      const normalizedDetail = { ...detail, tracks: normalizedTracks };
+      const result = this.cacheStore.importStreamingPlaylistPage(normalizedDetail, {
+        reset: page === 1,
+        startPosition: nextPosition,
+      });
+      playlistId = result.playlist.id;
+      playlistName = result.playlist.name;
+      nextPosition = result.nextPosition;
+      importedCount += normalizedTracks.length;
+
+      if (!detail.hasMore || normalizedTracks.length === 0) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    if (!playlistId) {
+      const detail = await this.callProvider(
+        provider,
+        () => provider.getPlaylist!({ providerPlaylistId: target.providerPlaylistId, page: 1, pageSize: playlistImportPageSize }),
+        'Streaming playlist import',
+      );
+      const result = this.cacheStore.importStreamingPlaylistPage({ ...detail, tracks: [] }, { reset: true, startPosition: 0 });
+      playlistId = result.playlist.id;
+      playlistName = result.playlist.name;
+    }
+
+    return {
+      playlistId,
+      playlistName,
+      importedCount,
+      provider: target.provider,
+      providerPlaylistId: target.providerPlaylistId,
+    };
   }
 
   normalizeTrack(provider: StreamingProviderName, raw: StreamingTrack): StreamingTrack {

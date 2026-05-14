@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, CloudDownload, ImagePlus, RefreshCw, Save, Tag, X } from 'lucide-react';
+import { Check, CloudDownload, Disc3, ImagePlus, RefreshCw, Save, Tag, X } from 'lucide-react';
 import type { EditableTrackTags, LibraryTrack, NetworkTagCandidate, TrackCoverSelection } from '../../../shared/types/library';
 
 type TrackTagEditorDrawerProps = {
@@ -24,6 +24,8 @@ type TagFormState = {
   genre: string;
 };
 
+type NumericField = 'trackNo' | 'discNo' | 'year';
+
 type PendingNetworkCover = {
   url: string;
   mimeType: string | null;
@@ -31,6 +33,24 @@ type PendingNetworkCover = {
 };
 
 type NetworkFieldSelection = Record<keyof TagFormState | 'cover', boolean>;
+
+type FieldDefinition = {
+  key: keyof TagFormState;
+  label: string;
+  group: 'basic' | 'album' | 'order';
+  inputMode?: 'numeric';
+};
+
+const fieldDefinitions: FieldDefinition[] = [
+  { key: 'title', label: '标题', group: 'basic' },
+  { key: 'artist', label: '艺术家', group: 'basic' },
+  { key: 'album', label: '专辑', group: 'album' },
+  { key: 'albumArtist', label: '专辑艺术家', group: 'album' },
+  { key: 'genre', label: '流派', group: 'album' },
+  { key: 'trackNo', label: '音轨号', group: 'order', inputMode: 'numeric' },
+  { key: 'discNo', label: '碟号', group: 'order', inputMode: 'numeric' },
+  { key: 'year', label: '年份', group: 'order', inputMode: 'numeric' },
+];
 
 const networkFieldLabels: Array<{ key: keyof TagFormState | 'cover'; label: string }> = [
   { key: 'title', label: '标题' },
@@ -72,17 +92,38 @@ const stateFromTrack = (track: LibraryTrack | null): TagFormState => ({
 
 const numberOrNull = (value: string): number | null => {
   const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+  return trimmed ? Number(trimmed) : null;
 };
 
 const hasFormValue = (value: string): boolean => value.trim().length > 0;
 const hasCandidateText = (value: string | null | undefined): boolean => (value ?? '').trim().length > 0;
 const candidateNumberText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? String(value) : '');
+const fieldValue = (value: string | number | null | undefined): string => {
+  if (value === null || value === undefined || value === '') {
+    return '空';
+  }
+  return String(value);
+};
+
+const validatePositiveInteger = (value: string, label: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!/^\d+$/.test(trimmed) || Number(trimmed) <= 0) {
+    return `${label}必须是正整数或留空`;
+  }
+  return null;
+};
+
+const getValidationErrors = (form: TagFormState): Partial<Record<NumericField, string>> => ({
+  trackNo: validatePositiveInteger(form.trackNo, '音轨号') ?? undefined,
+  discNo: validatePositiveInteger(form.discNo, '碟号') ?? undefined,
+  year: validatePositiveInteger(form.year, '年份') ?? undefined,
+});
+
+const hasValidationErrors = (errors: Partial<Record<NumericField, string>>): boolean => Object.values(errors).some(Boolean);
+
 const formatDuration = (seconds: number | null | undefined): string => {
   if (!seconds || !Number.isFinite(seconds)) {
     return '未知时长';
@@ -92,6 +133,31 @@ const formatDuration = (seconds: number | null | undefined): string => {
   const minutes = Math.floor(total / 60);
   const rest = total % 60;
   return `${minutes}:${String(rest).padStart(2, '0')}`;
+};
+
+const formatAudioSummary = (track: LibraryTrack): string =>
+  [
+    track.codec?.toUpperCase(),
+    track.sampleRate ? `${Math.round(track.sampleRate / 100) / 10}kHz` : null,
+    track.bitDepth ? `${track.bitDepth}bit` : null,
+    track.bpm ? `${Math.round(track.bpm)} BPM` : null,
+  ]
+    .filter(Boolean)
+    .join(' / ') || '本地音频';
+
+const candidateFieldValue = (candidate: NetworkTagCandidate, key: keyof TagFormState): string => {
+  switch (key) {
+    case 'trackNo':
+      return candidateNumberText(candidate.trackNo);
+    case 'discNo':
+      return candidateNumberText(candidate.discNo);
+    case 'year':
+      return candidateNumberText(candidate.year);
+    case 'genre':
+      return candidate.genre ?? '';
+    default:
+      return candidate[key];
+  }
 };
 
 export const defaultNetworkFieldSelection = (
@@ -141,8 +207,24 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
   const [networkFieldSelection, setNetworkFieldSelection] = useState<NetworkFieldSelection>(() => emptyNetworkSelection());
   const [networkMessage, setNetworkMessage] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
   const fileName = useMemo(() => track?.path.split(/[\\/]/).pop() ?? '', [track?.path]);
   const previewCover = selectedCover?.dataUrl ?? pendingNetworkCover?.previewUrl ?? loadedCoverThumb ?? track?.coverThumb ?? null;
+  const initialForm = useMemo(() => stateFromTrack(track), [track]);
+  const validationErrors = useMemo(() => getValidationErrors(form), [form]);
+  const isBusy = isSaving || isLoadingEmbedded || isSearchingNetwork;
+  const isDirty = useMemo(
+    () =>
+      Boolean(
+        track &&
+          (JSON.stringify(form) !== JSON.stringify(initialForm) ||
+            selectedCover ||
+            pendingNetworkCover ||
+            loadedCoverThumb !== null),
+      ),
+    [form, initialForm, loadedCoverThumb, pendingNetworkCover, selectedCover, track],
+  );
 
   useEffect(() => {
     if (track) {
@@ -155,8 +237,20 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
       setNetworkFieldSelection(emptyNetworkSelection());
       setNetworkMessage(null);
       setLocalError(null);
+      setShowDiscardConfirm(false);
     }
   }, [track]);
+
+  const requestClose = (): void => {
+    if (isSaving) {
+      return;
+    }
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    onClose();
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -165,13 +259,13 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        onClose();
+        requestClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  });
 
   if (!track) {
     return null;
@@ -179,10 +273,16 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
 
   const updateField = (field: keyof TagFormState, value: string): void => {
     setForm((current) => ({ ...current, [field]: value }));
+    setShowDiscardConfirm(false);
   };
 
   const handleSubmit = (event: FormEvent): void => {
     event.preventDefault();
+    setLocalError(null);
+    if (hasValidationErrors(validationErrors)) {
+      setLocalError('请先修正标红字段，再保存标签。');
+      return;
+    }
     onSave(
       track,
       {
@@ -216,6 +316,7 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
         setSelectedCover(selection);
         setPendingNetworkCover(null);
         setLoadedCoverThumb(null);
+        setShowDiscardConfirm(false);
       }
     } catch (chooseError) {
       setLocalError(chooseError instanceof Error ? chooseError.message : String(chooseError));
@@ -248,6 +349,7 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
       setSelectedCover(null);
       setPendingNetworkCover(null);
       setLoadedCoverThumb(result.coverThumb);
+      setShowDiscardConfirm(false);
     } catch (loadError) {
       setLocalError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
@@ -322,158 +424,217 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
     }
 
     setNetworkMessage('已应用到表单，点击保存后才会写入文件和媒体库。');
+    setShowDiscardConfirm(false);
+  };
+
+  const renderField = (definition: FieldDefinition): JSX.Element => {
+    const numericError = definition.key === 'trackNo' || definition.key === 'discNo' || definition.key === 'year' ? validationErrors[definition.key] : null;
+    return (
+      <label key={definition.key} className="tag-editor-field" data-invalid={Boolean(numericError)}>
+        <span>{definition.label}</span>
+        <input
+          disabled={isBusy}
+          inputMode={definition.inputMode}
+          value={form[definition.key]}
+          aria-invalid={Boolean(numericError)}
+          aria-label={definition.label}
+          onChange={(event) => updateField(definition.key, event.target.value)}
+        />
+        {numericError ? <em>{numericError}</em> : null}
+      </label>
+    );
   };
 
   const editor = (
     <div className="tag-editor-root" data-open={isOpen}>
-      <button className="tag-editor-scrim" type="button" aria-label="关闭编辑标签" onClick={onClose} />
+      <button className="tag-editor-scrim" type="button" aria-label="关闭编辑标签" onClick={requestClose} />
       <form className="tag-editor-drawer" onSubmit={handleSubmit}>
         <header className="tag-editor-header">
           <div>
-            <Tag size={24} />
-            <h2>编辑标签</h2>
+            <Tag size={23} />
+            <div>
+              <h2>编辑标签</h2>
+              <p>{isDirty ? '未保存更改' : '单曲内嵌标签'}</p>
+            </div>
           </div>
-          <button className="tag-editor-close" type="button" aria-label="关闭编辑标签" onClick={onClose}>
-            <X size={24} />
+          <button className="tag-editor-close" type="button" aria-label="关闭编辑标签" onClick={requestClose}>
+            <X size={22} />
           </button>
         </header>
 
-        <section className="tag-editor-cover-card">
+        <section className="tag-editor-cover-card" aria-label="当前文件">
           <div className="tag-editor-cover" data-empty={!previewCover}>
-            {previewCover ? <img alt="" src={previewCover} /> : <Tag size={42} />}
+            {previewCover ? <img alt="" src={previewCover} /> : <Disc3 size={42} />}
           </div>
           <div className="tag-editor-file">
+            <span className="tag-editor-kicker">当前文件</span>
             <strong>{fileName}</strong>
-            <span>{track.path}</span>
-            <button type="button" onClick={() => void handleChooseCover()} disabled={isSaving || isLoadingEmbedded || isSearchingNetwork}>
-              <ImagePlus size={18} />
-              选择封面
-            </button>
-            <small>{selectedCover ? selectedCover.path : pendingNetworkCover ? '保存时会下载并应用网络封面。' : '留空会保留当前内嵌封面。'}</small>
-            <button type="button" onClick={() => void handleLoadEmbedded()} disabled={isSaving || isLoadingEmbedded || isSearchingNetwork}>
-              <RefreshCw size={18} />
-              {isLoadingEmbedded ? '读取中' : '从内嵌标签加载'}
-            </button>
-            <button type="button" onClick={() => void handleSearchNetwork()} disabled={isSaving || isLoadingEmbedded || isSearchingNetwork}>
-              <CloudDownload size={18} />
-              {isSearchingNetwork ? '搜索中' : '从网络加载'}
-            </button>
+            <span title={track.path}>{track.path}</span>
+            <small>
+              {selectedCover
+                ? `本地封面：${selectedCover.path}`
+                : pendingNetworkCover
+                  ? '网络封面将在保存时下载并写入。'
+                  : loadedCoverThumb
+                    ? '已从内嵌标签重新载入封面。'
+                    : '留空会保留当前内嵌封面。'}
+            </small>
+            <div className="tag-editor-tool-row">
+              <button type="button" onClick={() => void handleChooseCover()} disabled={isBusy}>
+                <ImagePlus size={17} />
+                选择封面
+              </button>
+              <button type="button" onClick={() => void handleLoadEmbedded()} disabled={isBusy}>
+                <RefreshCw size={17} />
+                {isLoadingEmbedded ? '读取中' : '从内嵌标签加载'}
+              </button>
+              <button type="button" onClick={() => void handleSearchNetwork()} disabled={isBusy}>
+                <CloudDownload size={17} />
+                {isSearchingNetwork ? '搜索中' : '从网络加载'}
+              </button>
+            </div>
           </div>
         </section>
 
-        {networkMessage ? <p className="tag-editor-network-message">{networkMessage}</p> : null}
+        <section className="tag-editor-section">
+          <div className="tag-editor-section-heading">
+            <h3>基础信息</h3>
+            <span>{formatAudioSummary(track)}</span>
+          </div>
+          <div className="tag-editor-grid tag-editor-grid--basic">{fieldDefinitions.filter((field) => field.group === 'basic').map(renderField)}</div>
+        </section>
 
-        {networkCandidates.length ? (
-          <section className="tag-editor-network-panel" aria-label="网络标签候选">
-            <div className="tag-editor-network-list">
-              {networkCandidates.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  className="tag-editor-network-candidate"
-                  type="button"
-                  data-selected={selectedNetworkCandidate?.id === candidate.id}
-                  onClick={() => handleSelectNetworkCandidate(candidate)}
-                >
-                  <span className="tag-editor-network-cover" data-empty={!candidate.coverPreviewUrl}>
-                    {candidate.coverPreviewUrl ? <img alt="" src={candidate.coverPreviewUrl} /> : <Tag size={24} />}
-                  </span>
-                  <span className="tag-editor-network-copy">
-                    <strong>{candidate.title || '未知标题'}</strong>
-                    <em>{candidate.artist || '未知艺术家'}</em>
-                    <small>
-                      {[candidate.album, candidate.albumArtist, candidate.year, formatDuration(candidate.duration)].filter(Boolean).join(' · ')}
-                    </small>
-                  </span>
-                  <span className="tag-editor-network-score">
-                    <b>{candidate.provider}</b>
-                    <em>{Math.round(candidate.confidence * 100)}%</em>
-                  </span>
-                </button>
-              ))}
-            </div>
+        <section className="tag-editor-section">
+          <div className="tag-editor-section-heading">
+            <h3>唱片信息</h3>
+            <span>用于专辑墙和艺术家归类</span>
+          </div>
+          <div className="tag-editor-grid">{fieldDefinitions.filter((field) => field.group === 'album').map(renderField)}</div>
+        </section>
 
-            {selectedNetworkCandidate ? (
-              <div className="tag-editor-network-fields">
-                <div className="tag-editor-network-fields-header">
-                  <span>选择要应用到表单的字段</span>
-                  <label>
-                    <input
-                      ref={(node) => {
-                        if (node) {
-                          node.indeterminate = someNetworkFieldsSelected(networkFieldSelection) && !allNetworkFieldsSelected(networkFieldSelection);
-                        }
-                      }}
-                      type="checkbox"
-                      checked={allNetworkFieldsSelected(networkFieldSelection)}
-                      onChange={handleToggleAllNetworkFields}
-                    />
-                    <span>全选</span>
-                  </label>
-                </div>
-                <div>
-                  {networkFieldLabels.map((field) => (
-                    <label key={field.key}>
-                      <input
-                        type="checkbox"
-                        checked={networkFieldSelection[field.key]}
-                        onChange={() => handleToggleNetworkField(field.key)}
-                      />
-                      <span>{field.label}</span>
-                    </label>
-                  ))}
-                </div>
-                <button type="button" onClick={handleApplyNetworkCandidate} disabled={isSaving}>
-                  <Check size={17} />
-                  应用到表单
-                </button>
+        <section className="tag-editor-section">
+          <div className="tag-editor-section-heading">
+            <h3>排序信息</h3>
+            <span>可留空</span>
+          </div>
+          <div className="tag-editor-grid tag-editor-grid--compact">{fieldDefinitions.filter((field) => field.group === 'order').map(renderField)}</div>
+        </section>
+
+        <section className="tag-editor-section tag-editor-network-panel" aria-label="网络候选对比">
+          <div className="tag-editor-section-heading">
+            <h3>网络候选</h3>
+            <button type="button" onClick={() => void handleSearchNetwork()} disabled={isBusy}>
+              <CloudDownload size={16} />
+              {isSearchingNetwork ? '搜索中' : '搜索候选'}
+            </button>
+          </div>
+
+          {networkMessage ? <p className="tag-editor-network-message">{networkMessage}</p> : null}
+
+          {networkCandidates.length ? (
+            <div className="tag-editor-network-content">
+              <div className="tag-editor-network-list">
+                {networkCandidates.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    className="tag-editor-network-candidate"
+                    type="button"
+                    data-selected={selectedNetworkCandidate?.id === candidate.id}
+                    onClick={() => handleSelectNetworkCandidate(candidate)}
+                  >
+                    <span className="tag-editor-network-cover" data-empty={!candidate.coverPreviewUrl}>
+                      {candidate.coverPreviewUrl ? <img alt="" src={candidate.coverPreviewUrl} /> : <Tag size={24} />}
+                    </span>
+                    <span className="tag-editor-network-copy">
+                      <strong>{candidate.title || '未知标题'}</strong>
+                      <em>{candidate.artist || '未知艺术家'}</em>
+                      <small>{[candidate.album, candidate.albumArtist, candidate.year, formatDuration(candidate.duration)].filter(Boolean).join(' · ')}</small>
+                    </span>
+                    <span className="tag-editor-network-score">
+                      <b>{candidate.provider}</b>
+                      <em>{Math.round(candidate.confidence * 100)}%</em>
+                    </span>
+                  </button>
+                ))}
               </div>
-            ) : null}
-          </section>
-        ) : null}
 
-        <div className="tag-editor-grid">
-          <label>
-            <span>标题</span>
-            <input value={form.title} onChange={(event) => updateField('title', event.target.value)} />
-          </label>
-          <label>
-            <span>艺术家</span>
-            <input value={form.artist} onChange={(event) => updateField('artist', event.target.value)} />
-          </label>
-          <label>
-            <span>专辑</span>
-            <input value={form.album} onChange={(event) => updateField('album', event.target.value)} />
-          </label>
-          <label>
-            <span>专辑艺术家</span>
-            <input value={form.albumArtist} onChange={(event) => updateField('albumArtist', event.target.value)} />
-          </label>
-          <label>
-            <span>音轨号</span>
-            <input inputMode="numeric" value={form.trackNo} onChange={(event) => updateField('trackNo', event.target.value)} />
-          </label>
-          <label>
-            <span>碟号</span>
-            <input inputMode="numeric" value={form.discNo} onChange={(event) => updateField('discNo', event.target.value)} />
-          </label>
-          <label>
-            <span>年份</span>
-            <input inputMode="numeric" value={form.year} onChange={(event) => updateField('year', event.target.value)} />
-          </label>
-          <label className="tag-editor-wide">
-            <span>流派</span>
-            <input value={form.genre} onChange={(event) => updateField('genre', event.target.value)} />
-          </label>
-        </div>
+              {selectedNetworkCandidate ? (
+                <div className="tag-editor-network-fields">
+                  <div className="tag-editor-network-fields-header">
+                    <span>选择要应用到表单的字段</span>
+                    <label>
+                      <input
+                        ref={(node) => {
+                          if (node) {
+                            node.indeterminate = someNetworkFieldsSelected(networkFieldSelection) && !allNetworkFieldsSelected(networkFieldSelection);
+                          }
+                        }}
+                        type="checkbox"
+                        checked={allNetworkFieldsSelected(networkFieldSelection)}
+                        onChange={handleToggleAllNetworkFields}
+                      />
+                      <span>全选</span>
+                    </label>
+                  </div>
+
+                  <div className="tag-editor-compare-table">
+                    <div className="tag-editor-compare-head">
+                      <span>字段</span>
+                      <span>当前</span>
+                      <span>候选</span>
+                    </div>
+                    {networkFieldLabels.map((field) => {
+                      const candidateValue = field.key === 'cover' ? (selectedNetworkCandidate.coverUrl ? '网络封面' : '') : candidateFieldValue(selectedNetworkCandidate, field.key);
+                      const currentValue = field.key === 'cover' ? (previewCover ? '已有封面' : '') : form[field.key];
+                      const canApply = field.key === 'cover' ? Boolean(selectedNetworkCandidate.coverUrl) : hasFormValue(candidateValue);
+                      return (
+                        <label key={field.key} className="tag-editor-compare-row" data-disabled={!canApply}>
+                          <span>
+                            <input
+                              type="checkbox"
+                              disabled={!canApply}
+                              checked={networkFieldSelection[field.key] && canApply}
+                              onChange={() => handleToggleNetworkField(field.key)}
+                            />
+                            {field.label}
+                          </span>
+                          <em>{fieldValue(currentValue)}</em>
+                          <strong>{fieldValue(candidateValue)}</strong>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <button type="button" onClick={handleApplyNetworkCandidate} disabled={isSaving || !someNetworkFieldsSelected(networkFieldSelection)}>
+                    <Check size={17} />
+                    应用到表单
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
 
         {error || localError ? <p className="tag-editor-error">{error ?? localError}</p> : null}
 
+        {showDiscardConfirm ? (
+          <div className="tag-editor-discard" role="alert">
+            <span>有未保存更改，确认关闭并丢弃吗？</span>
+            <button type="button" onClick={() => setShowDiscardConfirm(false)}>
+              继续编辑
+            </button>
+            <button type="button" onClick={onClose}>
+              丢弃更改
+            </button>
+          </div>
+        ) : null}
+
         <footer className="tag-editor-actions">
-          <span>更改会写入源音频文件，并立即反映到媒体库。</span>
-          <button className="tag-editor-cancel" type="button" onClick={onClose}>
+          <span>保存会写入源音频文件，并立即同步媒体库。</span>
+          <button className="tag-editor-cancel" type="button" onClick={requestClose} disabled={isSaving}>
             取消
           </button>
-          <button className="tag-editor-save" type="submit" disabled={isSaving}>
+          <button className="tag-editor-save" type="submit" disabled={isSaving || hasValidationErrors(validationErrors)}>
             <Save size={18} />
             {isSaving ? '保存中' : '保存标签'}
           </button>

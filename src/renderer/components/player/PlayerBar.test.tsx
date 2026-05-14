@@ -111,6 +111,66 @@ afterEach(() => {
 });
 
 describe('PlayerBar', () => {
+  it('opens the lyrics page when the artwork button is clicked', async () => {
+    const track = makeTrack(3, {
+      title: 'Cover Click Track',
+      artist: 'Cover Click Artist',
+      coverId: 'cover-click',
+      coverThumb: 'echo-cover://thumb/cover-click',
+    });
+    const onNavigateLyrics = vi.fn();
+    const onNavigateNowPlaying = vi.fn();
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 12000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+    window.addEventListener('app:navigate:lyrics', onNavigateLyrics);
+    window.addEventListener('app:navigate:now-playing', onNavigateNowPlaying);
+
+    try {
+      render(
+        <PlaybackQueueProvider>
+          <PlayerBar />
+        </PlaybackQueueProvider>,
+      );
+
+      await screen.findByText('Cover Click Track');
+      fireEvent.click(screen.getByRole('button', { name: '打开歌词' }));
+
+      expect(onNavigateLyrics).toHaveBeenCalledTimes(1);
+      expect(onNavigateNowPlaying).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('app:navigate:lyrics', onNavigateLyrics);
+      window.removeEventListener('app:navigate:now-playing', onNavigateNowPlaying);
+    }
+  });
+
   it('shows a short audiohost timeout message in the footer', async () => {
     const track = makeTrack(12);
     const rawError =

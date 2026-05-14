@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AlbumsPage } from './AlbumsPage';
 import type { LibraryAlbum, LibraryPage, LibraryTrack } from '../../shared/types/library';
+import { I18nProvider } from '../i18n/I18nProvider';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const album = (id: string, overrides: Partial<LibraryAlbum> = {}): LibraryAlbum => ({
@@ -109,11 +110,13 @@ const installLibrary = (
 
 const renderAlbumsPage = (): ReturnType<typeof render> =>
   render(
-    <PlaybackQueueProvider>
-      <main className="page-surface">
-        <AlbumsPage />
-      </main>
-    </PlaybackQueueProvider>,
+    <I18nProvider>
+      <PlaybackQueueProvider>
+        <main className="page-surface">
+          <AlbumsPage />
+        </main>
+      </PlaybackQueueProvider>
+    </I18nProvider>,
   );
 
 const QueueProbe = (): JSX.Element => {
@@ -124,12 +127,14 @@ const QueueProbe = (): JSX.Element => {
 
 const renderAlbumsPageWithQueueProbe = (): ReturnType<typeof render> =>
   render(
-    <PlaybackQueueProvider>
-      <main className="page-surface">
-        <AlbumsPage />
-      </main>
-      <QueueProbe />
-    </PlaybackQueueProvider>,
+    <I18nProvider>
+      <PlaybackQueueProvider>
+        <main className="page-surface">
+          <AlbumsPage />
+        </main>
+        <QueueProbe />
+      </PlaybackQueueProvider>
+    </I18nProvider>,
   );
 
 const setScrollablePageSurface = (element: HTMLElement): void => {
@@ -139,6 +144,7 @@ const setScrollablePageSurface = (element: HTMLElement): void => {
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', undefined);
+  window.localStorage.setItem('echo-next.locale', 'en-US');
 });
 
 afterEach(() => {
@@ -200,7 +206,8 @@ describe('AlbumsPage', () => {
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
     expect(getAlbums).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 60, search: 'search', sort: 'default' });
 
-    fireEvent.change(screen.getByDisplayValue('Default'), { target: { value: 'artist' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Default' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Artist' }));
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(3));
     expect(getAlbums).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 60, search: 'search', sort: 'artist' });
   });
@@ -226,7 +233,8 @@ describe('AlbumsPage', () => {
     expect(pageSurface.scrollTop).toBe(0);
 
     pageSurface.scrollTop = 520;
-    fireEvent.change(screen.getByDisplayValue('Default'), { target: { value: 'artist' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Default' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Artist' }));
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(3));
     expect(pageSurface.scrollTop).toBe(0);
   });

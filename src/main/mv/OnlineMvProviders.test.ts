@@ -197,6 +197,78 @@ describe('BilibiliMvProvider', () => {
     });
   });
 
+  it('resolves Bilibili DASH video streams so logged-in higher quality is not capped at durl-only 720p', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('qn=80')) {
+        return jsonResponse({
+          data: {
+            quality: 80,
+            dash: {
+              video: [
+                {
+                  id: 80,
+                  baseUrl: 'https://upos.example/1080-video-only.m4s',
+                  backupUrl: ['https://upos-backup.example/1080-video-only.m4s'],
+                  width: 1920,
+                  height: 1080,
+                  frameRate: '30',
+                  codecs: 'avc1.640032',
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      if (url.includes('qn=64')) {
+        return jsonResponse({
+          data: {
+            quality: 64,
+            dash: {
+              video: [
+                {
+                  id: 64,
+                  baseUrl: 'https://upos.example/720-video-only.m4s',
+                  width: 1280,
+                  height: 720,
+                  frameRate: '30',
+                  codecs: 'avc1.640028',
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili', cookie: 'SESSDATA=secret' }),
+    });
+
+    const variants = await provider.resolve(video, settings);
+
+    expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-80', 'bilibili-qn-64']);
+    expect(variants[0]).toMatchObject({
+      label: '1080p',
+      qualityTier: '1080p',
+      width: 1920,
+      height: 1080,
+      codec: 'avc1.640032',
+      url: 'https://upos.example/1080-video-only.m4s',
+      headers: {
+        Cookie: 'SESSDATA=secret',
+        Referer: 'https://www.bilibili.com/video/BV1echo',
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('fnval=4048'), expect.anything());
+  });
+
   it('resolves unrestricted variants when max quality is selected and keeps 60fps variants', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {

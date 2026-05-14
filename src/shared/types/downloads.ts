@@ -47,7 +47,18 @@ export type DownloadJob = {
   completedAt: string | null;
 };
 
-export type CreateDownloadUrlJobOptions = Partial<Pick<DownloadSettings, 'importToLibrary' | 'bindMvAfterImport'>>;
+export type CreateDownloadUrlJobOptions = Partial<Pick<DownloadSettings, 'importToLibrary' | 'bindMvAfterImport'>> & {
+  title?: string;
+  artist?: string;
+  album?: string;
+  albumArtist?: string;
+  coverUrl?: string | null;
+  webpageUrl?: string;
+  requestHeaders?: Record<string, string>;
+  directAudio?: boolean;
+  directAudioMimeType?: string | null;
+  directAudioExtension?: string | null;
+};
 
 export type DownloadSearchRequest = {
   query: string;
