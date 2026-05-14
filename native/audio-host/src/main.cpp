@@ -31,6 +31,10 @@
 #include <io.h>
 #include <windows.h>
 #include <shellapi.h>
+#include <audioclient.h>
+#include <mmdeviceapi.h>
+#include <propsys.h>
+#include <wrl/client.h>
 #endif
 
 #ifndef ECHO_ENABLE_ASIO
@@ -412,6 +416,247 @@ void createDeviceTypes(juce::OwnedArray<juce::AudioIODeviceType>& types)
     manager.createAudioDeviceTypes(types);
 }
 
+#if JUCE_WINDOWS
+const PROPERTYKEY echoPkeyDeviceFriendlyName = {
+    { 0xa45c254e, 0xdf1c, 0x4efd, { 0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0 } },
+    14
+};
+
+class ScopedComInitializer final
+{
+public:
+    ScopedComInitializer()
+    {
+        result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        ownsInitialisation = SUCCEEDED(result);
+    }
+
+    ~ScopedComInitializer()
+    {
+        if (ownsInitialisation)
+            CoUninitialize();
+    }
+
+    bool canUseCom() const
+    {
+        return SUCCEEDED(result) || result == RPC_E_CHANGED_MODE;
+    }
+
+private:
+    HRESULT result = E_FAIL;
+    bool ownsInitialisation = false;
+};
+
+struct CoreAudioEndpoint
+{
+    juce::String id;
+    juce::String name;
+    int mixSampleRate = 0;
+    bool isDefault = false;
+};
+
+juce::String getEndpointId(IMMDevice* device)
+{
+    if (device == nullptr)
+        return {};
+
+    LPWSTR rawId = nullptr;
+    if (FAILED(device->GetId(&rawId)) || rawId == nullptr)
+    {
+        if (rawId != nullptr)
+            CoTaskMemFree(rawId);
+        return {};
+    }
+
+    juce::String id(rawId);
+    CoTaskMemFree(rawId);
+    return id;
+}
+
+juce::String getEndpointFriendlyName(IMMDevice* device)
+{
+    if (device == nullptr)
+        return {};
+
+    Microsoft::WRL::ComPtr<IPropertyStore> properties;
+    if (FAILED(device->OpenPropertyStore(STGM_READ, properties.GetAddressOf())))
+        return {};
+
+    PROPVARIANT value;
+    PropVariantInit(&value);
+
+    juce::String name;
+    if (SUCCEEDED(properties->GetValue(echoPkeyDeviceFriendlyName, &value)) && value.vt == VT_LPWSTR && value.pwszVal != nullptr)
+        name = juce::String(value.pwszVal);
+
+    PropVariantClear(&value);
+    return name;
+}
+
+int getEndpointMixSampleRate(IMMDevice* device)
+{
+    if (device == nullptr)
+        return 0;
+
+    Microsoft::WRL::ComPtr<IAudioClient> audioClient;
+    if (FAILED(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(audioClient.GetAddressOf()))))
+        return 0;
+
+    WAVEFORMATEX* mixFormat = nullptr;
+    if (FAILED(audioClient->GetMixFormat(&mixFormat)) || mixFormat == nullptr)
+    {
+        if (mixFormat != nullptr)
+            CoTaskMemFree(mixFormat);
+        return 0;
+    }
+
+    const int sampleRate = mixFormat->nSamplesPerSec > 0
+        ? static_cast<int>(mixFormat->nSamplesPerSec)
+        : 0;
+    CoTaskMemFree(mixFormat);
+    return sampleRate;
+}
+
+juce::String getDefaultEndpointId(IMMDeviceEnumerator& enumerator)
+{
+    Microsoft::WRL::ComPtr<IMMDevice> defaultDevice;
+
+    if (SUCCEEDED(enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia, defaultDevice.GetAddressOf())))
+        return getEndpointId(defaultDevice.Get());
+
+    defaultDevice.Reset();
+    if (SUCCEEDED(enumerator.GetDefaultAudioEndpoint(eRender, eConsole, defaultDevice.GetAddressOf())))
+        return getEndpointId(defaultDevice.Get());
+
+    return {};
+}
+
+std::vector<CoreAudioEndpoint> enumerateCoreAudioRenderEndpoints()
+{
+    ScopedComInitializer com;
+    if (! com.canUseCom())
+        return {};
+
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+    if (FAILED(CoCreateInstance(
+            __uuidof(MMDeviceEnumerator),
+            nullptr,
+            CLSCTX_ALL,
+            IID_PPV_ARGS(enumerator.GetAddressOf()))))
+        return {};
+
+    const auto defaultId = getDefaultEndpointId(*enumerator.Get());
+
+    Microsoft::WRL::ComPtr<IMMDeviceCollection> collection;
+    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, collection.GetAddressOf())))
+        return {};
+
+    UINT count = 0;
+    if (FAILED(collection->GetCount(&count)))
+        return {};
+
+    std::vector<CoreAudioEndpoint> endpoints;
+    endpoints.reserve(count);
+
+    for (UINT i = 0; i < count; ++i)
+    {
+        Microsoft::WRL::ComPtr<IMMDevice> endpoint;
+        if (FAILED(collection->Item(i, endpoint.GetAddressOf())))
+            continue;
+
+        const auto id = getEndpointId(endpoint.Get());
+        endpoints.push_back({
+            id,
+            getEndpointFriendlyName(endpoint.Get()),
+            getEndpointMixSampleRate(endpoint.Get()),
+            defaultId.isNotEmpty() && id == defaultId,
+        });
+    }
+
+    return endpoints;
+}
+
+bool isCoreAudioEndpointNameMatch(const juce::String& endpointName, const juce::String& juceDeviceName)
+{
+    return endpointName.isNotEmpty()
+        && juceDeviceName.isNotEmpty()
+        && (endpointName == juceDeviceName
+            || endpointName.containsIgnoreCase(juceDeviceName)
+            || juceDeviceName.containsIgnoreCase(endpointName));
+}
+
+const CoreAudioEndpoint* findCoreAudioEndpoint(
+    const std::vector<CoreAudioEndpoint>& endpoints,
+    const DeviceDescriptor& device)
+{
+    auto exact = std::find_if(endpoints.begin(), endpoints.end(), [&] (const CoreAudioEndpoint& endpoint)
+    {
+        return endpoint.name == device.name;
+    });
+
+    if (exact != endpoints.end())
+        return &*exact;
+
+    auto loose = std::find_if(endpoints.begin(), endpoints.end(), [&] (const CoreAudioEndpoint& endpoint)
+    {
+        return isCoreAudioEndpointNameMatch(endpoint.name, device.name);
+    });
+
+    return loose != endpoints.end() ? &*loose : nullptr;
+}
+
+int getFallbackSharedSampleRate()
+{
+    return 48000;
+}
+
+void applyCoreAudioSharedSampleRates(std::vector<DeviceDescriptor>& devices)
+{
+    const auto endpoints = enumerateCoreAudioRenderEndpoints();
+    const auto defaultEndpoint = std::find_if(endpoints.begin(), endpoints.end(), [] (const CoreAudioEndpoint& endpoint)
+    {
+        return endpoint.isDefault && endpoint.mixSampleRate > 0;
+    });
+
+    for (auto& device : devices)
+    {
+        int sampleRate = 0;
+
+        if (const auto* endpoint = findCoreAudioEndpoint(endpoints, device))
+        {
+            sampleRate = endpoint->mixSampleRate;
+            device.isDefault = device.isDefault || endpoint->isDefault;
+        }
+
+        if (sampleRate <= 0 && device.isDefault && defaultEndpoint != endpoints.end())
+            sampleRate = defaultEndpoint->mixSampleRate;
+
+        if (sampleRate <= 0)
+            sampleRate = getFallbackSharedSampleRate();
+
+        device.sampleRate = sampleRate;
+        device.sharedSampleRate = sampleRate;
+    }
+}
+#else
+int getFallbackSharedSampleRate()
+{
+    return 48000;
+}
+
+void applyCoreAudioSharedSampleRates(std::vector<DeviceDescriptor>& devices)
+{
+    for (auto& device : devices)
+    {
+        if (device.sharedSampleRate <= 0)
+            device.sharedSampleRate = getFallbackSharedSampleRate();
+
+        if (device.sampleRate <= 0)
+            device.sampleRate = device.sharedSampleRate;
+    }
+}
+#endif
+
 std::vector<DeviceDescriptor> enumerateDevices(DeviceListMode mode, bool dedupe = true)
 {
     juce::OwnedArray<juce::AudioIODeviceType> types;
@@ -472,12 +717,15 @@ std::vector<DeviceDescriptor> enumerateDevices(DeviceListMode mode, bool dedupe 
                 type->getTypeName(),
                 names[i],
                 0,
-                48000,
+                0,
                 i == defaultIndex,
                 isAsioType(type->getTypeName()),
             });
         }
     }
+
+    if (mode == DeviceListMode::Shared)
+        applyCoreAudioSharedSampleRates(devices);
 
     return devices;
 }
@@ -972,14 +1220,17 @@ std::vector<int> buildSampleRateAttempts(const Options& options, const DeviceDes
             rates.push_back(rate);
     };
 
-    add(options.sampleRate);
-
     if (! options.exclusive && ! options.asio)
     {
         add(device.sharedSampleRate);
+        add(options.sampleRate);
         add(48000);
         add(44100);
         add(device.sampleRate);
+    }
+    else
+    {
+        add(options.sampleRate);
     }
 
     return rates;
@@ -1175,12 +1426,17 @@ int runHost(const Options& options)
     player.setSource(&source);
 
     const bool openedExclusive = ! options.asio && (options.exclusive || isExclusiveType(openedDescriptor.typeName));
+    const int openedSharedSampleRate = (! openedExclusive && ! options.asio)
+        ? (openedDescriptor.sharedSampleRate > 0 ? openedDescriptor.sharedSampleRate : actualSampleRate)
+        : 0;
 
     std::thread reader(stdinReader, std::ref(source), options.channels);
 
     writeJsonLine(
         std::string("{\"ready\":true,\"sampleRate\":") + std::to_string(actualSampleRate)
         + ",\"hardwareSampleRate\":" + std::to_string(actualSampleRate)
+        + ",\"sharedDeviceSampleRate\":" + std::to_string(openedSharedSampleRate)
+        + ",\"sharedSampleRate\":" + std::to_string(openedSharedSampleRate)
         + ",\"channels\":" + std::to_string(options.channels)
         + ",\"exclusive\":" + std::string(openedExclusive ? "true" : "false")
         + ",\"eqControlPort\":" + std::to_string(eqControlReady ? options.eqControlPort : 0)

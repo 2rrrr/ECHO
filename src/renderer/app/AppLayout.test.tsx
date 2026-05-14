@@ -77,6 +77,56 @@ describe('AppLayout standalone routes', () => {
     expect(screen.getByRole('contentinfo')).toBeTruthy();
   });
 
+  it('keeps the same player bar instance when entering the lyrics drawer', async () => {
+    const unsubscribeAudioStatus = vi.fn();
+    const audioOnStatus = vi.fn(() => unsubscribeAudioStatus);
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ lyricsPlayerBarDrawerEnabled: true, smtcEnabled: true }),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: 'track-1',
+          positionMs: 15000,
+          durationMs: 120000,
+          filePath: 'D:\\Music\\song.flac',
+        }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: 'track-1',
+          currentFilePath: 'D:\\Music\\song.flac',
+          positionSeconds: 15,
+          durationSeconds: 120,
+          error: null,
+        }),
+        onStatus: audioOnStatus,
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(null),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(audioOnStatus).toHaveBeenCalledTimes(1));
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(container.querySelector('.lyrics-player-drawer-host')).toBeTruthy());
+    expect(audioOnStatus).toHaveBeenCalledTimes(1);
+    expect(unsubscribeAudioStatus).not.toHaveBeenCalled();
+  });
+
   it('does not apply the app wallpaper layer to the standalone lyrics and MV page', async () => {
     window.echo = {
       app: {

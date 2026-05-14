@@ -27,6 +27,12 @@ export const registerDiagnosticsIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.DiagnosticsExport, (): Promise<string> => getCrashReportService().exportDiagnosticsZip());
   ipcMain.handle(IpcChannels.DiagnosticsOpenFolder, (): Promise<string> => getCrashReportService().openDiagnosticsFolder());
+  ipcMain.handle(IpcChannels.DiagnosticsOpenCrashReport, (): Promise<string> =>
+    getCrashReportService().openCrashReportFile(),
+  );
+  ipcMain.handle(IpcChannels.DiagnosticsOpenAudioCrashReport, (): Promise<string> =>
+    getCrashReportService().openAudioCrashReportFile(),
+  );
   ipcMain.handle(IpcChannels.DiagnosticsReportRendererError, (_event, payload: unknown): void => {
     getCrashReportService().reportRendererError(normalizeRendererError(payload));
   });

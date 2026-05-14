@@ -119,6 +119,8 @@ vi.mock('../utils/echoBridge', () => ({
     exportDiagnostics: vi.fn().mockResolvedValue('D:\\Echo\\diagnostics.zip'),
     getLastCrashSummary: vi.fn().mockResolvedValue(null),
     openDiagnosticsFolder: vi.fn(),
+    openCrashReport: vi.fn().mockResolvedValue('D:\\Echo\\crash-report.md'),
+    openAudioCrashReport: vi.fn().mockResolvedValue('D:\\Echo\\audio-crash-report.md'),
   }),
   getLibraryBridge: () => ({
     clearCache: clearCacheMock,

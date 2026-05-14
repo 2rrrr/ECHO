@@ -43,6 +43,7 @@ describe('local file open helpers', () => {
 
     expect(parseLocalAudioFileArguments(['--flag', flac, flac.toUpperCase(), cue, jpg, folder, join(root, 'missing.mp3')])).toEqual([
       resolve(flac),
+      resolve(cue),
     ]);
   });
 
@@ -89,6 +90,45 @@ describe('local file open helpers', () => {
       title: 'Temporary Song',
       isTemporary: true,
       path: resolve(temporaryPath),
+    });
+  });
+
+  it('expands cue sheets into temporary cue track entries', async () => {
+    const root = makeTempRoot();
+    const flac = join(root, 'album.flac');
+    const cue = join(root, 'album.cue');
+    writeFileSync(flac, 'not real audio');
+    writeFileSync(
+      cue,
+      [
+        'PERFORMER "Album Artist"',
+        'TITLE "Album Title"',
+        'FILE "album.flac" WAVE',
+        '  TRACK 01 AUDIO',
+        '    TITLE "First Song"',
+        '    PERFORMER "First Artist"',
+        '    INDEX 01 00:00:00',
+        '  TRACK 02 AUDIO',
+        '    TITLE "Second Song"',
+        '    INDEX 01 03:12:00',
+      ].join('\n'),
+    );
+
+    const result = await resolveLocalAudioFiles([cue]);
+
+    expect(result.rejected).toEqual([]);
+    expect(result.tracks).toHaveLength(2);
+    expect(result.tracks[0]).toMatchObject({
+      title: 'First Song',
+      artist: 'First Artist',
+      album: 'Album Title',
+      path: `${resolve(cue)}#cueTrack=1`,
+    });
+    expect(result.tracks[1]).toMatchObject({
+      title: 'Second Song',
+      artist: 'Album Artist',
+      trackNo: 2,
+      path: `${resolve(cue)}#cueTrack=2`,
     });
   });
 });

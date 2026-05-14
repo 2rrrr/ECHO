@@ -29,6 +29,7 @@ const maxPlaybackTtlMs = 5 * 60 * 1000;
 const fallbackPlaybackTtlMs = 2 * 60 * 1000;
 const providerTimeoutMs = 10 * 1000;
 const searchCacheVersion = 'v2';
+const lyricsCacheVersion = 'v2';
 
 type StreamingTrackRequest = {
   provider: StreamingProviderName;
@@ -61,7 +62,7 @@ const playbackCacheKey = (request: StreamingPlaybackRequest): string =>
   `playback:${request.provider}:${request.providerTrackId}:${request.quality ?? 'auto'}`;
 
 const lyricsCacheKey = (provider: StreamingProviderName, providerTrackId: string): string =>
-  `lyrics:streaming:${provider}:${providerTrackId}`;
+  `lyrics:${lyricsCacheVersion}:streaming:${provider}:${providerTrackId}`;
 
 const mvCacheKey = (provider: StreamingProviderName, providerTrackId: string): string =>
   `mv:streaming:${provider}:${providerTrackId}`;

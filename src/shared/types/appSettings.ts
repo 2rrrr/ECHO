@@ -9,6 +9,7 @@ export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
 export type AppSettings = {
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
   artistWallAlbumArtwork: boolean;
+  autoUpdateEnabled?: boolean;
   coverCacheDir: string | null;
   hideToTrayOnClose: boolean;
   appCustomWallpaperPath: string | null;

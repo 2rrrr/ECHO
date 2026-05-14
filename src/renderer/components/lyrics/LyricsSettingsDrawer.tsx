@@ -885,7 +885,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 max={32}
                 step={1}
                 value={effectiveSettings.lyricsSecondaryFontSizePx}
-                onChange={(event) => void patchSettings({ lyricsSecondaryFontSizePx: Number(event.currentTarget.value) })}
+                onChange={(event) => patchSettingsDebounced({ lyricsSecondaryFontSizePx: Number(event.currentTarget.value) })}
               />
             </label>
           ) : null}
@@ -905,7 +905,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               max={56}
               step={1}
               value={effectiveSettings.lyricsFontSizePx}
-              onChange={(event) => void patchSettings({ lyricsFontSizePx: Number(event.currentTarget.value) })}
+              onChange={(event) => patchSettingsDebounced({ lyricsFontSizePx: Number(event.currentTarget.value) })}
             />
           </label>
           ) : null}

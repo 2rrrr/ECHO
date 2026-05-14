@@ -6,8 +6,8 @@ export type MvSourceType = 'sidecar' | 'manual' | 'search_candidate' | 'stream';
 
 export type NetworkMvProviderId = Extract<MvProviderId, 'bilibili' | 'youtube'>;
 
-export type MvQualityTier = 'auto' | '720p' | '1080p' | '1440p' | '2160p';
-export type MvMaxQuality = Exclude<MvQualityTier, 'auto'> | 'max';
+export type MvQualityTier = 'auto' | '720p' | '1080p' | '1440p' | '2160p' | '4320p';
+export type MvMaxQuality = Exclude<MvQualityTier, 'auto' | '4320p'> | 'max';
 
 export type MvStreamProtocol = 'direct' | 'dash' | 'hls' | 'external';
 
@@ -97,6 +97,18 @@ export type MvMatchCandidate = {
   score: number;
   playableInApp: boolean;
   reasons: string[];
+};
+
+export type MvTrackSnapshotSearchRequest = {
+  trackId: string;
+  title: string;
+  artist: string;
+  album?: string | null;
+  albumArtist?: string | null;
+  durationSeconds?: number | null;
+  coverThumb?: string | null;
+  mediaType?: 'local' | 'remote' | 'streaming';
+  query?: string | null;
 };
 
 export type MvMatchSummary = {

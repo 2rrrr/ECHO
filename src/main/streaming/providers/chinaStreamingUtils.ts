@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { parseSyncedLyrics } from '../../lyrics/lyricsParser';
+import { parsePlainLyrics, parseSyncedLyrics } from '../../lyrics/lyricsParser';
 
 export const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -89,15 +89,97 @@ export const splitLyricsByKind = (value: string | null): { syncedLyrics: string 
     : { syncedLyrics: null, plainLyrics: value };
 };
 
-export const linesFromLyrics = (syncedLyrics: string | null, plainLyrics: string | null) => {
-  const syncedLines = syncedLyrics ? parseSyncedLyrics(syncedLyrics).map((line) => ({ timeMs: line.timeMs, text: line.text })) : [];
-  if (syncedLines.length > 0) {
-    return syncedLines;
+const normalizeSecondaryText = (value: string): string | null => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const mergeSecondaryLyrics = <Line extends { timeMs: number | null; text: string }>(
+  lines: Line[],
+  secondaryLyrics: string | null,
+  field: 'translation' | 'romanization',
+): Array<Line & { translation?: string | null; romanization?: string | null }> => {
+  if (!secondaryLyrics || lines.length === 0) {
+    return lines;
   }
 
-  return (plainLyrics ?? '')
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => ({ timeMs: null, text: line }));
+  const syncedSecondary = parseSyncedLyrics(secondaryLyrics)
+    .map((line) => ({ ...line, text: normalizeSecondaryText(line.text) ?? '' }))
+    .filter((line) => line.text.length > 0);
+
+  if (syncedSecondary.length > 0) {
+    const usedIndexes = new Set<number>();
+    let changed = false;
+    const nextLines = lines.map((line, index) => {
+      const lineTimeMs = typeof line.timeMs === 'number' ? line.timeMs : null;
+      let secondaryText: string | null = null;
+
+      if (lineTimeMs !== null) {
+        let closestIndex = -1;
+        let closestDelta = Number.POSITIVE_INFINITY;
+        for (let secondaryIndex = 0; secondaryIndex < syncedSecondary.length; secondaryIndex += 1) {
+          if (usedIndexes.has(secondaryIndex)) {
+            continue;
+          }
+
+          const delta = Math.abs(syncedSecondary[secondaryIndex].timeMs - lineTimeMs);
+          if (delta < closestDelta) {
+            closestDelta = delta;
+            closestIndex = secondaryIndex;
+          }
+        }
+
+        if (closestIndex >= 0 && closestDelta <= 1500) {
+          usedIndexes.add(closestIndex);
+          secondaryText = syncedSecondary[closestIndex].text;
+        }
+      }
+
+      secondaryText = secondaryText ?? (syncedSecondary.length === lines.length ? syncedSecondary[index]?.text : null) ?? null;
+      if (!secondaryText) {
+        return line;
+      }
+
+      changed = true;
+      return { ...line, [field]: secondaryText };
+    });
+
+    return changed ? nextLines : lines;
+  }
+
+  const plainSecondary = parsePlainLyrics(secondaryLyrics);
+  if (plainSecondary.length === 0) {
+    return lines;
+  }
+
+  let changed = false;
+  const nextLines = lines.map((line, index) => {
+    const secondaryText = normalizeSecondaryText(plainSecondary[index]?.text ?? '');
+    if (!secondaryText) {
+      return line;
+    }
+
+    changed = true;
+    return { ...line, [field]: secondaryText };
+  });
+
+  return changed ? nextLines : lines;
+};
+
+export const linesFromLyrics = (
+  syncedLyrics: string | null,
+  plainLyrics: string | null,
+  translationLyrics: string | null = null,
+  romanizationLyrics: string | null = null,
+) => {
+  const syncedLines = syncedLyrics ? parseSyncedLyrics(syncedLyrics).map((line) => ({ timeMs: line.timeMs, text: line.text })) : [];
+  const primaryLines: Array<{ timeMs: number | null; text: string }> = syncedLines.length > 0
+    ? syncedLines
+    : (plainLyrics ?? '')
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => ({ timeMs: null, text: line }));
+  const withRomanization = mergeSecondaryLyrics(primaryLines, romanizationLyrics, 'romanization');
+  return mergeSecondaryLyrics(withRomanization, translationLyrics, 'translation');
 };

@@ -1,6 +1,7 @@
 import { basename, dirname, extname } from 'node:path';
 import { parseFile } from 'music-metadata';
 import type { IAudioMetadata } from 'music-metadata';
+import { resolveCueTrack } from '../../audio/CueSheet';
 import type { FieldSource, FieldSources, MetadataFields, MetadataResult } from '../libraryTypes';
 import type { MetadataReader } from './MetadataReader';
 
@@ -123,15 +124,95 @@ const fallbackFields = (filePath: string): MetadataResult => {
 export class TsMetadataReader implements MetadataReader {
   async read(filePath: string): Promise<MetadataResult> {
     try {
-      // TODO: Add a cue sheet parser that expands .cue sources into virtual tracks.
-      // Until then, parser failures fall back to filename metadata like other formats.
-      const metadata = await parseFile(filePath, {
+      const cueTrack = resolveCueTrack(filePath);
+      const metadataPath = cueTrack?.audioPath ?? filePath;
+      const metadata = await parseFile(metadataPath, {
         duration: true,
         skipCovers: false,
       });
 
-      return this.normalize(filePath, metadata);
+      if (!cueTrack) {
+        return this.normalize(filePath, metadata);
+      }
+
+      const normalized = this.normalize(metadataPath, metadata);
+      const sourceDuration = normalized.fields.duration;
+      const cueEndSeconds = cueTrack.endSeconds ?? (sourceDuration > 0 ? sourceDuration : null);
+      const duration = cueEndSeconds !== null ? Math.max(0, cueEndSeconds - cueTrack.startSeconds) : 0;
+      const title = cueTrack.title ?? normalized.fields.title;
+      const artist = cueTrack.performer ?? cueTrack.albumArtist ?? normalized.fields.artist;
+      const album = cueTrack.album ?? normalized.fields.album;
+      const albumArtist = cueTrack.albumArtist ?? artist;
+
+      return {
+        ...normalized,
+        fields: {
+          ...normalized.fields,
+          title,
+          artist,
+          album,
+          albumArtist,
+          trackNo: cueTrack.trackNumber,
+          duration,
+          codec: normalized.fields.codec ? `CUE/${normalized.fields.codec}` : 'CUE',
+        },
+        fieldSources: {
+          ...normalized.fieldSources,
+          title: cueTrack.title ? 'sidecar' : normalized.fieldSources.title,
+          artist: cueTrack.performer || cueTrack.albumArtist ? 'sidecar' : normalized.fieldSources.artist,
+          album: cueTrack.album ? 'sidecar' : normalized.fieldSources.album,
+          albumArtist: cueTrack.albumArtist ? 'sidecar' : normalized.fieldSources.albumArtist,
+          trackNo: 'sidecar',
+          duration: 'sidecar',
+          codec: normalized.fieldSources.codec ?? 'technical',
+        },
+        embeddedMetadataStatus: 'present',
+        warnings: normalized.warnings,
+        errors: normalized.errors,
+        status: normalized.status,
+      };
     } catch (error) {
+      const cueTrack = resolveCueTrack(filePath);
+      if (cueTrack) {
+        return {
+          fields: {
+            title: cueTrack.title ?? `Track ${cueTrack.trackNumber}`,
+            artist: cueTrack.performer ?? cueTrack.albumArtist ?? unknownArtist,
+            album: cueTrack.album ?? folderAlbumFallback(cueTrack.cuePath) ?? unknownAlbum,
+            albumArtist: cueTrack.albumArtist ?? cueTrack.performer ?? unknownArtist,
+            trackNo: cueTrack.trackNumber,
+            discNo: null,
+            year: null,
+            genre: null,
+            duration: cueTrack.endSeconds !== null ? Math.max(0, cueTrack.endSeconds - cueTrack.startSeconds) : 0,
+            codec: 'CUE',
+            sampleRate: null,
+            bitDepth: null,
+            bitrate: null,
+          },
+          fieldSources: {
+            title: cueTrack.title ? 'sidecar' : 'filename_fallback',
+            artist: cueTrack.performer || cueTrack.albumArtist ? 'sidecar' : 'unknown',
+            album: cueTrack.album ? 'sidecar' : 'folder_structure',
+            albumArtist: cueTrack.albumArtist || cueTrack.performer ? 'sidecar' : 'unknown',
+            trackNo: 'sidecar',
+            discNo: 'unknown',
+            year: 'unknown',
+            genre: 'unknown',
+            duration: cueTrack.endSeconds !== null ? 'sidecar' : 'unknown',
+            codec: 'sidecar',
+            sampleRate: 'unknown',
+            bitDepth: 'unknown',
+            bitrate: 'unknown',
+          },
+          embeddedMetadataStatus: 'present',
+          embeddedCoverStatus: 'missing',
+          warnings: [],
+          errors: [error instanceof Error ? error.message : String(error)],
+          status: 'fallback',
+        };
+      }
+
       const result = fallbackFields(filePath);
       return {
         ...result,

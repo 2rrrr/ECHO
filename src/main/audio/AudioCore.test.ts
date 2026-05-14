@@ -447,6 +447,57 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.warnings).toContain('shared_output_resampling_or_mixer_rate_difference');
   });
 
+  it('uses the system default shared mix rate without pinning the default device', async () => {
+    const sharedDevice: AudioDeviceInfo = {
+      id: 'shared:0',
+      index: 0,
+      name: 'Speakers',
+      outputMode: 'shared',
+      sampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      isDefault: true,
+    };
+    const { bridges, decoder, session } = createSessionHarness([probe('441.flac', 44100)], [48000], [sharedDevice]);
+
+    const status = await session.playLocalFile({
+      filePath: '441.flac',
+      output: { outputMode: 'shared' },
+    });
+
+    expect(status.requestedOutputSampleRate).toBe(48000);
+    expect(status.decoderOutputSampleRate).toBe(48000);
+    expect(status.sharedDeviceSampleRate).toBe(48000);
+    expect(status.latencyProfile).toBe('stable');
+    expect(bridges[0].startOptions?.deviceIndex).toBeUndefined();
+    expect(bridges[0].startOptions?.deviceName).toBeUndefined();
+    expect(bridges[0].startOptions).toMatchObject({
+      requestedOutputSampleRate: 48000,
+      bufferSizeFrames: 8192,
+      latencyProfile: 'stable',
+    });
+    expect(decoder.decodeRequests[0].decoderOutputSampleRate).toBe(48000);
+  });
+
+  it('includes the shared mixer rate in audio diagnostics', async () => {
+    const sharedDevice: AudioDeviceInfo = {
+      id: 'shared:0',
+      index: 0,
+      name: 'Speakers',
+      outputMode: 'shared',
+      sampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      isDefault: true,
+    };
+    const { session } = createSessionHarness([probe('441.flac', 44100)], [48000], [sharedDevice]);
+
+    await session.playLocalFile({
+      filePath: '441.flac',
+      output: { outputMode: 'shared' },
+    });
+
+    expect(session.getDiagnostics().sharedDeviceSampleRate).toBe(48000);
+  });
+
   it('prefers stored device name over stale device index after host replacement', async () => {
     const devices: AudioDeviceInfo[] = [
       {
@@ -1071,16 +1122,17 @@ describe('AudioSession playback watchdog', () => {
     expect(bridges).toHaveLength(2);
   });
 
-  it('starts shared output with the balanced stability profile', async () => {
+  it('starts shared output with the stable latency profile', async () => {
     const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
 
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
 
     expect(bridges[0].startOptions).toMatchObject({
-      bufferSizeFrames: 2048,
+      bufferSizeFrames: 8192,
       fifoCapacityMs: 750,
       startupPrebufferMs: 120,
       startupPrebufferTimeoutMs: 600,
+      latencyProfile: 'stable',
     });
   });
 
@@ -1107,7 +1159,7 @@ describe('AudioSession playback watchdog', () => {
     expect(bridges[0].stop).toHaveBeenCalledTimes(1);
     expect(bridges).toHaveLength(2);
     expect(bridges[1].startOptions).toMatchObject({
-      bufferSizeFrames: 4096,
+      bufferSizeFrames: 8192,
       fifoCapacityMs: 1000,
       startupPrebufferMs: 180,
     });

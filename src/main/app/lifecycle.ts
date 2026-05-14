@@ -10,6 +10,8 @@ import { disposeDiscordPresenceIntegration, initializeDiscordPresenceIntegration
 import { disposeLastFmIntegration, initializeLastFmIntegration } from '../integrations/lastfm/LastFmStatusSync';
 import { savePlaybackMemoryNow } from '../ipc/playbackIpc';
 import { dispatchLocalAudioFilesOpened, parseLocalAudioFileArguments } from './localFileOpen';
+import { initializeAutoUpdater } from './autoUpdater';
+import { getAppSettings } from './appSettings';
 
 export const registerAppLifecycle = (): void => {
   const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -41,6 +43,7 @@ export const registerAppLifecycle = (): void => {
     void initializeDiscordPresenceIntegration();
     initializeLastFmIntegration();
     createMainWindow();
+    initializeAutoUpdater(getAppSettings().autoUpdateEnabled !== false);
     dispatchLocalAudioFilesOpened(parseLocalAudioFileArguments(process.argv));
 
     app.on('activate', () => {

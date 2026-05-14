@@ -15,13 +15,13 @@ export const readRememberedAudioOutput = (): RememberedAudioOutput => {
     const raw = window.localStorage.getItem(storageKey);
 
     if (!raw) {
-      return { enabled: false, outputMode: 'shared', latencyProfile: 'balanced' };
+      return { enabled: false, outputMode: 'shared', latencyProfile: 'stable' };
     }
 
     const parsed = JSON.parse(raw) as Partial<RememberedAudioOutput>;
     const outputMode = parsed.outputMode === 'exclusive' || parsed.outputMode === 'asio' ? parsed.outputMode : 'shared';
     const latencyProfile =
-      parsed.latencyProfile === 'stable' || parsed.latencyProfile === 'lowLatency' ? parsed.latencyProfile : 'balanced';
+      parsed.latencyProfile === 'balanced' || parsed.latencyProfile === 'lowLatency' ? parsed.latencyProfile : 'stable';
 
     return {
       enabled: parsed.enabled === true,
@@ -31,7 +31,7 @@ export const readRememberedAudioOutput = (): RememberedAudioOutput => {
       deviceName: typeof parsed.deviceName === 'string' && parsed.deviceName.trim() ? parsed.deviceName : undefined,
     };
   } catch {
-    return { enabled: false, outputMode: 'shared', latencyProfile: 'balanced' };
+    return { enabled: false, outputMode: 'shared', latencyProfile: 'stable' };
   }
 };
 
@@ -42,7 +42,7 @@ export const writeRememberedAudioOutput = (settings: RememberedAudioOutput): voi
 export const createOutputSettings = (
   outputMode: AudioOutputMode,
   device: AudioDeviceInfo | null,
-  latencyProfile: AudioLatencyProfile = 'balanced',
+  latencyProfile: AudioLatencyProfile = 'stable',
 ): AudioOutputSettings => {
   const settings: AudioOutputSettings = { outputMode, latencyProfile };
 

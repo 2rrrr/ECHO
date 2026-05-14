@@ -1,0 +1,77 @@
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+const scriptPath = fileURLToPath(import.meta.url);
+const projectRoot = resolve(dirname(scriptPath), '..');
+const sourceDir = join(projectRoot, 'native', 'smtc-host');
+const buildDir = join(projectRoot, 'out', 'native', 'smtc-host');
+const targetDir = join(projectRoot, 'electron-app', 'build');
+const targetExe = join(targetDir, 'echo-smtc-host.exe');
+const packagedResourceExe = join(projectRoot, 'dist', 'win-unpacked', 'resources', 'echo-smtc-host.exe');
+const config = process.env.ECHO_SMTC_HOST_CONFIG || 'Release';
+
+const run = (command, args) => {
+  const result = spawnSync(command, args, {
+    cwd: projectRoot,
+    stdio: 'inherit',
+    shell: false,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status}`);
+  }
+};
+
+const findBuiltHost = () => {
+  const candidates = [
+    join(buildDir, config, 'echo-smtc-host.exe'),
+    join(buildDir, 'echo-smtc-host.exe'),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+};
+
+try {
+  if (process.platform !== 'win32') {
+    console.log('[build:smtc-host] Skipping Windows-only SMTC host build on this platform.');
+    process.exit(0);
+  }
+
+  run('cmake', [
+    '-S',
+    sourceDir,
+    '-B',
+    buildDir,
+    '-G',
+    'Visual Studio 17 2022',
+    '-A',
+    'x64',
+  ]);
+  run('cmake', ['--build', buildDir, '--config', config, '--parallel']);
+
+  const builtHost = findBuiltHost();
+  if (!builtHost) {
+    throw new Error(`Built SMTC host binary was not found under ${buildDir}`);
+  }
+
+  mkdirSync(targetDir, { recursive: true });
+  copyFileSync(builtHost, targetExe);
+  console.log(`[build:smtc-host] Copied ${builtHost}`);
+  console.log(`[build:smtc-host]      -> ${targetExe}`);
+
+  if (existsSync(packagedResourceExe)) {
+    copyFileSync(builtHost, packagedResourceExe);
+    console.log(`[build:smtc-host]      -> ${packagedResourceExe}`);
+  }
+} catch (error) {
+  console.error('[build:smtc-host] Failed to build Windows SMTC host.');
+  console.error('[build:smtc-host] Requirements: CMake, Visual Studio 2022 Build Tools, and Windows SDK 10.0.19041 or newer.');
+  console.error(`[build:smtc-host] ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}

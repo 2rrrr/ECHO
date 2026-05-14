@@ -134,6 +134,8 @@ const streamingLyricsToState = (
     .map((line) => ({
       timeMs: line.timeMs ?? -1,
       text: line.text.trim(),
+      ...(line.translation ? { translation: line.translation } : {}),
+      ...(line.romanization ? { romanization: line.romanization } : {}),
     }))
     .filter((line) => line.text.length > 0);
   const fallbackText = result.plainLyrics ?? result.syncedLyrics ?? "";

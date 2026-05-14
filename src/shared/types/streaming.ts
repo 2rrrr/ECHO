@@ -144,6 +144,8 @@ export type StreamingPlaybackSource = {
 export type StreamingLyricsLine = {
   timeMs: number | null;
   text: string;
+  translation?: string | null;
+  romanization?: string | null;
 };
 
 export type StreamingLyricsResult = {
@@ -152,6 +154,8 @@ export type StreamingLyricsResult = {
   status: StreamingLyricsStatus;
   plainLyrics: string | null;
   syncedLyrics: string | null;
+  translationLyrics?: string | null;
+  romanizationLyrics?: string | null;
   lines: StreamingLyricsLine[];
   sourceLabel: string | null;
 };

@@ -62,7 +62,9 @@ type PlaybackQueueContextValue = {
   playPrevious: () => Promise<PlaybackStatus | null>;
   playNext: () => Promise<PlaybackStatus | null>;
   setCurrentTrackId: (trackId: string | null) => void;
-  updateCurrentTrackSnapshot: (patch: Partial<Pick<LibraryTrack, 'duration' | 'coverThumb' | 'title' | 'artist' | 'album'>>) => void;
+  updateCurrentTrackSnapshot: (
+    patch: Partial<Pick<LibraryTrack, 'duration' | 'coverThumb' | 'title' | 'artist' | 'album' | 'codec' | 'sampleRate' | 'bitDepth' | 'bitrate'>>,
+  ) => void;
   syncPlaybackState: (state: AudioPlaybackState) => void;
   toggleShuffle: () => void;
   setRepeatMode: (mode: RepeatMode) => void;
@@ -781,7 +783,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   );
 
   const updateCurrentTrackSnapshot = useCallback(
-    (patch: Partial<Pick<LibraryTrack, 'duration' | 'coverThumb' | 'title' | 'artist' | 'album'>>): void => {
+    (
+      patch: Partial<Pick<LibraryTrack, 'duration' | 'coverThumb' | 'title' | 'artist' | 'album' | 'codec' | 'sampleRate' | 'bitDepth' | 'bitrate'>>,
+    ): void => {
       const queueId = currentQueueIdRef.current;
       const trackId = currentTrackIdRef.current;
       setItems((current) =>

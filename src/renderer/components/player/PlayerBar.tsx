@@ -130,12 +130,32 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, [queue, state]);
 
   useEffect(() => {
-    if (!currentTrack || currentTrack.mediaType !== 'streaming' || currentTrack.duration > 0 || durationSeconds <= 0) {
+    if (!currentTrack || currentTrack.mediaType !== 'streaming') {
       return;
     }
 
-    queue.updateCurrentTrackSnapshot({ duration: durationSeconds });
-  }, [currentTrack, durationSeconds, queue]);
+    const patch = {
+      ...(currentTrack.duration <= 0 && durationSeconds > 0 ? { duration: durationSeconds } : {}),
+      ...(!currentTrack.codec && audioStatus?.codec ? { codec: audioStatus.codec } : {}),
+      ...(!currentTrack.sampleRate && audioStatus?.fileSampleRate ? { sampleRate: audioStatus.fileSampleRate } : {}),
+      ...(!currentTrack.bitDepth && audioStatus?.bitDepth ? { bitDepth: audioStatus.bitDepth } : {}),
+      ...(!currentTrack.bitrate && audioStatus?.bitrate ? { bitrate: audioStatus.bitrate } : {}),
+    };
+
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+
+    queue.updateCurrentTrackSnapshot(patch);
+  }, [
+    audioStatus?.bitDepth,
+    audioStatus?.bitrate,
+    audioStatus?.codec,
+    audioStatus?.fileSampleRate,
+    currentTrack,
+    durationSeconds,
+    queue,
+  ]);
 
   useEffect(() => {
     void refreshCurrentTrackLiked();

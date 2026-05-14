@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import ffmpegStatic from 'ffmpeg-static';
 import { parseFile } from 'music-metadata';
 import type { AudioProbeResult, DecoderRun, PcmDecodeRequest } from './audioTypes';
+import { resolveCueTrack } from './CueSheet';
 
 type DecoderChildProcess = ChildProcessByStdio<null, Readable, Readable>;
 type DecoderSpawnOptions = SpawnOptionsWithStdioTuple<'ignore', 'pipe', 'pipe'> & {
@@ -124,14 +125,20 @@ export class DecoderPipeline {
   }
 
   async probeLocalFile(filePath: string): Promise<AudioProbeResult> {
-    const metadata = await parseFile(filePath, {
+    const cueTrack = resolveCueTrack(filePath);
+    const probePath = cueTrack?.audioPath ?? filePath;
+    const metadata = await parseFile(probePath, {
       duration: true,
       skipCovers: true,
     });
     const format = metadata.format;
+    const sourceDuration = Math.max(0, Number(format.duration ?? 0));
+    const cueEndSeconds = cueTrack?.endSeconds ?? (cueTrack ? sourceDuration : null);
+    const durationSeconds =
+      cueTrack && cueEndSeconds !== null ? Math.max(0, cueEndSeconds - cueTrack.startSeconds) : sourceDuration;
     const result = {
       filePath,
-      durationSeconds: Math.max(0, Number(format.duration ?? 0)),
+      durationSeconds,
       fileSampleRate: normalizePositiveInteger(format.sampleRate),
       channels: Math.max(1, Math.min(8, normalizePositiveInteger(format.numberOfChannels) ?? 2)),
       codec: typeof format.codec === 'string' && format.codec.trim() ? format.codec : null,
@@ -149,16 +156,25 @@ export class DecoderPipeline {
   }
 
   decodeLocalFile(request: PcmDecodeRequest): DecoderRun {
+    const cueTrack = resolveCueTrack(request.filePath);
+    const decodePath = cueTrack?.audioPath ?? request.filePath;
+    const cueRelativeStart = Math.max(0, request.startSeconds);
+    const decodeStart = cueTrack ? cueTrack.startSeconds + cueRelativeStart : cueRelativeStart;
+    const cueDuration =
+      cueTrack?.endSeconds !== null && cueTrack?.endSeconds !== undefined
+        ? Math.max(0, cueTrack.endSeconds - cueTrack.startSeconds - cueRelativeStart)
+        : null;
     const args = [
       '-hide_banner',
       '-loglevel',
       'error',
       '-nostdin',
       '-ss',
-      String(Math.max(0, request.startSeconds)),
+      String(decodeStart),
       '-i',
-      request.filePath,
+      decodePath,
       '-vn',
+      ...(cueDuration !== null ? ['-t', String(cueDuration)] : []),
       '-f',
       'f32le',
       '-ac',

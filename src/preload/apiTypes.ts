@@ -1,5 +1,6 @@
 import type { AudioDeviceInfo, AudioDiagnostics, AudioOutputSettings, AudioStatus, ChannelBalanceState } from '../shared/types/audio';
 import type { AppSettings } from '../shared/types/appSettings';
+import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
@@ -62,7 +63,7 @@ import type {
 import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { LyricsSearchCandidate, TrackLyrics } from '../shared/types/lyrics';
-import type { MvMatchCandidate, MvResolvedStreams, MvSettings, TrackVideo } from '../shared/types/mv';
+import type { MvMatchCandidate, MvResolvedStreams, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../shared/types/mv';
 import type {
   RemoteDirectoryItem,
   RemoteBackgroundGlobalStatus,
@@ -110,6 +111,9 @@ export type EchoApi = {
     chooseCacheDirectory: () => Promise<string | null>;
     getDefaultCacheDirectory: () => Promise<string>;
     setCoverCacheDirectory: (request: SetCoverCacheDirectoryRequest) => Promise<CoverCacheMigrationResult | null>;
+    getUpdateStatus: () => Promise<UpdateStatus>;
+    checkForUpdates: () => Promise<UpdateStatus>;
+    openRepository: () => Promise<void>;
   };
   library: {
     chooseFolder: () => Promise<string | null>;
@@ -257,6 +261,7 @@ export type EchoApi = {
     setSettings: (patch: Partial<MvSettings>) => Promise<MvSettings>;
     findLocalCandidates: (trackId: string) => Promise<MvMatchCandidate[]>;
     searchNetworkCandidates: (trackId: string, query?: string) => Promise<MvMatchCandidate[]>;
+    searchNetworkCandidatesForSnapshot: (request: MvTrackSnapshotSearchRequest) => Promise<MvMatchCandidate[]>;
     getCandidates: (trackId: string) => Promise<TrackVideo[]>;
     resolveStreams: (videoId: string) => Promise<MvResolvedStreams>;
     setQuality: (videoId: string, qualityId: string) => Promise<TrackVideo>;
@@ -297,6 +302,8 @@ export type EchoApi = {
     clearLastCrashSummary: () => Promise<void>;
     exportDiagnostics: () => Promise<string>;
     openDiagnosticsFolder: () => Promise<string>;
+    openCrashReport: () => Promise<string>;
+    openAudioCrashReport: () => Promise<string>;
     reportRendererError: (payload: RendererErrorPayload) => Promise<void>;
   };
   downloads: {

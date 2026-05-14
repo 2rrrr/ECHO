@@ -184,11 +184,13 @@ export class NeteaseStreamingProvider implements StreamingProvider {
   }
 
   async getLyrics(input: { providerTrackId: string }): Promise<StreamingLyricsResult> {
-    const params = new URLSearchParams({ id: input.providerTrackId, lv: '1', kv: '1', tv: '-1', rv: '-1' });
+    const params = new URLSearchParams({ id: input.providerTrackId, lv: '1', kv: '1', tv: '1', rv: '1' });
     const data = asRecord(await jsonFetch(`https://music.163.com/api/song/lyric?${params.toString()}`, { headers: neteaseHeaders(accountCookie()) }));
     const lyricText = text(asRecord(data.lrc).lyric);
+    const translationLyrics = text(asRecord(data.tlyric).lyric);
+    const romanizationLyrics = text(asRecord(data.romalrc).lyric);
     const split = splitLyricsByKind(lyricText);
-    const lines = linesFromLyrics(split.syncedLyrics, split.plainLyrics);
+    const lines = linesFromLyrics(split.syncedLyrics, split.plainLyrics, translationLyrics, romanizationLyrics);
     const instrumental = data.nolyric === true || data.needDesc === true;
 
     return {
@@ -197,6 +199,8 @@ export class NeteaseStreamingProvider implements StreamingProvider {
       status: instrumental || split.syncedLyrics || split.plainLyrics || lines.length > 0 ? 'available' : 'missing',
       plainLyrics: split.plainLyrics,
       syncedLyrics: split.syncedLyrics,
+      translationLyrics,
+      romanizationLyrics,
       lines,
       sourceLabel: '网易云音乐',
     };

@@ -35,10 +35,10 @@ export const ensureTray = (): void => {
   }
 
   tray = new Tray(createTrayIcon());
-  tray.setToolTip('ECHO Next');
+  tray.setToolTip('ECHO NEXT');
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Show ECHO Next', click: showMainWindow },
+      { label: 'Show ECHO NEXT', click: showMainWindow },
       {
         label: 'Quit',
         click: () => {

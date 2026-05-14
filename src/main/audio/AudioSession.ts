@@ -105,6 +105,9 @@ const latencyProfiles: Record<AudioLatencyProfile, Pick<NativeOutputStartOptions
   },
 };
 
+const defaultLatencyProfileForMode = (outputMode: AudioOutputMode): AudioLatencyProfile =>
+  outputMode === 'shared' ? 'stable' : 'balanced';
+
 const defaultLogger = (message: string): void => {
   console.warn(message);
 };
@@ -131,6 +134,24 @@ const normalizeOutputMode = (value: unknown): AudioOutputMode => {
 
 const normalizeLatencyProfile = (value: unknown): AudioLatencyProfile => {
   return value === 'stable' || value === 'lowLatency' ? value : 'balanced';
+};
+
+const resolveLatencyProfile = (
+  nextOutputMode: AudioOutputMode,
+  requestedLatencyProfile: unknown,
+  previousOutputMode: AudioOutputMode,
+  previousLatencyProfile: AudioLatencyProfile,
+  outputModeWasRequested: boolean,
+): AudioLatencyProfile => {
+  if (requestedLatencyProfile !== undefined) {
+    return normalizeLatencyProfile(requestedLatencyProfile);
+  }
+
+  if (outputModeWasRequested && nextOutputMode !== previousOutputMode) {
+    return defaultLatencyProfileForMode(nextOutputMode);
+  }
+
+  return previousLatencyProfile ?? defaultLatencyProfileForMode(nextOutputMode);
 };
 
 const normalizePlaybackRate = (value: unknown): number => {
@@ -233,7 +254,7 @@ const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
   outputDeviceType: null,
   outputBackend: null,
   outputMode: 'shared',
-  latencyProfile: 'balanced',
+  latencyProfile: 'stable',
   volume: 1,
   playbackRate: 1,
   playbackSpeedMode: 'nightcore',
@@ -396,7 +417,7 @@ export class AudioSession extends EventEmitter {
   private outputSettings: Required<Pick<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'>> &
     Omit<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'> = {
     outputMode: 'shared',
-    latencyProfile: 'balanced',
+    latencyProfile: 'stable',
     volume: 1,
     playbackRate: 1,
     playbackSpeedMode: 'nightcore',
@@ -494,11 +515,19 @@ export class AudioSession extends EventEmitter {
   async setOutput(settings: AudioOutputSettings): Promise<AudioStatus> {
     const previousOutputSettings = this.currentOutputSettings ? { ...this.currentOutputSettings } : null;
     this.updatePositionFromOutput();
+    const nextOutputMode = normalizeOutputMode(settings.outputMode ?? this.outputSettings.outputMode);
+    const nextLatencyProfile = resolveLatencyProfile(
+      nextOutputMode,
+      settings.latencyProfile,
+      this.outputSettings.outputMode,
+      this.outputSettings.latencyProfile,
+      settings.outputMode !== undefined,
+    );
     this.outputSettings = {
       ...this.outputSettings,
       ...settings,
-      outputMode: normalizeOutputMode(settings.outputMode ?? this.outputSettings.outputMode),
-      latencyProfile: normalizeLatencyProfile(settings.latencyProfile ?? this.outputSettings.latencyProfile),
+      outputMode: nextOutputMode,
+      latencyProfile: nextLatencyProfile,
       bufferSizeFrames: normalizePositiveInteger(settings.bufferSizeFrames) ?? this.outputSettings.bufferSizeFrames,
       volume: Math.max(0, Math.min(1, Number(settings.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(settings.playbackRate ?? this.outputSettings.playbackRate),
@@ -582,11 +611,19 @@ export class AudioSession extends EventEmitter {
     this.currentOutputBackend = null;
     this.currentOutputDeviceType = null;
     this.currentOutputDeviceName = null;
+    const nextOutputMode = normalizeOutputMode(request.output?.outputMode ?? this.outputSettings.outputMode);
+    const nextLatencyProfile = resolveLatencyProfile(
+      nextOutputMode,
+      request.output?.latencyProfile,
+      this.outputSettings.outputMode,
+      this.outputSettings.latencyProfile,
+      request.output?.outputMode !== undefined,
+    );
     this.currentOutputSettings = {
       ...this.outputSettings,
       ...request.output,
-      outputMode: normalizeOutputMode(request.output?.outputMode ?? this.outputSettings.outputMode),
-      latencyProfile: normalizeLatencyProfile(request.output?.latencyProfile ?? this.outputSettings.latencyProfile),
+      outputMode: nextOutputMode,
+      latencyProfile: nextLatencyProfile,
       bufferSizeFrames: normalizePositiveInteger(request.output?.bufferSizeFrames) ?? this.outputSettings.bufferSizeFrames,
       volume: Math.max(0, Math.min(1, Number(request.output?.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(request.output?.playbackRate ?? this.outputSettings.playbackRate),
@@ -959,6 +996,7 @@ export class AudioSession extends EventEmitter {
       decoderOutputSampleRate: status.decoderOutputSampleRate,
       requestedOutputSampleRate: status.requestedOutputSampleRate,
       actualDeviceSampleRate: status.actualDeviceSampleRate,
+      sharedDeviceSampleRate: status.sharedDeviceSampleRate,
       resampling: status.resampling,
       bitPerfectCandidate: status.bitPerfectCandidate,
       sampleRateMismatch: status.sampleRateMismatch,
@@ -1209,6 +1247,12 @@ export class AudioSession extends EventEmitter {
     return null;
   }
 
+  private resolveDefaultSharedDevice(): AudioDeviceInfo | null {
+    const sharedDevices = this.deviceService.listDevices().filter((device) => device.outputMode === 'shared');
+
+    return sharedDevices.find((device) => device.isDefault) ?? sharedDevices[0] ?? null;
+  }
+
   private createBridgeStartCandidates(outputSettings: AudioOutputSettings): Array<AudioDeviceInfo | null> {
     const outputMode = normalizeOutputMode(outputSettings.outputMode);
     const explicitDevice = createDeviceFromOutputSettings(outputSettings);
@@ -1278,13 +1322,17 @@ export class AudioSession extends EventEmitter {
 
     for (const candidate of candidates) {
       this.assertCurrentRun(token);
-      this.currentDevice = candidate;
+      const outputMode = normalizeOutputMode(this.currentOutputSettings.outputMode);
+      const usingDefaultSharedFallback =
+        outputMode === 'shared' && candidate === null && hasExplicitDeviceSelection(this.currentOutputSettings);
+      const planDevice = outputMode === 'shared' && candidate === null ? this.resolveDefaultSharedDevice() : candidate;
+      this.currentDevice = planDevice;
       this.currentPlan = this.createSampleRatePlan(probe, this.currentOutputSettings, this.currentDevice);
       this.logger(
         `[AudioSession] sample-rate plan: file=${this.currentPlan.fileSampleRate ?? 'n/a'} decoder=${
           this.currentPlan.decoderOutputSampleRate
         } requested=${this.currentPlan.requestedOutputSampleRate} mode=${this.currentPlan.outputMode} device=${
-          candidate ? `${candidate.index}:${candidate.name}` : 'default'
+          planDevice ? `${planDevice.index}:${planDevice.name}` : 'default'
         }`,
       );
       this.clock.reset(startSeconds, this.currentPlan.requestedOutputSampleRate);
@@ -1292,10 +1340,6 @@ export class AudioSession extends EventEmitter {
       const bridge = this.createBridge();
       this.bridge = bridge;
       this.attachBridgeEvents(bridge, token);
-
-      const outputMode = this.currentPlan.outputMode;
-      const usingDefaultSharedFallback =
-        outputMode === 'shared' && candidate === null && hasExplicitDeviceSelection(this.currentOutputSettings);
 
       try {
         const ready = await bridge.start(this.createNativeOutputStartOptions({
@@ -1338,7 +1382,7 @@ export class AudioSession extends EventEmitter {
 
     if (normalizeOutputMode(this.currentOutputSettings.outputMode) === 'exclusive') {
       const fallbackSettings = createSharedFallbackSettings(this.currentOutputSettings);
-      const fallbackDevice = createDeviceFromOutputSettings(fallbackSettings);
+      const fallbackDevice = this.resolveSelectedDevice(fallbackSettings) ?? createDeviceFromOutputSettings(fallbackSettings);
       this.assertCurrentRun(token);
       this.currentOutputSettings = fallbackSettings;
       this.currentDevice = fallbackDevice;
@@ -1410,10 +1454,11 @@ export class AudioSession extends EventEmitter {
     this.bridge = null;
 
     const fallbackSettings = createSafeSharedFallbackSettings(this.currentOutputSettings);
+    const fallbackDevice = this.resolveDefaultSharedDevice();
     this.assertCurrentRun(token);
     this.currentOutputSettings = fallbackSettings;
-    this.currentDevice = null;
-    this.currentPlan = this.createSampleRatePlan(probe, fallbackSettings, null);
+    this.currentDevice = fallbackDevice;
+    this.currentPlan = this.createSampleRatePlan(probe, fallbackSettings, fallbackDevice);
     this.sharedStabilityTier = 'emergency';
     this.addOutputWarning('shared_output_recovered_safe_mode');
     this.logger(`[AudioSession] shared output failed; trying safe shared output: ${cause.message}`);
@@ -1469,7 +1514,7 @@ export class AudioSession extends EventEmitter {
     this.bridge = null;
 
     const fallbackSettings = createSharedFallbackSettings(this.currentOutputSettings);
-    const fallbackDevice = createDeviceFromOutputSettings(fallbackSettings);
+    const fallbackDevice = this.resolveSelectedDevice(fallbackSettings) ?? createDeviceFromOutputSettings(fallbackSettings);
     this.assertCurrentRun(token);
     this.currentOutputSettings = fallbackSettings;
     this.currentDevice = fallbackDevice;

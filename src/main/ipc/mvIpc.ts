@@ -1,6 +1,6 @@
 import { dialog, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { MvSettings } from '../../shared/types/mv';
+import type { MvSettings, MvTrackSnapshotSearchRequest } from '../../shared/types/mv';
 import { getMvService } from '../mv/MvService';
 
 const requireText = (value: unknown, name: string): string => {
@@ -9,6 +9,28 @@ const requireText = (value: unknown, name: string): string => {
   }
 
   return value;
+};
+
+const optionalText = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+const normalizeSnapshotSearchRequest = (value: unknown): MvTrackSnapshotSearchRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('MV snapshot search request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  const durationSeconds = Number(input.durationSeconds);
+  return {
+    trackId: requireText(input.trackId, 'trackId'),
+    title: requireText(input.title, 'title'),
+    artist: optionalText(input.artist) ?? 'Unknown Artist',
+    album: optionalText(input.album),
+    albumArtist: optionalText(input.albumArtist),
+    durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
+    coverThumb: optionalText(input.coverThumb),
+    mediaType: input.mediaType === 'remote' || input.mediaType === 'streaming' || input.mediaType === 'local' ? input.mediaType : 'streaming',
+    query: optionalText(input.query),
+  };
 };
 
 export const registerMvIpc = (): void => {
@@ -24,6 +46,9 @@ export const registerMvIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.MvSearchNetworkCandidates, (_event, trackId: unknown, query: unknown) =>
     getMvService().searchNetworkCandidates(requireText(trackId, 'trackId'), typeof query === 'string' ? query : undefined),
+  );
+  ipcMain.handle(IpcChannels.MvSearchNetworkCandidatesForSnapshot, (_event, request: unknown) =>
+    getMvService().searchNetworkCandidatesForSnapshot(normalizeSnapshotSearchRequest(request)),
   );
   ipcMain.handle(IpcChannels.MvGetCandidates, (_event, trackId: unknown) =>
     getMvService().getVideoCandidates(requireText(trackId, 'trackId')),

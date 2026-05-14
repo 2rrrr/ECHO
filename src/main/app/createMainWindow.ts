@@ -23,7 +23,7 @@ export const createMainWindow = (): BrowserWindow => {
     height: 1050,
     minWidth: 1120,
     minHeight: 760,
-    title: 'ECHO Next',
+    title: 'ECHO NEXT',
     backgroundColor: '#f7f9fc',
     frame: false,
     show: false,

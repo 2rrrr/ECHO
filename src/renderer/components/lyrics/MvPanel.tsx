@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent } from 'react';
 import { Film, Music2 } from 'lucide-react';
 import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
-import type { StreamingMvResult, StreamingProviderName } from '../../../shared/types/streaming';
+import type { StreamingMvItem, StreamingProviderName } from '../../../shared/types/streaming';
 
 export type MvAudioClock = {
   positionSeconds: number;
@@ -69,10 +69,59 @@ const isAdaptiveStream = (video: TrackVideo | null): boolean =>
 const mvSyncDriftThresholdSeconds = 0.8;
 const mvSyncCorrectionCooldownMs = 1000;
 const playbackSeekedEvent = 'playback:seeked';
+const mvSettingsKeys = [
+  'enabled',
+  'autoSearch',
+  'autoPreload',
+  'autoApplyThreshold',
+  'immersiveBackground',
+  'immersiveBackgroundScalePercent',
+  'immersiveBackgroundOffsetXPercent',
+  'immersiveBackgroundOffsetYPercent',
+  'immersiveBackgroundBlurPx',
+  'immersiveBackgroundBrightnessPercent',
+  'immersiveBackgroundOverlayOpacityPercent',
+  'lyricsReadabilityEnhanced',
+  'restartAudioOnLoad',
+  'enabledProviders',
+  'providerOrder',
+  'maxQuality',
+  'allow60fps',
+] satisfies Array<keyof MvSettings>;
+const mvReloadSettingsKeys = [
+  'enabled',
+  'autoSearch',
+  'autoPreload',
+  'enabledProviders',
+  'providerOrder',
+  'maxQuality',
+  'allow60fps',
+] satisfies Array<keyof MvSettings>;
 
 type PlaybackSeekedDetail = {
   positionSeconds?: unknown;
   trackId?: unknown;
+};
+
+const isObjectPatch = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const isMvSettingsPatch = (value: unknown): value is Partial<MvSettings> => {
+  if (!isObjectPatch(value)) {
+    return false;
+  }
+
+  return Object.keys(value).some((key) => mvSettingsKeys.includes(key as keyof MvSettings));
+};
+
+const shouldReloadMvSelection = (value: unknown): boolean => {
+  if (!isObjectPatch(value)) {
+    return true;
+  }
+
+  return Object.keys(value).some((key) =>
+    mvReloadSettingsKeys.includes(key as (typeof mvReloadSettingsKeys)[number]),
+  );
 };
 
 const normalizeAudioPosition = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
@@ -139,6 +188,9 @@ const playVideo = (video: HTMLVideoElement): void => {
   }
 };
 
+const streamingTrackKey = (target: { provider: StreamingProviderName; providerTrackId: string }): string =>
+  `streaming:${target.provider}:${target.providerTrackId}`;
+
 const CoverFallback = ({
   artist,
   coverUrl,
@@ -184,14 +236,11 @@ export const MvPanel = ({
   trackId,
 }: MvPanelProps): JSX.Element => {
   const [selectedVideo, setSelectedVideo] = useState<TrackVideo | null>(null);
-  const [streamingMv, setStreamingMv] = useState<StreamingMvResult | null>(null);
-  const [isStreamingMvLoading, setIsStreamingMvLoading] = useState(false);
   const [settings, setSettings] = useState<MvSettings>(fallbackMvSettings);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState(false);
   const requestRef = useRef(0);
-  const streamingMvRequestRef = useRef(0);
   const preloadAttemptRef = useRef<string | null>(null);
   const lastVideoSyncAtRef = useRef(0);
   const videoSeekingRef = useRef(false);
@@ -281,17 +330,16 @@ export const MvPanel = ({
   }, []);
 
   const loadSelected = useCallback(async (): Promise<void> => {
+    if (streamingTarget) {
+      return;
+    }
+
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     setSelectedVideo(null);
     setIsLoading(Boolean(trackId && window.echo?.mv));
     setError(null);
     setVideoError(false);
-
-    if (streamingTarget) {
-      setIsLoading(false);
-      return;
-    }
 
     if (!trackId || !window.echo?.mv) {
       setIsLoading(false);
@@ -332,40 +380,82 @@ export const MvPanel = ({
   }, [loadSettings, resolveNetworkVideo, streamingTarget, trackId]);
 
   useEffect(() => {
-    const requestId = streamingMvRequestRef.current + 1;
-    streamingMvRequestRef.current = requestId;
-    setStreamingMv(null);
-    setIsStreamingMvLoading(Boolean(streamingTarget));
-
     if (!streamingTarget) {
-      setIsStreamingMvLoading(false);
       return;
     }
 
-    const streamingApi = window.echo?.streaming;
-    if (!streamingApi?.getMv) {
-      setIsStreamingMvLoading(false);
-      return;
-    }
+    const effectiveTrackId = trackId ?? streamingTrackKey(streamingTarget);
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    setSelectedVideo(null);
+    setIsLoading(true);
+    setError(null);
+    setVideoError(false);
 
-    void streamingApi
-      .getMv(streamingTarget)
-      .then((result) => {
-        if (streamingMvRequestRef.current === requestId) {
-          setStreamingMv(result);
+    void (async () => {
+      const nextSettings = await loadSettings();
+      if (requestRef.current !== requestId || nextSettings.enabled === false) {
+        return;
+      }
+
+      const mvApi = window.echo?.mv;
+      let video = await mvApi?.getSelected?.(effectiveTrackId) ?? null;
+      if (!video && mvApi?.searchNetworkCandidatesForSnapshot && mvApi.selectVideo) {
+        let streamingMvItems: StreamingMvItem[] = [];
+        try {
+          const streamingMv = await window.echo?.streaming?.getMv?.(streamingTarget);
+          streamingMvItems = streamingMv?.status === 'available' ? streamingMv.items : [];
+        } catch {
+          streamingMvItems = [];
         }
-      })
-      .catch(() => {
-        if (streamingMvRequestRef.current === requestId) {
-          setStreamingMv(null);
+
+        const searchTargets =
+          streamingMvItems.length > 0
+            ? streamingMvItems
+            : [
+                {
+                  title,
+                  artist,
+                  duration: audioClockRef.current.durationSeconds,
+                  thumbnailUrl: coverUrl,
+                },
+              ];
+
+        for (const item of searchTargets) {
+          const candidates = await mvApi.searchNetworkCandidatesForSnapshot({
+            trackId: effectiveTrackId,
+            title: item.title,
+            artist: item.artist || artist,
+            durationSeconds: item.duration ?? audioClockRef.current.durationSeconds,
+            coverThumb: item.thumbnailUrl ?? coverUrl,
+            mediaType: 'streaming',
+            query: [item.title, item.artist || artist].filter(Boolean).join(' '),
+          });
+          const candidate = candidates.find((entry) => entry.playableInApp) ?? candidates[0] ?? null;
+          if (candidate) {
+            video = await mvApi.selectVideo(effectiveTrackId, candidate.id);
+            break;
+          }
+        }
+      }
+
+      const resolvedVideo = await resolveNetworkVideo(video);
+      if (requestRef.current === requestId) {
+        setSelectedVideo(resolvedVideo);
+      }
+    })()
+      .catch((loadError) => {
+        if (requestRef.current === requestId) {
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+          setSelectedVideo(null);
         }
       })
       .finally(() => {
-        if (streamingMvRequestRef.current === requestId) {
-          setIsStreamingMvLoading(false);
+        if (requestRef.current === requestId) {
+          setIsLoading(false);
         }
       });
-  }, [streamingTarget]);
+  }, [artist, coverUrl, loadSettings, resolveNetworkVideo, streamingTarget, title, trackId]);
 
   useEffect(() => {
     void loadSelected();
@@ -395,7 +485,12 @@ export const MvPanel = ({
   }, [loadSelected, trackId]);
 
   useEffect(() => {
-    const handleSettingsChanged = (): void => {
+    const handleSettingsChanged = (event: Event): void => {
+      const patch = event instanceof CustomEvent ? event.detail : null;
+      if (patch && !isMvSettingsPatch(patch)) {
+        return;
+      }
+
       void loadSettings().then((nextSettings) => {
         if (nextSettings.enabled === false) {
           setSelectedVideo(null);
@@ -403,7 +498,9 @@ export const MvPanel = ({
           return;
         }
 
-        void loadSelected();
+        if (shouldReloadMvSelection(patch)) {
+          void loadSelected();
+        }
       });
     };
 
@@ -412,7 +509,6 @@ export const MvPanel = ({
   }, [loadSelected, loadSettings]);
 
   const isMvEnabled = settings.enabled !== false;
-  const streamingMvItem = streamingMv?.items[0] ?? null;
   const videoMediaUrl = isMvEnabled && selectedVideo?.playableInApp && selectedVideo.mediaUrl && !videoError ? selectedVideo.mediaUrl : null;
   const showVideo = Boolean(videoMediaUrl);
   const adaptiveStream = isAdaptiveStream(selectedVideo);
@@ -764,21 +860,19 @@ export const MvPanel = ({
       ) : (
         <CoverFallback
           artist={artist}
-          coverUrl={streamingMvItem?.thumbnailUrl ?? coverUrl}
+          coverUrl={selectedVideo?.thumbnailUrl ?? coverUrl}
           status={
             isMvEnabled
               ? selectedVideo
                 ? videoError
                   ? 'Playback failed'
                   : 'External player required'
-                : isLoading || isStreamingMvLoading
+                : isLoading
                   ? 'Loading MV'
-                  : streamingMvItem
-                    ? 'MV available'
-                    : 'MV unavailable'
+                  : 'MV unavailable'
               : 'MV disabled'
           }
-          title={streamingMvItem?.title ?? selectedVideo?.title ?? title}
+          title={selectedVideo?.title ?? title}
         />
       )}
 

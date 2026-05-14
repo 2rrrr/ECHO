@@ -21,9 +21,9 @@ export const showCrashRecoveryDialog = async (reason: CrashRecoveryReason, messa
     const result = await dialog.showMessageBox({
       type: 'error',
       title: 'ECHO crash report',
-      message: reason === 'renderer' ? 'ECHO 界面进程异常退出。' : 'ECHO 遇到了一个主进程异常。',
-      detail: `${message}\n\nCrash report 已保存在本机。你可以重启 ECHO，或打开日志目录后把诊断包导出给开发者排查。`,
-      buttons: ['重启 ECHO', '打开 crash report', '忽略'],
+      message: reason === 'renderer' ? 'ECHO renderer process crashed.' : 'ECHO main process crashed.',
+      detail: `${message}\n\nCrash report has been saved as a single readable file on this machine. You can restart ECHO or open the report file for debugging.`,
+      buttons: ['Restart ECHO', 'Open crash report', 'Ignore'],
       defaultId: 0,
       cancelId: 2,
       noLink: true,
@@ -35,7 +35,7 @@ export const showCrashRecoveryDialog = async (reason: CrashRecoveryReason, messa
     }
 
     if (result.response === 1) {
-      await getCrashReportService().openDiagnosticsFolder();
+      await getCrashReportService().openCrashReportFile();
     }
   } catch (error) {
     getCrashReportService().getLogger()?.error('crash', 'failed to show crash recovery dialog', {

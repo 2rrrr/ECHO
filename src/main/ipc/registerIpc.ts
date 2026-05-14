@@ -1,13 +1,15 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { basename, extname, resolve } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../../shared/types/coverCache';
+import type { UpdateStatus } from '../../shared/types/updates';
 import type { FontFileAsset } from '../../preload/apiTypes';
 import { defaultSettings, getAppSettings, getAppWallpaperDirectory, getLyricsWallpaperDirectory, setAppSettings } from '../app/appSettings';
+import { checkForUpdates, getUpdateStatus, setAutoUpdateEnabled } from '../app/autoUpdater';
 import { destroyTray, ensureTray } from '../app/tray';
 import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
@@ -117,7 +119,7 @@ const normalizeCoverCacheRequest = (value: unknown): SetCoverCacheDirectoryReque
 };
 
 export const registerIpc = (): void => {
-  ipcMain.handle(IpcChannels.AppGetVersion, () => app.getVersion());
+  ipcMain.handle(IpcChannels.AppGetVersion, () => `v${app.getVersion()}`);
   ipcMain.handle(IpcChannels.AppWindowMinimize, (event: IpcMainInvokeEvent): void => {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
@@ -148,6 +150,14 @@ export const registerIpc = (): void => {
       ensureTray();
     } else {
       destroyTray();
+    }
+
+    if (typeof settingsPatch.autoUpdateEnabled === 'boolean') {
+      const autoUpdateEnabled = settings.autoUpdateEnabled !== false;
+      setAutoUpdateEnabled(autoUpdateEnabled);
+      if (autoUpdateEnabled) {
+        void checkForUpdates();
+      }
     }
 
     return settings;
@@ -205,6 +215,11 @@ export const registerIpc = (): void => {
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle(IpcChannels.AppGetDefaultCacheDirectory, (): string => getLibraryService().getDefaultCoverCacheDir());
+  ipcMain.handle(IpcChannels.AppGetUpdateStatus, (): UpdateStatus => getUpdateStatus());
+  ipcMain.handle(IpcChannels.AppCheckForUpdates, (): Promise<UpdateStatus> => checkForUpdates());
+  ipcMain.handle(IpcChannels.AppOpenRepository, async (): Promise<void> => {
+    await shell.openExternal('https://github.com/moekotori/echo');
+  });
   ipcMain.handle(
     IpcChannels.AppSetCoverCacheDirectory,
     async (_event: IpcMainInvokeEvent, rawRequest: unknown): Promise<CoverCacheMigrationResult | null> => {

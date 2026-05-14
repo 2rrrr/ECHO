@@ -11,8 +11,10 @@ const resolveCoverAssetMock = vi.fn();
 
 vi.mock('electron', () => ({
   app: {
+    getAppPath: () => 'D:\\Project\\ECHONext',
     getPath: () => 'D:\\Echo',
     getVersion: () => '0.0.0-test',
+    isPackaged: false,
   },
 }));
 

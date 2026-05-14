@@ -75,6 +75,7 @@ const diagnosticsFromStatus = (status: AudioStatus, overrides: Partial<AudioDiag
   decoderOutputSampleRate: status.decoderOutputSampleRate,
   requestedOutputSampleRate: status.requestedOutputSampleRate,
   actualDeviceSampleRate: status.actualDeviceSampleRate,
+  sharedDeviceSampleRate: status.sharedDeviceSampleRate,
   resampling: status.resampling,
   bitPerfectCandidate: status.bitPerfectCandidate,
   sampleRateMismatch: status.sampleRateMismatch,

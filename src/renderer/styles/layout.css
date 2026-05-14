@@ -213,6 +213,10 @@
   grid-column: 1;
 }
 
+.player-bar-host {
+  display: contents;
+}
+
 .lyrics-player-drawer-zone {
   position: fixed;
   right: 0;
@@ -223,6 +227,7 @@
 }
 
 .lyrics-player-drawer-host {
+  display: block;
   position: fixed;
   right: 0;
   bottom: 0;

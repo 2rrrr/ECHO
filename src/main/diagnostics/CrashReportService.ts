@@ -153,6 +153,31 @@ const safeAudioStatus = (status: AudioStatus): unknown => ({
   currentFilePath: safePathValue(status.currentFilePath),
 });
 
+const formatJsonBlock = (value: unknown): string => `\`\`\`json\n${JSON.stringify(sanitizeLogPayload(value), null, 2)}\n\`\`\``;
+
+const formatTextBlock = (value: string): string => `\`\`\`text\n${value.trim() || 'n/a'}\n\`\`\``;
+
+const readFileText = (filePath: string): string | null => {
+  try {
+    return existsSync(filePath) && statSync(filePath).isFile() ? readFileSync(filePath, 'utf8') : null;
+  } catch {
+    return null;
+  }
+};
+
+const readLogTail = (filePath: string, maxLines = 80): string => {
+  const text = readFileText(filePath);
+  if (!text) {
+    return 'n/a';
+  }
+
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .slice(-maxLines)
+    .join('\n');
+};
+
 export class CrashReportService {
   private session: CrashSessionInfo | null = null;
   private sessionDir: string | null = null;
@@ -232,6 +257,40 @@ export class CrashReportService {
     return shell.openPath(this.getCrashReportsRoot());
   }
 
+  getCrashReportFilePath(): string {
+    return this.sessionDir ? join(this.sessionDir, 'crash-report.md') : join(this.getCrashReportsRoot(), 'crash-report.md');
+  }
+
+  getAudioCrashReportFilePath(): string {
+    return this.sessionDir ? join(this.sessionDir, 'audio-crash-report.md') : join(this.getCrashReportsRoot(), 'audio-crash-report.md');
+  }
+
+  getAudioCrashReportsDir(): string {
+    const audioCrashDir = this.sessionDir
+      ? join(this.sessionDir, 'audio-crashes')
+      : join(this.getCrashReportsRoot(), 'audio-crashes');
+    mkdirSync(audioCrashDir, { recursive: true });
+    return audioCrashDir;
+  }
+
+  async openCrashReportFile(): Promise<string> {
+    const reportPath = this.writeCrashReportFile();
+    const result = await shell.openPath(reportPath);
+    if (result) {
+      throw new Error(result);
+    }
+    return reportPath;
+  }
+
+  async openAudioCrashReportFile(): Promise<string> {
+    const reportPath = this.writeAudioCrashReportFile();
+    const result = await shell.openPath(reportPath);
+    if (result) {
+      throw new Error(result);
+    }
+    return reportPath;
+  }
+
   reportCrash(record: Omit<CrashRecord, 'timestamp' | 'sessionId'>): void {
     if (!this.sessionDir || !this.session) {
       return;
@@ -244,6 +303,7 @@ export class CrashReportService {
       details: sanitizeLogPayload(record.details),
     };
     writeJson(join(this.sessionDir, 'crash.json'), crashRecord);
+    this.writeCrashReportFile(crashRecord);
     this.logger?.error('crash', record.type, crashRecord);
   }
 
@@ -273,8 +333,161 @@ export class CrashReportService {
     mkdirSync(audioCrashDir, { recursive: true });
     writeJson(join(audioCrashDir, fileName), record);
     writeJson(join(this.sessionDir, 'audio-crash.latest.json'), record);
+    this.writeAudioCrashReportFile(record);
     this.logger?.error('audio', payload.message, record);
     this.logger?.error('crash', 'audio error', record);
+  }
+
+  private writeCrashReportFile(record?: CrashRecord | null): string {
+    const reportPath = this.getCrashReportFilePath();
+    mkdirSync(this.sessionDir ?? this.getCrashReportsRoot(), { recursive: true });
+    const crashRecord = record ?? (this.sessionDir ? readJson<CrashRecord>(join(this.sessionDir, 'crash.json')) : null);
+    writeFileSync(reportPath, this.createCrashReportMarkdown(crashRecord));
+    return reportPath;
+  }
+
+  private writeAudioCrashReportFile(record?: AudioCrashRecord | null): string {
+    const reportPath = this.getAudioCrashReportFilePath();
+    mkdirSync(this.sessionDir ?? this.getCrashReportsRoot(), { recursive: true });
+    const audioRecord = record ?? (this.sessionDir ? readJson<AudioCrashRecord>(join(this.sessionDir, 'audio-crash.latest.json')) : null);
+    writeFileSync(reportPath, this.createAudioCrashReportMarkdown(audioRecord));
+    return reportPath;
+  }
+
+  private createCrashReportMarkdown(record: CrashRecord | null): string {
+    const session = this.getCurrentSessionSnapshot();
+    const lines = [
+      '# ECHO Next Crash Report',
+      '',
+      `Generated: ${nowIso()}`,
+      `Report file: ${basename(this.getCrashReportFilePath())}`,
+      '',
+      '## Summary',
+      '',
+      `- Type: ${record?.type ?? 'no_crash_recorded'}`,
+      `- Message: ${record?.message ?? 'No normal crash has been recorded in this session.'}`,
+      `- Reason: ${record?.reason ?? 'n/a'}`,
+      `- Exit code: ${record?.exitCode ?? 'n/a'}`,
+      `- Crash timestamp: ${record?.timestamp ?? 'n/a'}`,
+      '',
+      '## Session',
+      '',
+      formatJsonBlock(session),
+      '',
+      '## Last Abnormal Session',
+      '',
+      formatJsonBlock(this.lastCrashSummary ?? null),
+      '',
+      '## Crash Details',
+      '',
+      formatJsonBlock(record ?? { message: 'No crash.json exists for the current session.' }),
+      '',
+      '## Stack',
+      '',
+      formatTextBlock(record?.stack ?? 'n/a'),
+      '',
+      '## Safe Runtime Snapshots',
+      '',
+      '### Playback',
+      '',
+      formatJsonBlock(this.getSafePlaybackStatus()),
+      '',
+      '### Audio',
+      '',
+      formatJsonBlock(this.getSafeAudioStatus()),
+      '',
+      '### App Settings',
+      '',
+      formatJsonBlock(getAppSettings()),
+      '',
+      '## Recent Logs',
+      '',
+      this.createLogTailMarkdown(['crash.log', 'main.log', 'renderer.log']),
+      '',
+      '## Privacy',
+      '',
+      'This report is generated locally. Music files, cover binaries, lyric contents, tokens, cookies, and authentication secrets are not included. Local media paths are reduced to basename plus pathHash when captured through diagnostics snapshots.',
+      '',
+    ];
+
+    return `${lines.join('\n')}\n`;
+  }
+
+  private createAudioCrashReportMarkdown(record: AudioCrashRecord | null): string {
+    const session = this.getCurrentSessionSnapshot();
+    const lines = [
+      '# ECHO Next Audio Crash Report',
+      '',
+      `Generated: ${nowIso()}`,
+      `Report file: ${basename(this.getAudioCrashReportFilePath())}`,
+      '',
+      '## Summary',
+      '',
+      `- Phase: ${record?.phase ?? 'no_audio_crash_recorded'}`,
+      `- Severity: ${record?.severity ?? 'n/a'}`,
+      `- Recovered: ${record?.recovered ?? 'n/a'}`,
+      `- Message: ${record?.message ?? 'No audio crash has been recorded in this session.'}`,
+      `- Crash timestamp: ${record?.timestamp ?? 'n/a'}`,
+      '',
+      '## Session',
+      '',
+      formatJsonBlock(session),
+      '',
+      '## Audio Error',
+      '',
+      formatJsonBlock(record ?? { message: 'No audio-crash.latest.json exists for the current session.' }),
+      '',
+      '## Stack',
+      '',
+      formatTextBlock(record?.stack ?? 'n/a'),
+      '',
+      '## Audio Status Snapshot',
+      '',
+      formatJsonBlock(record?.audioStatus ?? this.getSafeAudioStatus()),
+      '',
+      '## Current Playback Snapshot',
+      '',
+      formatJsonBlock(this.getSafePlaybackStatus()),
+      '',
+      '## Recent Audio Logs',
+      '',
+      this.createLogTailMarkdown(['audio.log', 'crash.log', 'main.log']),
+      '',
+      '## Notes For Audio Debugging',
+      '',
+      '- timeout_waiting_for_ready usually means echo-audio-host was spawned but did not report ready before the main process timeout.',
+      '- Useful fields: phase, severity, recovered, outputMode, outputDeviceId, outputDeviceName, warnings, stderrTail, elapsedMs, and mode.',
+      '- If recovered is true, playback continued after falling back to default shared output or safe shared output.',
+      '',
+      '## Privacy',
+      '',
+      'This report is generated locally. Music files, cover binaries, lyric contents, tokens, cookies, and authentication secrets are not included. Local media paths are reduced to basename plus pathHash when captured through diagnostics snapshots.',
+      '',
+    ];
+
+    return `${lines.join('\n')}\n`;
+  }
+
+  private getCurrentSessionSnapshot(): unknown {
+    if (this.session) {
+      return this.session;
+    }
+
+    if (this.sessionDir) {
+      return readJson<CrashSessionInfo>(join(this.sessionDir, 'session.json'));
+    }
+
+    return null;
+  }
+
+  private createLogTailMarkdown(fileNames: string[]): string {
+    if (!this.sessionDir) {
+      return formatTextBlock('Diagnostics session has not been initialized.');
+    }
+
+    return fileNames
+      .map((fileName) => [`### ${fileName}`, '', formatTextBlock(readLogTail(join(this.sessionDir!, fileName)))].join('\n'))
+      .join('\n\n');
   }
 
   async exportDiagnosticsZip(destinationPath?: string): Promise<string> {
@@ -323,6 +536,8 @@ export class CrashReportService {
       'audio.log',
       'crash.log',
       'audio-crash.latest.json',
+      'crash-report.md',
+      'audio-crash-report.md',
     ]) {
       const filePath = join(this.sessionDir, fileName);
       if (existsSync(filePath) && statSync(filePath).isFile()) {

@@ -188,8 +188,10 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       nobase64: '1',
     });
     const data = asRecord(await jsonFetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?${params.toString()}`, { headers: qqHeaders(accountCookie()) }));
+    const translationLyrics = maybeDecodeBase64(data.trans);
+    const romanizationLyrics = maybeDecodeBase64(data.roma);
     const split = splitLyricsByKind(maybeDecodeBase64(data.lyric));
-    const lines = linesFromLyrics(split.syncedLyrics, split.plainLyrics);
+    const lines = linesFromLyrics(split.syncedLyrics, split.plainLyrics, translationLyrics, romanizationLyrics);
 
     return {
       provider,
@@ -197,6 +199,8 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       status: split.syncedLyrics || split.plainLyrics || lines.length > 0 ? 'available' : 'missing',
       plainLyrics: split.plainLyrics,
       syncedLyrics: split.syncedLyrics,
+      translationLyrics,
+      romanizationLyrics,
       lines,
       sourceLabel: 'QQ 音乐',
     };

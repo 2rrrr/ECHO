@@ -49,17 +49,33 @@ const codecClassName = (codec: string): string => {
   return 'tag-lossless';
 };
 
+const isHiResSource = ({
+  bitrate,
+  bitDepth,
+  sampleRate,
+  track,
+}: {
+  bitrate: number | null;
+  bitDepth: number | null;
+  sampleRate: number | null;
+  track: LibraryTrack | null;
+}): boolean =>
+  track?.streamingQuality === 'hires' ||
+  Boolean(bitDepth && bitDepth >= 24) ||
+  Boolean(sampleRate && sampleRate >= 88200) ||
+  Boolean(bitrate && bitrate >= 900000);
+
 export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
   const codec = (track?.codec ?? status?.codec)?.toUpperCase() ?? null;
   const bitDepth = track?.bitDepth ?? status?.bitDepth ?? null;
   const sampleRate = track?.sampleRate ?? status?.fileSampleRate ?? null;
-  const bitrate = track?.bitrate ?? null;
+  const bitrate = track?.bitrate ?? status?.bitrate ?? null;
   const channels = channelLabel(status?.channels);
   const formattedRate = formatSpecRate(sampleRate);
   const chips: Chip[] = [
     status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
-    bitDepth && sampleRate && (bitDepth >= 24 || sampleRate >= 88200) ? { label: 'Hi-Res', className: 'tag-hires' } : null,
+    isHiResSource({ bitrate, bitDepth, sampleRate, track }) ? { label: 'Hi-Res', className: 'tag-hires' } : null,
     bitDepth && formattedRate ? { label: `${bitDepth}bit / ${formattedRate}`, className: 'tag-depth' } : null,
     !bitDepth && formattedRate ? { label: formattedRate, className: 'tag-depth' } : null,
     bitrate ? { label: `${Math.round(bitrate / 1000)}kbps`, className: 'tag-bitrate' } : null,

@@ -38,10 +38,7 @@ export const SUPPORTED_AUDIO_EXTENSION_LIST = [...audioExtensionValues];
 
 export const SUPPORTED_AUDIO_EXTENSIONS = new Set<string>(SUPPORTED_AUDIO_EXTENSION_LIST);
 
-// CUE sheets are library import sources for now. Direct single-file playback stays
-// conservative until the audio core has explicit cue sheet handling.
 export const SUPPORTED_AUDIO_DIALOG_EXTENSIONS = SUPPORTED_AUDIO_EXTENSION_LIST
-  .filter((extension) => extension !== '.cue')
   .map((extension) => extension.slice(1));
 
 const getSafeExtension = (filePath: string): string => {

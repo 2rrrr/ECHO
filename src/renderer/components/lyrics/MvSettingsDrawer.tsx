@@ -19,6 +19,9 @@ import {
   X,
 } from 'lucide-react';
 import type { MvMatchCandidate, MvProviderId, MvSettings, NetworkMvProviderId, TrackVideo } from '../../../shared/types/mv';
+import type { LibraryTrack } from '../../../shared/types/library';
+import type { StreamingProviderName } from '../../../shared/types/streaming';
+import { streamingProviderNames } from '../../../shared/types/streaming';
 import { useI18n } from '../../i18n/I18nProvider';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 
@@ -74,6 +77,8 @@ const formatVideoTitle = (video: TrackVideo | null, emptyLabel: string): string 
   return video.title?.trim() || video.sourceId?.trim() || emptyLabel;
 };
 
+const isResolutionQualityLabel = (label: string): boolean => /^(?:8K|4K|\d{3,4}p)(?:\s*\/?\s*60fps|\s+60fps)?$/i.test(label.trim());
+
 const formatVideoQuality = (video: TrackVideo | null, emptyLabel: string): string => {
   if (!video) {
     return emptyLabel;
@@ -88,13 +93,14 @@ const formatVideoQuality = (video: TrackVideo | null, emptyLabel: string): strin
     : video.width
       ? `${video.width}px`
       : null;
-  const baseLabel = video.qualityLabel ?? resolutionLabel;
+  const qualityLabel = video.qualityLabel?.trim() || null;
+  const baseLabel = resolutionLabel && (!qualityLabel || isResolutionQualityLabel(qualityLabel)) ? resolutionLabel : qualityLabel ?? resolutionLabel;
 
   if (!baseLabel) {
     return emptyLabel;
   }
 
-  return video.fps && video.fps >= 55 ? `${baseLabel} / 60fps` : baseLabel;
+  return video.fps && video.fps >= 55 && !/\b60\s*fps\b/i.test(baseLabel) ? `${baseLabel} / 60fps` : baseLabel;
 };
 
 const videoToCandidate = (video: TrackVideo): MvMatchCandidate => ({
@@ -118,6 +124,20 @@ const videoToCandidate = (video: TrackVideo): MvMatchCandidate => ({
   playableInApp: video.playableInApp,
   reasons: [],
 });
+
+const isStreamingProviderName = (value: string | null | undefined): value is StreamingProviderName =>
+  streamingProviderNames.includes(value as StreamingProviderName);
+
+const isStreamingTrack = (
+  track: LibraryTrack | null,
+): track is LibraryTrack & { provider: StreamingProviderName; providerTrackId: string } =>
+  track?.mediaType === 'streaming' &&
+  isStreamingProviderName(track.provider) &&
+  typeof track.providerTrackId === 'string' &&
+  track.providerTrackId.trim().length > 0;
+
+const streamingTrackKey = (track: LibraryTrack & { provider: StreamingProviderName; providerTrackId: string }): string =>
+  track.stableKey?.trim() || `streaming:${track.provider}:${track.providerTrackId}`;
 
 export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JSX.Element | null => {
   const { t } = useI18n();
@@ -144,6 +164,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
     queue.currentTrack ??
     (activeTrackId ? queue.tracks.find((item) => item.id === activeTrackId) ?? null : null) ??
     (queue.lastPlayedTrack?.id === activeTrackId ? queue.lastPlayedTrack : null);
+  const activeMvTrackId = isStreamingTrack(activeTrack) ? streamingTrackKey(activeTrack) : activeTrackId;
   const activeTrackSearchName = activeTrack ? [activeTrack.title, activeTrack.artist || activeTrack.albumArtist].filter(Boolean).join(' ') : '';
   const activeTrackTitle = useMemo(() => {
     return activeTrack ? `${activeTrack.title} - ${activeTrack.artist || activeTrack.albumArtist}` : activeTrackId ? activeTrackId : t('mvSettings.status.noActiveTrack');
@@ -262,6 +283,46 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
     }
   }, [queue.currentTrackId]);
 
+  const searchNetworkForActiveTrack = useCallback(
+    async (trackId: string, query: string): Promise<void> => {
+      const mvApi = window.echo?.mv;
+      if (!mvApi) {
+        throw new Error(t('mvSettings.error.noActiveTrackNetworkSearch'));
+      }
+
+      const effectiveTrackId = isStreamingTrack(activeTrack) ? streamingTrackKey(activeTrack) : trackId;
+      const nextCandidates =
+        isStreamingTrack(activeTrack) && mvApi.searchNetworkCandidatesForSnapshot
+          ? await mvApi.searchNetworkCandidatesForSnapshot({
+              trackId: effectiveTrackId,
+              title: activeTrack.title,
+              artist: activeTrack.artist || activeTrack.albumArtist || 'Unknown Artist',
+              album: activeTrack.album,
+              albumArtist: activeTrack.albumArtist,
+              durationSeconds: activeTrack.duration,
+              coverThumb: activeTrack.coverThumb,
+              mediaType: 'streaming',
+              query,
+            })
+          : await mvApi.searchNetworkCandidates?.(trackId, query);
+
+      if (!nextCandidates) {
+        throw new Error(t('mvSettings.error.noActiveTrackNetworkSearch'));
+      }
+
+      setCandidates(nextCandidates);
+      const selected = await resolveSelectedStreams(await mvApi.getSelected(effectiveTrackId));
+      setSelectedVideo(selected);
+      if (selected) {
+        notifyMvChanged(effectiveTrackId);
+      }
+      if (nextCandidates.length === 0) {
+        setError(t('mvSettings.error.noNetworkCandidates'));
+      }
+    },
+    [activeTrack, notifyMvChanged, resolveSelectedStreams, t],
+  );
+
   const patchSettings = useCallback(
     async (patch: Partial<MvSettings>): Promise<void> => {
       const optimistic = { ...settings, ...patch };
@@ -303,20 +364,11 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
     await patchSettings({ autoSearch: nextAutoSearch });
     if (nextAutoSearch) {
       const trackId = await refreshActiveTrack();
-      if (trackId && window.echo?.mv?.searchNetworkCandidates) {
+      if (trackId && window.echo?.mv) {
         setIsBusy(true);
         setError(null);
         try {
-          const nextCandidates = await window.echo.mv.searchNetworkCandidates(trackId, searchQuery);
-          setCandidates(nextCandidates);
-          const selected = await resolveSelectedStreams(await window.echo.mv.getSelected(trackId));
-          setSelectedVideo(selected);
-          if (selected) {
-            notifyMvChanged(trackId);
-          }
-          if (nextCandidates.length === 0) {
-            setError(t('mvSettings.error.noNetworkCandidates'));
-          }
+          await searchNetworkForActiveTrack(trackId, searchQuery);
         } catch (searchError) {
           setError(searchError instanceof Error ? searchError.message : String(searchError));
         } finally {
@@ -324,7 +376,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         }
       }
     }
-  }, [notifyMvChanged, patchSettings, refreshActiveTrack, resolveSelectedStreams, searchQuery, settings.autoSearch, t]);
+  }, [patchSettings, refreshActiveTrack, searchNetworkForActiveTrack, searchQuery, settings.autoSearch, t]);
 
   const reorderProvider = useCallback(
     (provider: NetworkMvProviderId, targetProvider: NetworkMvProviderId): void => {
@@ -383,7 +435,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
 
   const searchNetworkCandidates = useCallback(async (): Promise<void> => {
     const trackId = await refreshActiveTrack();
-    if (!trackId || !window.echo?.mv?.searchNetworkCandidates) {
+    if (!trackId || !window.echo?.mv) {
       setError(t('mvSettings.error.noActiveTrackNetworkSearch'));
       return;
     }
@@ -391,22 +443,13 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
     setIsBusy(true);
     setError(null);
     try {
-      const nextCandidates = await window.echo.mv.searchNetworkCandidates(trackId, searchQuery);
-      setCandidates(nextCandidates);
-      const selected = await resolveSelectedStreams(await window.echo.mv.getSelected(trackId));
-      setSelectedVideo(selected);
-      if (selected) {
-        notifyMvChanged(trackId);
-      }
-      if (nextCandidates.length === 0) {
-        setError(t('mvSettings.error.noNetworkCandidates'));
-      }
+      await searchNetworkForActiveTrack(trackId, searchQuery);
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : String(searchError));
     } finally {
       setIsBusy(false);
     }
-  }, [notifyMvChanged, refreshActiveTrack, resolveSelectedStreams, searchQuery, t]);
+  }, [refreshActiveTrack, searchNetworkForActiveTrack, searchQuery, t]);
 
   const chooseLocalVideo = useCallback(async (): Promise<void> => {
     const trackId = await refreshActiveTrack();
@@ -460,20 +503,21 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         return;
       }
 
+      const targetTrackId = isStreamingTrack(activeTrack) ? streamingTrackKey(activeTrack) : trackId;
       setBusyCandidateId(candidateId);
       setError(null);
       try {
-        const video = await window.echo.mv.selectVideo(trackId, candidateId);
+        const video = await window.echo.mv.selectVideo(targetTrackId, candidateId);
         setSelectedVideo(await resolveSelectedStreams(video));
         setCandidates([]);
-        notifyMvChanged(trackId);
+        notifyMvChanged(targetTrackId);
       } catch (selectError) {
         setError(selectError instanceof Error ? selectError.message : String(selectError));
       } finally {
         setBusyCandidateId(null);
       }
     },
-    [notifyMvChanged, refreshActiveTrack, resolveSelectedStreams, t],
+    [activeTrack, notifyMvChanged, refreshActiveTrack, resolveSelectedStreams, t],
   );
 
   const clearSelected = useCallback(async (): Promise<void> => {
@@ -559,8 +603,8 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
     }
 
     void loadSettings();
-    void refreshActiveTrack().then((trackId) => loadCurrentMv(trackId));
-  }, [isOpen, loadCurrentMv, loadSettings, refreshActiveTrack]);
+    void refreshActiveTrack().then((trackId) => loadCurrentMv(isStreamingTrack(activeTrack) ? streamingTrackKey(activeTrack) : trackId));
+  }, [activeTrack, isOpen, loadCurrentMv, loadSettings, refreshActiveTrack]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -569,7 +613,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
 
     const handleCandidatesChanged = (event: Event): void => {
       const detail = (event as CustomEvent<{ trackId?: string; candidates?: MvMatchCandidate[] }>).detail;
-      if (!detail?.trackId || detail.trackId !== activeTrackId || !Array.isArray(detail.candidates)) {
+      if (!detail?.trackId || detail.trackId !== activeMvTrackId || !Array.isArray(detail.candidates)) {
         return;
       }
 
@@ -579,7 +623,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
 
     window.addEventListener('mv:candidatesChanged', handleCandidatesChanged);
     return () => window.removeEventListener('mv:candidatesChanged', handleCandidatesChanged);
-  }, [activeTrackId, isOpen, t]);
+  }, [activeMvTrackId, isOpen, t]);
 
   if (!shouldRender) {
     return null;
@@ -646,7 +690,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
               <FolderOpen size={15} />
               {t('mvSettings.action.chooseFile')}
             </button>
-            <button type="button" onClick={() => void loadCurrentMv(activeTrackId)} disabled={isBusy}>
+            <button type="button" onClick={() => void loadCurrentMv(activeMvTrackId)} disabled={isBusy}>
               <RotateCcw size={15} />
               {t('mvSettings.action.refresh')}
             </button>
@@ -658,8 +702,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                 <strong>{selectedVideo.title ?? t('mvSettings.binding.selectedMv')}</strong>
                 <em>
                   {providerLabelForVideo(selectedVideo)}
-                  {selectedVideo.qualityLabel ? ` / ${selectedVideo.qualityLabel}` : ''}
-                  {selectedVideo.fps && selectedVideo.fps >= 55 ? ' / 60fps' : ''}
+                  {formatVideoQuality(selectedVideo, '') ? ` / ${formatVideoQuality(selectedVideo, '')}` : ''}
                 </em>
               </span>
               <div>

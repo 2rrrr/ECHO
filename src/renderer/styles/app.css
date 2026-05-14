@@ -1212,6 +1212,38 @@
   grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
 }
 
+.settings-status-grid--updates {
+  width: min(720px, 100%);
+}
+
+.settings-update-notes {
+  display: grid;
+  width: min(720px, 100%);
+  gap: 8px;
+}
+
+.settings-update-notes em {
+  color: #6f7f91;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 820;
+}
+
+.settings-update-notes pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  color: #2e4056;
+  border: 1px solid rgba(40, 62, 88, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.52);
+  font-family: var(--echo-mono-font-family, "Cascadia Code", Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .plain-page-header {
   display: grid;
   gap: 6px;

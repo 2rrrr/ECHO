@@ -4,6 +4,13 @@ import { LyricsLine } from './LyricsLine';
 import type { LyricsState } from './lyricsTypes';
 
 type LyricScrollMode = 'animated' | 'instant' | 'recenter';
+const lyricsLayoutSettingKeys = new Set([
+  'lyricsFontSizePx',
+  'lyricsSecondaryFontSizePx',
+  'lyricsRomanizationEnabled',
+  'lyricsTranslationEnabled',
+  'lyricsContextOpacityPercent',
+]);
 
 type LyricsViewProps = {
   lyrics: LyricsState;
@@ -98,6 +105,7 @@ export const LyricsView = ({
   const scrollRef = useRef<HTMLElement | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const activeCenterFrameRef = useRef<number | null>(null);
+  const layoutPreserveFrameRef = useRef<number | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const isSynced = lyrics.kind === 'synced';
   const isPlain = lyrics.kind === 'plain';
@@ -176,6 +184,44 @@ export const LyricsView = ({
     animateScrollTop(scrollContainer, nextScrollTop, mode === 'recenter' ? 260 : 880);
   }, [activeIndex, animateScrollTop, stopScrollAnimation]);
 
+  const preserveActiveLyricPosition = useCallback((event: Event): void => {
+    if (event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && !Array.isArray(event.detail)) {
+      const hasLayoutSetting = Object.keys(event.detail as Record<string, unknown>).some((key) => lyricsLayoutSettingKeys.has(key));
+      if (!hasLayoutSetting) {
+        return;
+      }
+    }
+
+    const scrollContainer = scrollRef.current;
+    const activeLine = scrollContainer?.querySelector<HTMLButtonElement>('.lyrics-line[data-active="true"]');
+    if (!scrollContainer || !activeLine) {
+      return;
+    }
+
+    const previousTop = activeLine.getBoundingClientRect().top;
+    stopScrollAnimation();
+    if (activeCenterFrameRef.current !== null) {
+      cancelLyricAnimationFrame(activeCenterFrameRef.current);
+      activeCenterFrameRef.current = null;
+    }
+    if (layoutPreserveFrameRef.current !== null) {
+      cancelLyricAnimationFrame(layoutPreserveFrameRef.current);
+    }
+
+    layoutPreserveFrameRef.current = requestLyricAnimationFrame(() => {
+      layoutPreserveFrameRef.current = null;
+      const nextActiveLine = scrollContainer.querySelector<HTMLButtonElement>('.lyrics-line[data-active="true"]');
+      if (!nextActiveLine) {
+        return;
+      }
+
+      const deltaTop = nextActiveLine.getBoundingClientRect().top - previousTop;
+      if (Math.abs(deltaTop) > 0.5) {
+        scrollContainer.scrollTop += deltaTop;
+      }
+    });
+  }, [stopScrollAnimation]);
+
   useEffect(() => {
     if (activeCenterFrameRef.current !== null) {
       cancelLyricAnimationFrame(activeCenterFrameRef.current);
@@ -193,6 +239,19 @@ export const LyricsView = ({
       }
     };
   }, [centerActiveLyric]);
+
+  useEffect(() => {
+    window.addEventListener('settings:changed', preserveActiveLyricPosition);
+    window.addEventListener('lyrics:display-settings-changed', preserveActiveLyricPosition);
+    return () => {
+      window.removeEventListener('settings:changed', preserveActiveLyricPosition);
+      window.removeEventListener('lyrics:display-settings-changed', preserveActiveLyricPosition);
+      if (layoutPreserveFrameRef.current !== null) {
+        cancelLyricAnimationFrame(layoutPreserveFrameRef.current);
+        layoutPreserveFrameRef.current = null;
+      }
+    };
+  }, [preserveActiveLyricPosition]);
 
   useEffect(() => {
     const scrollContainer = scrollRef.current;
@@ -238,6 +297,10 @@ export const LyricsView = ({
       if (resizeFrameRef.current !== null) {
         cancelLyricAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
+      }
+      if (layoutPreserveFrameRef.current !== null) {
+        cancelLyricAnimationFrame(layoutPreserveFrameRef.current);
+        layoutPreserveFrameRef.current = null;
       }
     },
     [stopScrollAnimation],

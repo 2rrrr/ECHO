@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
 import { MvPanel, type MvAudioClock } from './MvPanel';
 
@@ -178,6 +178,93 @@ describe('MvPanel', () => {
     expect(video?.autoplay).toBe(true);
     expect(video?.controls).toBe(false);
     expect(container.querySelector('.lyrics-mv-toolbar')).toBeNull();
+  });
+
+  it('uses streaming provider MV metadata to search when no library track id is available', async () => {
+    const selectedAfterSearch = makeVideo({ id: 'streaming-video-1', trackId: 'streaming:qqmusic:song-mid', provider: 'bilibili' });
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      streaming: {
+        getMv: vi.fn().mockResolvedValue({
+          provider: 'qqmusic',
+          providerTrackId: 'song-mid',
+          status: 'available',
+          items: [
+            {
+              id: 'streaming:qqmusic:mv:mv-1',
+              provider: 'qqmusic',
+              providerMvId: 'mv-1',
+              providerTrackId: 'song-mid',
+              title: 'Provider Exact MV',
+              artist: 'Provider Artist',
+              duration: 180,
+              thumbnailUrl: 'https://example.test/mv.jpg',
+            },
+          ],
+        }),
+      },
+      mv: {
+        getSelected: vi.fn().mockResolvedValue(null),
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidatesForSnapshot: vi.fn().mockResolvedValue([
+          {
+            id: 'bilibili:BVstreaming',
+            provider: 'bilibili',
+            sourceType: 'search_candidate',
+            title: 'Provider Exact MV',
+            artist: 'Provider Artist',
+            filePath: null,
+            url: 'https://www.bilibili.com/video/BVstreaming',
+            providerUrl: 'https://www.bilibili.com/video/BVstreaming',
+            thumbnailUrl: 'https://example.test/mv.jpg',
+            uploader: 'Provider Channel',
+            availableQualities: [],
+            durationSeconds: 180,
+            score: 0.92,
+            playableInApp: true,
+            reasons: ['Bilibili search'],
+          },
+        ]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn().mockResolvedValue({ video: selectedAfterSearch, variants: [] }),
+        setQuality: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo: vi.fn().mockResolvedValue(selectedAfterSearch),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId={null}
+        streamingTarget={{ provider: 'qqmusic', providerTrackId: 'song-mid' }}
+        title="Search Title"
+        artist="Search Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(0)}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.mv.searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: 'streaming:qqmusic:song-mid',
+          title: 'Provider Exact MV',
+          artist: 'Provider Artist',
+          query: 'Provider Exact MV Provider Artist',
+        }),
+      ),
+    );
+    await waitFor(() => expect(window.echo.mv.selectVideo).toHaveBeenCalledWith('streaming:qqmusic:song-mid', 'bilibili:BVstreaming'));
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/video-1'));
   });
 
   it('applies immersive MV visual tuning variables', async () => {
@@ -589,5 +676,29 @@ describe('MvPanel', () => {
     window.dispatchEvent(new CustomEvent('mv:changed', { detail: { trackId: 'track-1' } }));
 
     await waitFor(() => expect(window.echo.mv.getSelected).toHaveBeenCalledTimes(initialCallCount + 1));
+  });
+
+  it('does not reload the selected MV for lyrics display setting changes', async () => {
+    const { container } = renderPanel(makeVideo());
+
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/video-1'));
+    const initialCallCount = vi.mocked(window.echo.mv.getSelected).mock.calls.length;
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('settings:changed', {
+          detail: {
+            lyricsFontSizePx: 44,
+            lyricsSecondaryFontSizePx: 24,
+            lyricsContextOpacityPercent: 64,
+          },
+        }),
+      );
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(window.echo.mv.getSelected).toHaveBeenCalledTimes(initialCallCount);
+    expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/video-1');
   });
 });

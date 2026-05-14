@@ -231,6 +231,43 @@ describe('BilibiliMvProvider', () => {
       url: 'https://cdn.example/1080-60.mp4',
     });
   });
+
+  it('labels Bilibili streams with the actual returned quality when the requested quality is downgraded', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('qn=127')) {
+        return jsonResponse({ data: { quality: 80, durl: [{ url: 'https://cdn.example/actual-1080.mp4' }] } });
+      }
+
+      if (url.includes('qn=80')) {
+        return jsonResponse({ data: { quality: 80, durl: [{ url: 'https://cdn.example/actual-1080.mp4' }] } });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const variants = await provider.resolve(video, { ...settings, maxQuality: 'max' });
+
+    expect(variants).toHaveLength(1);
+    expect(variants[0]).toMatchObject({
+      id: 'bilibili-qn-80',
+      label: '1080p',
+      qualityTier: '1080p',
+      height: 1080,
+      url: 'https://cdn.example/actual-1080.mp4',
+      rawProviderJson: {
+        requestedQn: 127,
+        qn: 80,
+      },
+    });
+  });
 });
 
 describe('YouTubeMvProvider', () => {

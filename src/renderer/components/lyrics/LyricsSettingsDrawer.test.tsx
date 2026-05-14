@@ -138,10 +138,18 @@ describe('LyricsSettingsDrawer', () => {
       return labelText.includes('歌词字号') && !labelText.includes('辅歌词字号');
     }) as HTMLInputElement;
 
+    vi.useFakeTimers();
     fireEvent.change(fontSizeSlider, { target: { value: '44' } });
 
     expect(fontSizeSlider.disabled).toBe(false);
     expect(fontSizeSlider.value).toBe('44');
+    expect(setSettings).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(240);
+      await Promise.resolve();
+    });
+
     expect(setSettings).toHaveBeenCalledWith({ lyricsFontSizePx: 44 });
   });
 
@@ -313,10 +321,17 @@ describe('LyricsSettingsDrawer', () => {
     const secondarySizeSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find((input) =>
       input.closest('label')?.textContent?.includes('辅歌词字号'),
     ) as HTMLInputElement;
+    vi.useFakeTimers();
     fireEvent.change(secondarySizeSlider, { target: { value: '24' } });
 
     expect(secondarySizeSlider.value).toBe('24');
     expect(setSettings).toHaveBeenCalledWith({ lyricsRomanizationEnabled: true });
+
+    await act(async () => {
+      vi.advanceTimersByTime(240);
+      await Promise.resolve();
+    });
+
     expect(setSettings).toHaveBeenCalledWith({ lyricsSecondaryFontSizePx: 24 });
   });
 

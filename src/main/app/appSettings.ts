@@ -43,6 +43,7 @@ export const defaultChannelBalanceSettings: ChannelBalanceState = {
 export const defaultSettings: AppSettings = {
   albumMergeStrategy: 'standard',
   artistWallAlbumArtwork: false,
+  autoUpdateEnabled: true,
   coverCacheDir: null,
   hideToTrayOnClose: false,
   appCustomWallpaperPath: null,
@@ -293,6 +294,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   return {
     albumMergeStrategy,
     artistWallAlbumArtwork: settings.artistWallAlbumArtwork === true,
+    autoUpdateEnabled: settings.autoUpdateEnabled !== false,
     coverCacheDir: normalizeCoverCacheDir(settings.coverCacheDir),
     hideToTrayOnClose: settings.hideToTrayOnClose === true,
     appCustomWallpaperPath: normalizeAppWallpaperPath(settings.appCustomWallpaperPath),

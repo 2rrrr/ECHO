@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { inflateRawSync } from 'node:zlib';
@@ -249,17 +249,50 @@ describe('CrashReportService', () => {
     const latest = readJson<{ type: string; severity: string; audioStatus: { currentFilePath: unknown } }>(
       join(service.getSessionDir()!, 'audio-crash.latest.json'),
     );
+    const readableReport = readFileSync(join(service.getSessionDir()!, 'audio-crash-report.md'), 'utf8');
     expect(latest.type).toBe('audio');
     expect(latest.severity).toBe('recoverable');
     expect(latest.audioStatus.currentFilePath).toEqual({
       basename: 'private-song.flac',
       pathHash: expect.any(String),
     });
+    expect(readableReport).toContain('# ECHO Next Audio Crash Report');
+    expect(readableReport).toContain('shared_output_recovered_to_default_device');
 
     const entries = unzipEntries(outputPath);
     expect(Object.keys(entries)).toContain('audio-crash.latest.json');
+    expect(Object.keys(entries)).toContain('audio-crash-report.md');
     expect(Object.keys(entries).some((name) => name.startsWith('audio-crashes/audio-crash-'))).toBe(true);
     expect(Object.values(entries).join('\n')).not.toContain('D:\\Music\\private-song.flac');
+  });
+
+  it('opens the dedicated audio crash report file', async () => {
+    const service = new CrashReportService(tempDir);
+    service.initialize();
+
+    const reportPath = await service.openAudioCrashReportFile();
+
+    expect(reportPath).toBe(join(service.getSessionDir()!, 'audio-crash-report.md'));
+    expect(existsSync(reportPath)).toBe(true);
+    expect(readFileSync(reportPath, 'utf8')).toContain('# ECHO Next Audio Crash Report');
+    const { shell } = await import('electron');
+    expect(shell.openPath).toHaveBeenCalledWith(reportPath);
+  });
+
+  it('opens the dedicated normal crash report file', async () => {
+    const service = new CrashReportService(tempDir);
+    service.initialize();
+    service.reportCrash({ type: 'test', message: 'Synthetic crash', details: { outputPath: 'D:\\Music\\secret.flac' } });
+
+    const reportPath = await service.openCrashReportFile();
+
+    const report = readFileSync(reportPath, 'utf8');
+    expect(reportPath).toBe(join(service.getSessionDir()!, 'crash-report.md'));
+    expect(report).toContain('# ECHO Next Crash Report');
+    expect(report).toContain('Synthetic crash');
+    expect(report).not.toContain('D:\\Music\\private-song.flac');
+    const { shell } = await import('electron');
+    expect(shell.openPath).toHaveBeenCalledWith(reportPath);
   });
 
   it('redacts sensitive log payload fields', () => {

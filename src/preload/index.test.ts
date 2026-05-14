@@ -66,6 +66,18 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioGetDiagnostics);
   });
 
+  it('exposes crash report file opening through IPC', async () => {
+    await exposedApi!.diagnostics.openCrashReport();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.DiagnosticsOpenCrashReport);
+  });
+
+  it('exposes audio crash report file opening through IPC', async () => {
+    await exposedApi!.diagnostics.openAudioCrashReport();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.DiagnosticsOpenAudioCrashReport);
+  });
+
   it('exposes the dropped import path classifier', async () => {
     await exposedApi!.library.classifyImportPaths(['D:\\Music']);
 
@@ -109,6 +121,16 @@ describe('preload SMTC API', () => {
     await exposedApi!.app.chooseAppWallpaper();
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppChooseAppWallpaper);
+  });
+
+  it('exposes app update helpers through IPC', async () => {
+    await exposedApi!.app.getUpdateStatus();
+    await exposedApi!.app.checkForUpdates();
+    await exposedApi!.app.openRepository();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppGetUpdateStatus);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppCheckForUpdates);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppOpenRepository);
   });
 
   it('exposes duplicate track APIs through IPC', async () => {

@@ -1,5 +1,10 @@
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from 'node:child_process';
+import { app } from 'electron';
 import type { SmtcCommand, SmtcEnabledActions, SmtcPlaybackState, SmtcService, SmtcTrackMetadata } from './SmtcService';
+import { SmtcCoverCache } from './SmtcCoverCache';
 
 type SmtcLogger = {
   warn: (message: string, payload?: unknown) => void;
@@ -11,48 +16,135 @@ const defaultLogger: SmtcLogger = {
   info: () => undefined,
 };
 
+type SmtcHostProcess = Pick<ChildProcessWithoutNullStreams, 'stdin' | 'stdout' | 'stderr' | 'on' | 'kill' | 'killed'>;
+type SpawnSmtcHost = (command: string, args?: readonly string[], options?: SpawnOptionsWithoutStdio) => SmtcHostProcess;
+type CoverCacheLike = Pick<SmtcCoverCache, 'resolve'>;
+
+export type WindowsSmtcServiceOptions = {
+  logger?: SmtcLogger;
+  spawnHost?: SpawnSmtcHost;
+  resolveHostPath?: () => string;
+  hostExists?: (hostPath: string) => boolean;
+  coverCache?: CoverCacheLike;
+};
+
+const helperName = 'echo-smtc-host.exe';
+
+export const resolveDefaultSmtcHostPath = (): string => {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, helperName);
+  }
+
+  return join(app.getAppPath(), 'electron-app', 'build', helperName);
+};
+
 export class WindowsSmtcService implements SmtcService {
   private readonly commands = new EventEmitter();
+  private readonly logger: SmtcLogger;
+  private readonly spawnHost: SpawnSmtcHost;
+  private readonly resolveHostPath: () => string;
+  private readonly hostExists: (hostPath: string) => boolean;
+  private readonly coverCache: CoverCacheLike;
+  private host: SmtcHostProcess | null = null;
   private initialized = false;
+  private disposed = false;
+  private unavailable = false;
+  private stdoutBuffer = '';
+  private stderrBuffer = '';
 
-  constructor(private readonly logger: SmtcLogger = defaultLogger) {}
+  constructor(options: WindowsSmtcServiceOptions | SmtcLogger = {}) {
+    if ('info' in options && 'warn' in options) {
+      this.logger = options;
+      this.spawnHost = spawn;
+      this.resolveHostPath = resolveDefaultSmtcHostPath;
+      this.hostExists = existsSync;
+      this.coverCache = new SmtcCoverCache();
+      return;
+    }
+
+    this.logger = options.logger ?? defaultLogger;
+    this.spawnHost = options.spawnHost ?? spawn;
+    this.resolveHostPath = options.resolveHostPath ?? resolveDefaultSmtcHostPath;
+    this.hostExists = options.hostExists ?? existsSync;
+    this.coverCache = options.coverCache ?? new SmtcCoverCache();
+  }
 
   async initialize(): Promise<void> {
-    if (this.initialized) {
+    if (this.initialized || this.unavailable || this.disposed) {
+      return;
+    }
+
+    const hostPath = this.resolveHostPath();
+    if (!this.hostExists(hostPath)) {
+      this.unavailable = true;
+      this.logger.warn('[SMTC] Windows SMTC host binary is missing; using no-op bridge mode', { hostPath });
       return;
     }
 
     this.initialized = true;
-    // TODO: Wire a verified Electron-main-process Windows SMTC bridge here.
-    // The project currently has no stable SMTC native dependency; keeping this
-    // class isolated lets Windows builds fall back safely until a bridge is chosen.
-    this.logger.info('[SMTC] Windows SMTC service initialized in no-op bridge mode');
+    try {
+      this.host = this.spawnHost(hostPath, [], {
+        windowsHide: true,
+        stdio: 'pipe',
+      });
+      this.bindHostProcess(this.host, hostPath);
+      this.logger.info('[SMTC] Windows SMTC host initialized', { hostPath });
+    } catch (error) {
+      this.initialized = false;
+      this.unavailable = true;
+      this.logger.warn('[SMTC] Failed to start Windows SMTC host; using no-op bridge mode', {
+        hostPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   dispose(): void {
+    this.writeRaw({ type: 'dispose' });
+    this.disposed = true;
+    try {
+      this.host?.stdin.end();
+    } catch {
+      // ignore process teardown races
+    }
+    if (this.host && !this.host.killed) {
+      this.host.kill();
+    }
+    this.host = null;
     this.commands.removeAllListeners();
     this.initialized = false;
   }
 
-  setPlaybackState(state: SmtcPlaybackState): void {
-    void state;
-    // TODO: Forward playback state to the Windows SMTC bridge.
+  async setPlaybackState(state: SmtcPlaybackState): Promise<void> {
+    await this.writeMessage({ type: 'setPlaybackState', state });
   }
 
-  setMetadata(metadata: SmtcTrackMetadata): void {
-    void metadata;
-    // TODO: Forward title, artist, album and coverPath to the Windows SMTC bridge.
+  async setMetadata(metadata: SmtcTrackMetadata): Promise<void> {
+    const coverPath = await this.coverCache.resolve(metadata.coverPath);
+    await this.writeMessage({
+      type: 'setMetadata',
+      ...metadata,
+      coverPath,
+    });
   }
 
-  setTimeline(positionSeconds: number, durationSeconds: number): void {
-    void positionSeconds;
-    void durationSeconds;
-    // TODO: Forward position/duration to the Windows SMTC bridge. Seek is intentionally not supported yet.
+  async setTimeline(positionSeconds: number, durationSeconds: number): Promise<void> {
+    await this.writeMessage({
+      type: 'setTimeline',
+      positionSeconds: this.safeNumber(positionSeconds),
+      durationSeconds: this.safeNumber(durationSeconds),
+    });
   }
 
-  setEnabledActions(actions: SmtcEnabledActions): void {
-    void actions;
-    // TODO: Enable play/pause/previous/next buttons on the Windows SMTC bridge.
+  async setEnabledActions(actions: SmtcEnabledActions): Promise<void> {
+    await this.writeMessage({
+      type: 'setEnabledActions',
+      play: actions.play,
+      pause: actions.pause,
+      previous: actions.previous,
+      next: actions.next,
+      seek: false,
+    });
   }
 
   onCommand(handler: (command: SmtcCommand) => void): () => void {
@@ -62,5 +154,88 @@ export class WindowsSmtcService implements SmtcService {
 
   protected emitCommand(command: SmtcCommand): void {
     this.commands.emit('command', command);
+  }
+
+  private bindHostProcess(host: SmtcHostProcess, hostPath: string): void {
+    host.stdout.on('data', (chunk: Buffer | string) => {
+      this.stdoutBuffer = this.consumeLines(this.stdoutBuffer + chunk.toString(), (line) => this.handleStdoutLine(line));
+    });
+
+    host.stderr.on('data', (chunk: Buffer | string) => {
+      this.stderrBuffer = this.consumeLines(this.stderrBuffer + chunk.toString(), (line) => {
+        if (line.trim()) {
+          this.logger.warn('[SMTC] Windows SMTC host stderr', { line });
+        }
+      });
+    });
+
+    host.on('error', (error: Error) => {
+      this.unavailable = true;
+      this.logger.warn('[SMTC] Windows SMTC host process error', {
+        hostPath,
+        error: error.message,
+      });
+    });
+
+    host.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+      this.host = null;
+      this.initialized = false;
+      if (!this.disposed) {
+        this.unavailable = true;
+        this.logger.warn('[SMTC] Windows SMTC host exited unexpectedly', { hostPath, code, signal });
+      }
+    });
+  }
+
+  private consumeLines(buffer: string, onLine: (line: string) => void): string {
+    const lines = buffer.split(/\r?\n/u);
+    const nextBuffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      onLine(line);
+    }
+
+    return nextBuffer;
+  }
+
+  private handleStdoutLine(line: string): void {
+    if (!line.trim()) {
+      return;
+    }
+
+    try {
+      const message = JSON.parse(line) as { type?: unknown; command?: unknown; message?: unknown };
+      if (message.type === 'command' && this.isCommand(message.command)) {
+        this.emitCommand(message.command);
+      } else if (message.type === 'error') {
+        this.logger.warn('[SMTC] Windows SMTC host reported an error', { message: String(message.message ?? '') });
+      }
+    } catch (error) {
+      this.logger.warn('[SMTC] Failed to parse Windows SMTC host output', {
+        line,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async writeMessage(message: Record<string, unknown>): Promise<void> {
+    await this.initialize();
+    this.writeRaw(message);
+  }
+
+  private writeRaw(message: Record<string, unknown>): void {
+    if (!this.host || this.disposed || this.unavailable || this.host.stdin.destroyed || !this.host.stdin.writable) {
+      return;
+    }
+
+    this.host.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  private safeNumber(value: number): number {
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  private isCommand(value: unknown): value is SmtcCommand {
+    return value === 'play' || value === 'pause' || value === 'playPause' || value === 'previous' || value === 'next' || value === 'stop';
   }
 }

@@ -3,7 +3,7 @@ import { resetCrashRecoveryDialogForTests, showCrashRecoveryDialog } from './Cra
 
 const mocks = vi.hoisted(() => ({
   exit: vi.fn(),
-  openDiagnosticsFolder: vi.fn(),
+  openCrashReportFile: vi.fn(),
   relaunch: vi.fn(),
   showMessageBox: vi.fn(),
 }));
@@ -23,7 +23,7 @@ vi.mock('./CrashReportService', () => ({
     getLogger: () => ({
       error: vi.fn(),
     }),
-    openDiagnosticsFolder: mocks.openDiagnosticsFolder,
+    openCrashReportFile: mocks.openCrashReportFile,
   }),
 }));
 
@@ -33,7 +33,7 @@ describe('CrashRecoveryDialog', () => {
     mocks.relaunch.mockReset();
     mocks.exit.mockReset();
     mocks.showMessageBox.mockReset();
-    mocks.openDiagnosticsFolder.mockReset();
+    mocks.openCrashReportFile.mockReset();
   });
 
   it('restarts the app when the restart button is chosen', async () => {
@@ -41,17 +41,19 @@ describe('CrashRecoveryDialog', () => {
 
     await showCrashRecoveryDialog('renderer', 'Renderer process gone: crashed');
 
-    expect(mocks.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ buttons: ['重启 ECHO', '打开 crash report', '忽略'] }));
+    expect(mocks.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({ buttons: ['Restart ECHO', 'Open crash report', 'Ignore'] }),
+    );
     expect(mocks.relaunch).toHaveBeenCalledTimes(1);
     expect(mocks.exit).toHaveBeenCalledWith(0);
   });
 
-  it('opens the diagnostics folder when crash report is chosen', async () => {
+  it('opens the crash report file when crash report is chosen', async () => {
     mocks.showMessageBox.mockResolvedValue({ response: 1 });
 
     await showCrashRecoveryDialog('main', 'Boom');
 
-    expect(mocks.openDiagnosticsFolder).toHaveBeenCalledTimes(1);
+    expect(mocks.openCrashReportFile).toHaveBeenCalledTimes(1);
     expect(mocks.relaunch).not.toHaveBeenCalled();
   });
 });

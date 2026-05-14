@@ -126,6 +126,7 @@ export type AudioDiagnostics = Pick<
   | 'decoderOutputSampleRate'
   | 'requestedOutputSampleRate'
   | 'actualDeviceSampleRate'
+  | 'sharedDeviceSampleRate'
   | 'resampling'
   | 'bitPerfectCandidate'
   | 'sampleRateMismatch'

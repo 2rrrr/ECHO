@@ -29,6 +29,22 @@ const makeTrack = (): LibraryTrack => ({
   fieldSources: {},
 });
 
+const makeStreamingTrack = (): LibraryTrack => ({
+  ...makeTrack(),
+  id: 'streaming:qqmusic:song-mid',
+  mediaType: 'streaming',
+  isTemporary: true,
+  path: 'streaming:qqmusic:song-mid',
+  provider: 'qqmusic',
+  providerTrackId: 'song-mid',
+  stableKey: 'streaming:qqmusic:song-mid',
+  title: '新時代',
+  artist: 'Ado',
+  album: 'UTA',
+  albumArtist: 'Ado',
+  coverThumb: 'echo-cover://thumb/streaming',
+});
+
 const makeVideo = (): TrackVideo => ({
   id: 'video-1',
   trackId: 'track-1',
@@ -96,8 +112,7 @@ const QueueSeed = ({ children, track }: { children: JSX.Element; track: LibraryT
   return children;
 };
 
-const renderDrawer = (settings: MvSettings = defaultMvSettings, selectedVideo: TrackVideo | null = null) => {
-  const track = makeTrack();
+const renderDrawer = (settings: MvSettings = defaultMvSettings, selectedVideo: TrackVideo | null = null, track: LibraryTrack = makeTrack()) => {
   window.localStorage.setItem('echo-next.locale', 'en-US');
   window.echo = {
     mv: {
@@ -106,6 +121,7 @@ const renderDrawer = (settings: MvSettings = defaultMvSettings, selectedVideo: T
       setSettings: vi.fn().mockImplementation(async (patch: Partial<MvSettings>) => ({ ...settings, ...patch })),
       findLocalCandidates: vi.fn().mockResolvedValue([makeCandidate()]),
       searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+      searchNetworkCandidatesForSnapshot: vi.fn().mockResolvedValue([]),
       getCandidates: vi.fn().mockResolvedValue([]),
       resolveStreams: vi.fn().mockImplementation(async () => ({ video: selectedVideo ?? makeVideo(), variants: [] })),
       setQuality: vi.fn(),
@@ -143,6 +159,21 @@ describe('MvSettingsDrawer', () => {
     expect(engineMeter.getByText('Test Song MV')).toBeTruthy();
     expect(engineMeter.getByText('1080p / 60fps')).toBeTruthy();
     expect(engineMeter.queryByText('Network')).toBeNull();
+  });
+
+  it('prefers the resolved video dimensions over a stale resolution quality label', async () => {
+    renderDrawer(defaultMvSettings, {
+      ...makeVideo(),
+      provider: 'bilibili',
+      width: 1920,
+      height: 1080,
+      qualityLabel: '8K',
+    });
+
+    const engineMeter = within(await screen.findByLabelText('MV engine status'));
+    expect(engineMeter.getByText('1080p')).toBeTruthy();
+    expect(engineMeter.queryByText('8K')).toBeNull();
+    expect(await screen.findByText('Bilibili / 1080p')).toBeTruthy();
   });
 
   it('contains the MV choose action and omits the local search shortcut', async () => {
@@ -322,6 +353,66 @@ describe('MvSettingsDrawer', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Search network MV/ })[1]);
 
     await waitFor(() => expect(window.echo.mv.searchNetworkCandidates).toHaveBeenCalledWith('track-1', 'Roselia HEROIC ADVENT'));
+  });
+
+  it('searches streaming tracks through the snapshot MV API', async () => {
+    const streamingTrack = makeStreamingTrack();
+    const streamingCandidate: MvMatchCandidate = {
+      ...makeCandidate(),
+      id: 'bilibili:BVstream',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: '新時代 MV',
+      artist: 'Ado',
+      url: 'https://www.bilibili.com/video/BVstream',
+      providerUrl: 'https://www.bilibili.com/video/BVstream',
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    renderDrawer(defaultMvSettings, null, streamingTrack);
+    vi.mocked(window.echo.mv.searchNetworkCandidatesForSnapshot).mockResolvedValue([streamingCandidate]);
+
+    const input = await screen.findByRole('textbox', { name: /MV search keywords/ });
+    expect((input as HTMLInputElement).value).toBe('新時代 Ado');
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Search network MV/ })[1]);
+
+    await waitFor(() =>
+      expect(window.echo.mv.searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: 'streaming:qqmusic:song-mid',
+          title: '新時代',
+          artist: 'Ado',
+          mediaType: 'streaming',
+          query: '新時代 Ado',
+        }),
+      ),
+    );
+    expect(window.echo.mv.searchNetworkCandidates).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getAllByText('新時代 MV').length).toBeGreaterThan(0));
+  });
+
+  it('selects streaming MV candidates with the streaming track key', async () => {
+    const streamingTrack = makeStreamingTrack();
+    const streamingCandidate: MvMatchCandidate = {
+      ...makeCandidate(),
+      id: 'bilibili:BVstream',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: '新時代 MV',
+      artist: 'Ado',
+      url: 'https://www.bilibili.com/video/BVstream',
+      providerUrl: 'https://www.bilibili.com/video/BVstream',
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    renderDrawer(defaultMvSettings, null, streamingTrack);
+    vi.mocked(window.echo.mv.searchNetworkCandidatesForSnapshot).mockResolvedValue([streamingCandidate]);
+
+    fireEvent.click((await screen.findAllByRole('button', { name: /Search network MV/ }))[1]);
+    fireEvent.click(await screen.findByRole('button', { name: /新時代 MV/ }));
+
+    await waitFor(() => expect(window.echo.mv.selectVideo).toHaveBeenCalledWith('streaming:qqmusic:song-mid', 'bilibili:BVstream'));
   });
 
   it('binds a pasted custom MV link to the current track', async () => {

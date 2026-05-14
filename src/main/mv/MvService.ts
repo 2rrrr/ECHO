@@ -13,6 +13,7 @@ import type {
   MvQualityVariant,
   MvResolvedStreams,
   MvSettings,
+  MvTrackSnapshotSearchRequest,
   NetworkMvProviderId,
   MvProviderId,
   MvSourceType,
@@ -112,6 +113,7 @@ const qualityHeight: Record<Exclude<MvQualityTier, 'auto'>, number> = {
   '1080p': 1080,
   '1440p': 1440,
   '2160p': 2160,
+  '4320p': 4320,
 };
 
 const maxQualityHeight = (quality: MvSettings['maxQuality']): number => (quality === 'max' ? Number.POSITIVE_INFINITY : qualityHeight[quality]);
@@ -174,7 +176,7 @@ const sourceType = (value: string): MvSourceType => {
 };
 
 const qualityTier = (value: string): MvQualityTier => {
-  if (value === 'auto' || value === '720p' || value === '1080p' || value === '1440p' || value === '2160p') {
+  if (value === 'auto' || value === '720p' || value === '1080p' || value === '1440p' || value === '2160p' || value === '4320p') {
     return value;
   }
 
@@ -529,6 +531,54 @@ export class MvService {
     return upsertedCandidates;
   }
 
+  async searchNetworkCandidatesForSnapshot(request: MvTrackSnapshotSearchRequest): Promise<MvMatchCandidate[]> {
+    const settings = this.getSettings();
+    if (settings.enabled === false) {
+      return [];
+    }
+
+    const track = this.trackSnapshotToLibraryTrack(request);
+    const queryOverride = request.query?.trim() || undefined;
+    const enabled = new Set(settings.enabledProviders);
+    const orderedProviders = settings.providerOrder.filter((provider) => enabled.has(provider));
+    const providerResults = await Promise.all(
+      orderedProviders.map(async (providerId) => {
+        const provider = this.onlineProviderMap.get(providerId);
+        if (!provider) {
+          return [];
+        }
+
+        try {
+          return await provider.search(track, settings, queryOverride);
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const candidates = providerResults
+      .flat()
+      .sort((left, right) => {
+        const scoreDelta = right.score - left.score;
+        if (scoreDelta !== 0) {
+          return scoreDelta;
+        }
+        return (right.viewCount ?? -1) - (left.viewCount ?? -1);
+      })
+      .map((candidate) => ({
+        ...candidate,
+        filePath: null,
+        reasons: [...(candidate.reasons ?? []), `snapshot:${track.mediaType ?? 'streaming'}:${track.id}`],
+      }));
+    const upsertedCandidates = this.database.transaction(() => candidates.map((candidate) => this.upsertNetworkCandidate(track, candidate)))();
+    const selectedCandidate = settings.autoSearch ? this.chooseAutoCandidate(upsertedCandidates, settings) : null;
+
+    if (selectedCandidate) {
+      this.selectVideo(track.id, selectedCandidate.id);
+    }
+
+    return upsertedCandidates;
+  }
+
   getVideoCandidates(trackId: string): TrackVideo[] {
     return this.database
       .prepare<[string], TrackVideoRow>(
@@ -806,6 +856,35 @@ export class MvService {
     }
 
     return track;
+  }
+
+  private trackSnapshotToLibraryTrack(request: MvTrackSnapshotSearchRequest): LibraryTrack {
+    return {
+      id: request.trackId,
+      mediaType: request.mediaType ?? 'streaming',
+      path: request.trackId,
+      stableKey: request.trackId,
+      title: request.title,
+      artist: request.artist,
+      album: request.album ?? 'Unknown Album',
+      albumArtist: request.albumArtist ?? request.artist,
+      trackNo: null,
+      discNo: null,
+      year: null,
+      genre: null,
+      duration: request.durationSeconds ?? 0,
+      codec: null,
+      sampleRate: null,
+      bitDepth: null,
+      bitrate: null,
+      coverId: null,
+      coverThumb: request.coverThumb ?? null,
+      fieldSources: {
+        title: 'snapshot',
+        artist: 'snapshot',
+        album: 'snapshot',
+      },
+    };
   }
 
   private upsertLocalCandidate(track: LibraryTrack, candidate: MvMatchCandidate): MvMatchCandidate {

@@ -5,6 +5,7 @@ import {
   Check,
   Download,
   ExternalLink,
+  FileText,
   FolderOpen,
   Globe2,
   Headphones,
@@ -29,6 +30,7 @@ import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { LastFmStatus } from '../../shared/types/lastfm';
 import type { DuplicateTrackIndexSummary } from '../../shared/types/library';
+import type { UpdateStatus } from '../../shared/types/updates';
 import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
@@ -192,6 +194,25 @@ const statusRows = (
   { label: 'bitPerfectDisabledReason', value: status?.bitPerfectDisabledReason ?? 'n/a' },
   { label: 'sampleRateMismatch', value: formatBool(status?.sampleRateMismatch ?? false) },
 ];
+
+const getUpdateStateLabel = (state: UpdateStatus['state']): string => {
+  switch (state) {
+    case 'checking':
+      return '正在检查';
+    case 'available':
+      return '发现新版本';
+    case 'downloaded':
+      return '已下载，等待重启';
+    case 'not-available':
+      return '已是最新';
+    case 'error':
+      return '检查失败';
+    case 'disabled':
+      return '已关闭';
+    default:
+      return '待检查';
+  }
+};
 
 const SettingSection = ({ id, activeKey, icon: Icon, title, children }: SettingSectionProps): JSX.Element => (
   <section className="settings-section" id={`settings-sec-${id}`} data-visible={activeKey === id}>
@@ -507,6 +528,8 @@ export const SettingsPage = (): JSX.Element => {
   const [youtubeBrowser, setYoutubeBrowser] = useState<YouTubeBrowser>('none');
   const [lastFmAuthToken, setLastFmAuthToken] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
   const [lastCrashSummary, setLastCrashSummary] = useState<LastCrashSummary | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsMessage, setDiagnosticsMessage] = useState<string | null>(null);
@@ -660,6 +683,7 @@ export const SettingsPage = (): JSX.Element => {
     const diagnostics = getDiagnosticsBridge();
     void app?.getSettings().then(setAppSettings).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
+    void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
     void app?.getDefaultCacheDirectory().then(setDefaultCacheDirectory).catch(() => undefined);
     void diagnostics?.getLastCrashSummary().then(setLastCrashSummary).catch(() => undefined);
     const timer = window.setInterval(() => {
@@ -752,7 +776,7 @@ export const SettingsPage = (): JSX.Element => {
         devices.find((device) => device.id === nextDeviceId && (nextOutputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')) ?? null;
       const output: AudioOutputSettings = {
         outputMode: nextOutputMode,
-        latencyProfile: 'balanced',
+        latencyProfile: nextOutputMode === 'shared' ? 'stable' : 'balanced',
       };
 
       if (nextDevice) {
@@ -821,6 +845,35 @@ export const SettingsPage = (): JSX.Element => {
       .catch((settingsError) => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
+  };
+
+  const handleCheckForUpdates = async (): Promise<void> => {
+    const app = getAppBridge();
+
+    if (!app?.checkForUpdates) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to check for updates.');
+      return;
+    }
+
+    setUpdateBusy(true);
+    try {
+      setUpdateStatus(await app.checkForUpdates());
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : String(updateError));
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
+  const handleOpenRepository = async (): Promise<void> => {
+    const app = getAppBridge();
+
+    if (!app?.openRepository) {
+      window.open('https://github.com/moekotori/echo', '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    await app.openRepository();
   };
 
   const previewAndPersistAppWallpaperSettings = (patch: Partial<AppSettings>): void => {
@@ -1179,6 +1232,38 @@ export const SettingsPage = (): JSX.Element => {
       }
 
       await diagnostics.openDiagnosticsFolder();
+    } catch (diagnosticsError) {
+      setDiagnosticsMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
+    }
+  };
+
+  const handleDiagnosticsOpenCrashReport = async (): Promise<void> => {
+    try {
+      const diagnostics = getDiagnosticsBridge();
+
+      if (!diagnostics) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to view crash reports.');
+        return;
+      }
+
+      const openedPath = await diagnostics.openCrashReport();
+      setDiagnosticsMessage(`Crash report: ${openedPath}`);
+    } catch (diagnosticsError) {
+      setDiagnosticsMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
+    }
+  };
+
+  const handleDiagnosticsOpenAudioCrashReport = async (): Promise<void> => {
+    try {
+      const diagnostics = getDiagnosticsBridge();
+
+      if (!diagnostics) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to view audio crash reports.');
+        return;
+      }
+
+      const openedPath = await diagnostics.openAudioCrashReport();
+      setDiagnosticsMessage(`Audio crash report: ${openedPath}`);
     } catch (diagnosticsError) {
       setDiagnosticsMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
     }
@@ -2271,6 +2356,64 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
+                title="自动更新"
+                description="启动后自动检查 GitHub Release，下载完成后提示重启安装。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--updates">
+                  <div className="settings-status-grid settings-status-grid--updates">
+                    <span>
+                      <em>当前版本</em>
+                      <strong>{appVersion ?? updateStatus?.currentVersion ?? t('common.checking')}</strong>
+                    </span>
+                    <span>
+                      <em>最新版本</em>
+                      <strong>{updateStatus?.latestVersion ?? 'n/a'}</strong>
+                    </span>
+                    <span>
+                      <em>状态</em>
+                      <strong>{getUpdateStateLabel(updateStatus?.state ?? (appSettings?.autoUpdateEnabled === false ? 'disabled' : 'idle'))}</strong>
+                    </span>
+                    <span>
+                      <em>上次检查</em>
+                      <strong>{updateStatus?.checkedAt ? new Date(updateStatus.checkedAt).toLocaleString() : 'n/a'}</strong>
+                    </span>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>自动检查更新</span>
+                      <ToggleButton
+                        active={appSettings?.autoUpdateEnabled ?? true}
+                        disabled={!appSettings}
+                        onClick={() => patchAppSettings({ autoUpdateEnabled: !(appSettings?.autoUpdateEnabled ?? true) })}
+                      />
+                    </div>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={updateBusy || appSettings?.autoUpdateEnabled === false}
+                      onClick={() => void handleCheckForUpdates()}
+                    >
+                      <RotateCw className={updateBusy ? 'spinning-icon' : undefined} size={15} />
+                      {updateBusy ? '检查中...' : '检查更新'}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleOpenRepository()}>
+                      <ExternalLink size={15} />
+                      github.com/moekotori/echo
+                    </button>
+                  </div>
+                  {updateStatus?.releaseNotes ? (
+                    <div className="settings-update-notes">
+                      <em>更新日志</em>
+                      <pre>{updateStatus.releaseNotes}</pre>
+                    </div>
+                  ) : (
+                    <p className="settings-inline-note">更新日志会在 GitHub Release 返回 release notes 后显示。</p>
+                  )}
+                  {updateStatus?.error ? <p className="settings-inline-error">{updateStatus.error}</p> : null}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
                 title="Diagnostics / 崩溃报告"
                 description="本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。"
               >
@@ -2301,6 +2444,14 @@ export const SettingsPage = (): JSX.Element => {
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenFolder()}>
                       <FolderOpen size={15} />
                       打开日志目录
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenCrashReport()}>
+                      <FileText size={15} />
+                      View crash report
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenAudioCrashReport()}>
+                      <Headphones size={15} />
+                      View audio crash report
                     </button>
                     <button
                       className="settings-action-button"

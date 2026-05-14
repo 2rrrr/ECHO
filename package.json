@@ -1,23 +1,26 @@
 {
   "name": "echo-next",
-  "version": "1.0.1",
+  "version": "26.5.14",
   "description": "ECHO Next Phase 0 desktop music app shell.",
+  "author": "Moekotori",
   "main": "out/main/index.js",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "node scripts/ensure-native-abi.mjs electron && electron-vite dev",
-    "dev:full": "node scripts/ensure-native-abi.mjs electron && npm run build:audio-host && electron-vite dev",
+    "dev:full": "node scripts/ensure-native-abi.mjs electron && npm run build:audio-host && npm run build:smtc-host && electron-vite dev",
     "build:audio-host": "node scripts/build-audio-host.mjs",
+    "build:smtc-host": "node scripts/build-smtc-host.mjs",
     "test:audio-engine": "node scripts/test-audio-engine.mjs",
     "smoke:audio-host": "node scripts/smoke-audio-host.mjs",
+    "smoke:smtc-host": "node scripts/smoke-smtc-host.mjs",
     "ensure:native:electron": "node scripts/ensure-native-abi.mjs electron",
     "ensure:native:node": "node scripts/ensure-native-abi.mjs node",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "rebuild:native:node": "npm rebuild better-sqlite3",
     "sync:audio-host": "node scripts/sync-audio-host.mjs",
     "build": "npm run typecheck && electron-vite build",
-    "build:win": "npm run rebuild:native && npm run build:audio-host && npm run build && electron-builder --win",
+    "build:win": "npm run rebuild:native && npm run build:audio-host && npm run build:smtc-host && npm run build && electron-builder --win",
     "check:encoding": "node scripts/check-encoding.mjs",
     "lint": "npm run check:encoding && eslint .",
     "test": "vitest run",
@@ -36,6 +39,7 @@
     "@vitejs/plugin-react": "^5.1.4",
     "better-sqlite3": "^12.9.0",
     "discord-rpc": "^4.0.1",
+    "electron-updater": "^6.8.3",
     "electron-vite": "^5.0.0",
     "ffmpeg-static": "^5.3.0",
     "kuroshiro": "^1.2.0",
@@ -68,7 +72,9 @@
   },
   "build": {
     "appId": "app.echo.next",
-    "productName": "ECHO Next",
+    "productName": "ECHO NEXT",
+    "executableName": "ECHO NEXT",
+    "icon": "software.png",
     "directories": {
       "output": "dist"
     },
@@ -80,6 +86,10 @@
       {
         "from": "electron-app/build/echo-audio-host.exe",
         "to": "echo-audio-host.exe"
+      },
+      {
+        "from": "electron-app/build/echo-smtc-host.exe",
+        "to": "echo-smtc-host.exe"
       },
       {
         "from": "electron-app/tools",
@@ -94,6 +104,14 @@
       "node_modules/sharp/**/*"
     ],
     "win": {
+      "icon": "software.png",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "moekotori",
+          "repo": "echo"
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -144,7 +162,8 @@
             "spx",
             "amr",
             "ac3",
-            "dts"
+            "dts",
+            "cue"
           ],
           "role": "Viewer"
         }

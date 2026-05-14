@@ -71,6 +71,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const isStandaloneRoute = activeRoute.chrome === 'standalone';
   const isLyricsRoute = activeRouteId === 'lyrics';
   const shouldUseLyricsPlayerDrawer = isLyricsRoute && isLyricsPlayerDrawerEnabled;
+  const shouldRenderPlayerBar = !isStandaloneRoute || isLyricsRoute;
   const appWallpaperUrl = appWallpaperSettings.appCustomWallpaperPath
     ? `echo-wallpaper://app/custom?path=${encodeURIComponent(appWallpaperSettings.appCustomWallpaperPath)}`
     : null;
@@ -543,17 +544,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           onPointerEnter={() => setIsLyricsPlayerDrawerOpen(true)}
         />
       ) : null}
-      {isStandaloneRoute && !isLyricsRoute ? null : shouldUseLyricsPlayerDrawer ? (
+      {shouldRenderPlayerBar ? (
         <div
-          className="lyrics-player-drawer-host"
-          onPointerEnter={() => setIsLyricsPlayerDrawerOpen(true)}
-          onPointerLeave={() => setIsLyricsPlayerDrawerOpen(false)}
+          className={`player-bar-host ${shouldUseLyricsPlayerDrawer ? 'lyrics-player-drawer-host' : ''}`}
+          onPointerEnter={shouldUseLyricsPlayerDrawer ? () => setIsLyricsPlayerDrawerOpen(true) : undefined}
+          onPointerLeave={shouldUseLyricsPlayerDrawer ? () => setIsLyricsPlayerDrawerOpen(false) : undefined}
         >
           <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />
         </div>
-      ) : (
-        <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />
-      )}
+      ) : null}
     </div>
   );
 };

@@ -39,6 +39,7 @@ const qualityHeight: Record<Exclude<MvQualityTier, 'auto'>, number> = {
   '1080p': 1080,
   '1440p': 1440,
   '2160p': 2160,
+  '4320p': 4320,
 };
 
 const maxQualityHeight = (quality: MvSettings['maxQuality']): number => (quality === 'max' ? Number.POSITIVE_INFINITY : qualityHeight[quality]);
@@ -51,7 +52,7 @@ const bilibiliQualityMap: Record<number, { tier: Exclude<MvQualityTier, 'auto'>;
   120: { tier: '2160p', label: '4K' },
   125: { tier: '2160p', label: 'HDR' },
   126: { tier: '2160p', label: 'Dolby Vision' },
-  127: { tier: '2160p', label: '8K' },
+  127: { tier: '4320p', label: '8K' },
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -367,23 +368,25 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       try {
         const playPayload = await withTimeout(this.fetchImpl, playUrl.toString(), headers);
         const playData = isRecord(playPayload) ? playPayload.data : null;
+        const actualQn = number(isRecord(playData) ? playData.quality : null) ?? qn;
+        const actualQuality = bilibiliQualityMap[actualQn] ?? quality;
         const durl = asArray(isRecord(playData) ? playData.durl : null).find(isRecord);
         const streamUrl = normalizeUrl(durl?.url);
 
-        if (!streamUrl || variants.some((variant) => variant.url === streamUrl)) {
+        if (!streamUrl || variants.some((variant) => variant.id === `bilibili-qn-${actualQn}` || variant.url === streamUrl)) {
           continue;
         }
 
-        const variantFps = quality.label.includes('60fps') ? 60 : null;
+        const variantFps = actualQuality.label.includes('60fps') ? 60 : null;
 
         variants.push({
-          ...makeQualityVariant(`bilibili-qn-${qn}`, quality.label, quality.tier, {
+          ...makeQualityVariant(`bilibili-qn-${actualQn}`, actualQuality.label, actualQuality.tier, {
             fps: variantFps,
             container: 'mp4',
             mimeType: 'video/mp4',
             protocol: 'direct',
             playableInApp: true,
-            requiresAccount: qn >= 112 && !this.credentials(this.id).cookie,
+            requiresAccount: actualQn >= 112 && !this.credentials(this.id).cookie,
             expiresAt,
           }),
           url: streamUrl,
@@ -393,7 +396,8 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
           },
           rawProviderJson: {
             provider: this.id,
-            qn,
+            requestedQn: qn,
+            qn: actualQn,
             cid,
           },
         });

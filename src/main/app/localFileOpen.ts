@@ -5,6 +5,7 @@ import { SUPPORTED_AUDIO_DIALOG_EXTENSIONS } from '../../shared/constants/audioE
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { LocalFileOpenRejection, LocalFileResolveResult } from '../../shared/types/playback';
+import { createCueTrackPath, readCueSheet } from '../audio/CueSheet';
 import { getLibraryService } from '../library/LibraryService';
 import type { MetadataResult } from '../library/libraryTypes';
 import { TsMetadataReader } from '../library/workers/TsMetadataReader';
@@ -133,6 +134,19 @@ const createTemporaryTrack = async (filePath: string): Promise<LibraryTrack> => 
   };
 };
 
+const createTemporaryTracks = async (filePath: string): Promise<LibraryTrack[]> => {
+  if (extname(filePath).toLowerCase() !== '.cue') {
+    return [await createTemporaryTrack(filePath)];
+  }
+
+  const cueSheet = readCueSheet(filePath);
+  if (cueSheet.tracks.length === 0) {
+    return [await createTemporaryTrack(filePath)];
+  }
+
+  return Promise.all(cueSheet.tracks.map((track) => createTemporaryTrack(createCueTrackPath(filePath, track.trackNumber))));
+};
+
 export const parseLocalAudioFileArguments = (argv: string[]): string[] => {
   const paths = uniqueResolvedPaths(argv);
 
@@ -151,7 +165,12 @@ export const resolveLocalAudioFiles = async (paths: string[]): Promise<LocalFile
     }
 
     const libraryTrack = getLibraryService().getTrackByPath(filePath);
-    tracks.push(libraryTrack ? { ...libraryTrack, mediaType: libraryTrack.mediaType ?? 'local' } : await createTemporaryTrack(filePath));
+    if (libraryTrack) {
+      tracks.push({ ...libraryTrack, mediaType: libraryTrack.mediaType ?? 'local' });
+      continue;
+    }
+
+    tracks.push(...await createTemporaryTracks(filePath));
   }
 
   return { tracks, rejected };

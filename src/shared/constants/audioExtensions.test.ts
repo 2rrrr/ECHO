@@ -19,8 +19,8 @@ describe('audio extension constants', () => {
     }
   });
 
-  it('keeps cue import support separate from the direct playback dialog list', () => {
+  it('includes cue sheets in the direct playback dialog list', () => {
     expect(isCueFile('album.cue')).toBe(true);
-    expect(SUPPORTED_AUDIO_DIALOG_EXTENSIONS).not.toContain('cue');
+    expect(SUPPORTED_AUDIO_DIALOG_EXTENSIONS).toContain('cue');
   });
 });
