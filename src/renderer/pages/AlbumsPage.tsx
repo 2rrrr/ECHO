@@ -218,6 +218,7 @@ export const AlbumsPage = (): JSX.Element => {
     const handleNavigateAlbumDetail = (event: Event): void => {
       const album = (event as CustomEvent<{ album?: LibraryAlbum }>).detail?.album;
       if (album) {
+        consumePendingAlbumDetailNavigation();
         openAlbumDetail(album);
       }
     };
