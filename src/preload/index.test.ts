@@ -541,8 +541,10 @@ describe('preload SMTC API', () => {
 
   it('exposes database recovery discard action through IPC', async () => {
     await exposedApi!.library.discardQuarantinedProblemTracks();
+    await exposedApi!.library.relaunchRecoveryMode();
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryDiscardQuarantinedProblemTracks);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryRelaunchRecoveryMode);
   });
 
   it('exposes plugin management APIs through IPC', async () => {

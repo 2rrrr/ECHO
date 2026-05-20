@@ -4825,8 +4825,176 @@ html[data-theme="dark"] .streaming-download-progress[data-status="failed"] {
   color: var(--theme-page-text);
 }
 
+.inbox-story-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: stretch;
+  padding: 14px;
+  border: 1px solid var(--theme-legacy-border-soft);
+  border-radius: 8px;
+  background: var(--theme-legacy-surface-a52);
+}
+
+.inbox-story-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inbox-story-copy strong {
+  max-width: 920px;
+  color: var(--theme-page-text);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.inbox-story-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inbox-story-tags button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-legacy-border-soft);
+  border-radius: 999px;
+  background: var(--theme-legacy-surface-a62);
+  color: var(--theme-muted-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.inbox-story-tags button:hover {
+  border-color: var(--theme-accent-border);
+  color: var(--theme-page-text);
+}
+
+.inbox-story-numbers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(82px, 1fr));
+  gap: 8px;
+  min-width: 270px;
+}
+
+.inbox-story-numbers span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--theme-legacy-border-soft);
+  border-radius: 8px;
+  background: var(--theme-legacy-surface-a62);
+}
+
+.inbox-story-numbers strong {
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.inbox-story-numbers em {
+  overflow: hidden;
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inbox-facet-row label {
   padding: 0 10px;
+}
+
+.inbox-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.inbox-section-heading strong {
+  font-size: 16px;
+}
+
+.inbox-album-wall {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inbox-album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+}
+
+.inbox-album-card {
+  display: grid;
+  grid-template-rows: auto minmax(82px, auto);
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--theme-legacy-border-soft);
+  border-radius: 8px;
+  background: var(--theme-legacy-surface-a52);
+  color: var(--theme-page-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.inbox-album-card:hover {
+  border-color: var(--theme-accent-border);
+  background: var(--theme-legacy-surface-a78);
+}
+
+.inbox-album-art {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--theme-legacy-surface-a78);
+  color: var(--theme-muted-text);
+}
+
+.inbox-album-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.inbox-album-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.inbox-album-copy strong,
+.inbox-album-copy em,
+.inbox-album-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-album-copy em,
+.inbox-album-copy small {
+  color: var(--theme-muted-text);
+  font-style: normal;
+}
+
+.inbox-album-copy small {
+  font-size: 12px;
 }
 
 .inbox-notice {
@@ -4956,6 +5124,14 @@ html[data-theme="dark"] .streaming-download-progress[data-status="failed"] {
     grid-template-columns: 1fr;
   }
 
+  .inbox-story-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .inbox-story-numbers {
+    min-width: 0;
+  }
+
   .inbox-stats {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -4976,6 +5152,10 @@ html[data-theme="dark"] .streaming-download-progress[data-status="failed"] {
 
 @media (max-width: 620px) {
   .inbox-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .inbox-story-numbers {
     grid-template-columns: 1fr;
   }
 

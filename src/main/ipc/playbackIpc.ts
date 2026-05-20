@@ -406,10 +406,12 @@ const normalizeReplayGainTrackData = (value: unknown): ReplayGainTrackData | nul
   const albumGainDb = optionalFiniteNumberOrNull(input.albumGainDb);
   const trackPeak = optionalFiniteNumberOrNull(input.trackPeak);
   const albumPeak = optionalFiniteNumberOrNull(input.albumPeak);
+  const integratedLufs = optionalFiniteNumberOrNull(input.integratedLufs);
   if (trackGainDb !== undefined) output.trackGainDb = trackGainDb;
   if (albumGainDb !== undefined) output.albumGainDb = albumGainDb;
   if (trackPeak !== undefined) output.trackPeak = trackPeak;
   if (albumPeak !== undefined) output.albumPeak = albumPeak;
+  if (integratedLufs !== undefined) output.integratedLufs = integratedLufs;
   return Object.keys(output).length > 0 ? output : null;
 };
 
@@ -695,25 +697,36 @@ const createReplayGainHintForMediaItem = (item: PlayableTrack) => {
     replayGainAlbumGainDb: number | null;
     replayGainTrackPeak: number | null;
     replayGainAlbumPeak: number | null;
+    replayGainIntegratedLufs: number | null;
   }>;
   return {
     trackGainDb: replayGain.replayGainTrackGainDb ?? null,
     albumGainDb: replayGain.replayGainAlbumGainDb ?? null,
     trackPeak: replayGain.replayGainTrackPeak ?? null,
     albumPeak: replayGain.replayGainAlbumPeak ?? null,
+    integratedLufs: replayGain.replayGainIntegratedLufs ?? null,
   };
 };
 
 const hasReplayGainHint = (item: PlayableTrack): boolean => {
-  if (Number.isFinite(item.replayGain?.trackGainDb) || Number.isFinite(item.replayGain?.albumGainDb)) {
+  if (
+    Number.isFinite(item.replayGain?.trackGainDb) ||
+    Number.isFinite(item.replayGain?.albumGainDb) ||
+    Number.isFinite(item.replayGain?.integratedLufs)
+  ) {
     return true;
   }
 
   const replayGain = item as Partial<{
     replayGainTrackGainDb: number | null;
     replayGainAlbumGainDb: number | null;
+    replayGainIntegratedLufs: number | null;
   }>;
-  return Number.isFinite(replayGain.replayGainTrackGainDb) || Number.isFinite(replayGain.replayGainAlbumGainDb);
+  return (
+    Number.isFinite(replayGain.replayGainTrackGainDb) ||
+    Number.isFinite(replayGain.replayGainAlbumGainDb) ||
+    Number.isFinite(replayGain.replayGainIntegratedLufs)
+  );
 };
 
 const scheduleReplayGainAnalysisForPlayback = (trackId: string | null | undefined, item?: PlayableTrack): void => {

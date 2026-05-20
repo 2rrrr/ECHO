@@ -33,6 +33,23 @@ describe('calculateReplayGain', () => {
     });
   });
 
+  it('uses integrated LUFS with the current target for Spotify-style normalization', () => {
+    expect(calculateReplayGain({
+      enabled: true,
+      mode: 'track',
+      integratedLufs: -9,
+      trackGainDb: -9,
+      targetLufs: -14,
+      trackPeak: 0.7,
+      preampDb: 0,
+      preventClipping: true,
+    })).toMatchObject({
+      appliedDb: -5,
+      selectedGainDb: -5,
+      active: true,
+    });
+  });
+
   it('stays inactive when disabled or missing gain', () => {
     expect(calculateReplayGain({
       enabled: false,
@@ -49,4 +66,3 @@ describe('calculateReplayGain', () => {
     }).active).toBe(false);
   });
 });
-

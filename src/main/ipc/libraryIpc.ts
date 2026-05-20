@@ -64,6 +64,7 @@ import { SongCardRenderer } from '../library/SongCardRenderer';
 import { createLibraryHealthReport, writeLibraryHealthReportMarkdown } from '../library/LibraryHealthReport';
 import { closeDefaultStreamingService, getStreamingService } from '../streaming/StreamingService';
 import { decodeM3u8ProviderTrackId } from '../streaming/M3u8Playlist';
+import { createLibraryRecoveryRelaunchArgs } from '../app/libraryRecoveryMode';
 
 const sortValues = new Set<LibrarySort>([
   'default',
@@ -109,6 +110,19 @@ const closeLibraryDatabaseUsers = (): void => {
   closeDefaultRemoteSourceService();
   closeDefaultLibraryService();
   getLibraryDatabaseManager().closeAllUsers('manual-library-maintenance');
+};
+
+const scheduleLibraryRecoveryRelaunch = () => {
+  app.relaunch({ args: createLibraryRecoveryRelaunchArgs() });
+  setTimeout(() => {
+    app.quit();
+  }, 50).unref?.();
+
+  return {
+    scheduled: true,
+    mode: 'startup-auto-repair' as const,
+    message: 'ECHO Next 将退出并重启到恢复模式，重启时会在服务占用数据库前先运行曲库保护检查和自动修复。',
+  };
 };
 
 const getDatabaseProtectionStatusForRenderer = () => ({
@@ -1767,6 +1781,12 @@ export const registerLibraryIpc = (): void => {
       return discardQuarantinedProblemTracks(app.getPath('userData'));
     });
   });
+  ipcMain.handle(IpcChannels.LibraryRelaunchRecoveryMode, () =>
+    getLibraryDatabaseManager().runExclusiveMaintenance('manual-library-database-relaunch-recovery-mode', () => {
+      closeLibraryDatabaseUsers();
+      return scheduleLibraryRecoveryRelaunch();
+    }),
+  );
   ipcMain.handle(IpcChannels.LibraryOpenDataProtectionFolder, async () => {
     const status = getDatabaseProtectionStatusForRenderer();
     mkdirSync(status.dataProtectionPath, { recursive: true });

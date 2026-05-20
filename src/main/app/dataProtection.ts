@@ -53,6 +53,7 @@ type LibraryDatabaseMaintenanceEvent = {
     | 'manual-discard-quarantined'
     | 'startup-protected'
     | 'startup-poisoned'
+    | 'startup-auto-repair'
     | 'scan-health-failed'
     | 'scan-auto-restore';
   databasePath: string;
@@ -374,7 +375,7 @@ const maxProtectedDisplayTextLength = 512;
 const maxProtectedSearchTextLength = 4096;
 const maxProtectedDiagnosticTextLength = 128 * 1024;
 const poisonBinaryMarkerPattern = /(?:APIC|image\/(?:jpeg|jpg|png|webp|gif)|JFIF|Exif|\u0000)/iu;
-const textFieldsToInspect: Array<{ table: string; column: string; maxLength: number }> = [
+const textFieldsToInspect: Array<{ table: string; column: string; maxLength: number; blocksStartup?: boolean }> = [
   { table: 'tracks', column: 'title', maxLength: maxProtectedDisplayTextLength },
   { table: 'tracks', column: 'artist', maxLength: maxProtectedDisplayTextLength },
   { table: 'tracks', column: 'album', maxLength: maxProtectedDisplayTextLength },
@@ -386,9 +387,9 @@ const textFieldsToInspect: Array<{ table: string; column: string; maxLength: num
   { table: 'albums', column: 'album_artist', maxLength: maxProtectedDisplayTextLength },
   { table: 'artists', column: 'name', maxLength: maxProtectedDisplayTextLength },
   { table: 'artists', column: 'sort_name', maxLength: maxProtectedDisplayTextLength },
-  { table: 'scan_jobs', column: 'errors_json', maxLength: maxProtectedDiagnosticTextLength },
-  { table: 'covers', column: 'warnings_json', maxLength: maxProtectedDiagnosticTextLength },
-  { table: 'covers', column: 'errors_json', maxLength: maxProtectedDiagnosticTextLength },
+  { table: 'scan_jobs', column: 'errors_json', maxLength: maxProtectedDiagnosticTextLength, blocksStartup: false },
+  { table: 'covers', column: 'warnings_json', maxLength: maxProtectedDiagnosticTextLength, blocksStartup: false },
+  { table: 'covers', column: 'errors_json', maxLength: maxProtectedDiagnosticTextLength, blocksStartup: false },
 ];
 
 const quoteSqlIdentifier = (value: string): string => `"${value.replace(/"/gu, '""')}"`;
@@ -500,12 +501,14 @@ export const inspectLibraryDatabaseForPoison = (databasePath: string): LibraryDa
       if (result.maxLength > 0) {
         maxFieldLengths[key] = result.maxLength;
       }
-      if (result.suspectCount > 0) {
+      if (result.suspectCount > 0 && field.blocksStartup !== false) {
         suspectCounts[key] = result.suspectCount;
       }
-      totalSuspects += result.suspectCount;
-      totalOversized += result.oversizedCount;
-      totalBinaryMarkers += result.binaryMarkerCount;
+      if (field.blocksStartup !== false) {
+        totalSuspects += result.suspectCount;
+        totalOversized += result.oversizedCount;
+        totalBinaryMarkers += result.binaryMarkerCount;
+      }
     }
 
     if (totalSuspects === 0) {
@@ -601,15 +604,31 @@ const compactJsonText = (value: unknown, maxLength = maxProtectedSearchTextLengt
     return typeof value === 'string' ? value : '[]';
   }
 
+  const fitJsonArray = (items: string[]): string => {
+    const output = [...items];
+    let text = JSON.stringify(output);
+    while (text.length > maxLength && output.length > 1) {
+      output.pop();
+      text = JSON.stringify(output);
+    }
+    if (text.length <= maxLength) {
+      return text;
+    }
+
+    const allowance = Math.max(32, maxLength - 16);
+    return JSON.stringify([output[0]?.slice(0, allowance) ?? '[unsafe payload removed]']).slice(0, maxLength);
+  };
+
   try {
     const parsed = JSON.parse(value) as unknown;
     if (Array.isArray(parsed)) {
-      return JSON.stringify(
-        parsed
-          .filter((item): item is string => typeof item === 'string')
+      const items = parsed.filter((item): item is string => typeof item === 'string');
+      return fitJsonArray([
+        `[${items.length} diagnostic message(s) compacted]`,
+        ...items
           .slice(0, 20)
-          .map((item) => safeProtectedText(item, '[unsafe payload removed]', maxProtectedDisplayTextLength)),
-      );
+          .map((item) => normalizeProtectedTextWhitespace(item).slice(0, 320) || '[empty diagnostic message]'),
+      ]);
     }
   } catch {
     // Fall back to a compact placeholder below.
@@ -738,6 +757,38 @@ const scrubJsonTextTable = (database: Database.Database, tableName: string, colu
   }
 
   return scrubbed;
+};
+
+const scrubDiagnosticLibraryText = (databasePath: string): number => {
+  if (!existsSync(databasePath)) {
+    return 0;
+  }
+
+  let database: Database.Database | null = null;
+  try {
+    database = new Database(databasePath, { fileMustExist: true });
+    let scrubbedRows = 0;
+    database.transaction(() => {
+      scrubbedRows += scrubJsonTextTable(database!, 'scan_jobs', ['errors_json']);
+      scrubbedRows += scrubJsonTextTable(database!, 'covers', ['warnings_json', 'errors_json']);
+    })();
+    if (scrubbedRows > 0) {
+      try {
+        database.pragma('wal_checkpoint(TRUNCATE)');
+      } catch {
+        // The next health check will report any meaningful database issue.
+      }
+    }
+    return scrubbedRows;
+  } catch {
+    return 0;
+  } finally {
+    try {
+      database?.close();
+    } catch {
+      // Ignore close errors after best-effort diagnostic compaction.
+    }
+  }
 };
 
 const scrubNonTrackLibraryTables = (database: Database.Database): number => {
@@ -1915,6 +1966,111 @@ const protectCorruptLibraryDatabase = (userDataPath: string, currentHealth: Data
   }
 };
 
+const autoRepairPoisonedLibraryDatabase = (
+  userDataPath: string,
+  archivePath: string | undefined,
+  poisonReportBefore: LibraryDatabasePoisonReport,
+): { health: DatabaseHealthResult; poisonReportAfter: LibraryDatabasePoisonReport } | null => {
+  const databasePath = libraryPathFor(userDataPath);
+  if (!existsSync(databasePath)) {
+    return null;
+  }
+
+  try {
+    let database: Database.Database | null = null;
+    try {
+      database = new Database(databasePath, { fileMustExist: true });
+      database.transaction(() => {
+        scrubTrackRows(database!);
+        scrubNonTrackLibraryTables(database!);
+      })();
+      try {
+        database.pragma('wal_checkpoint(TRUNCATE)');
+      } catch {
+        // The health check below captures whether recovery really succeeded.
+      }
+    } finally {
+      try {
+        database?.close();
+      } catch {
+        // Ignore close errors after best-effort startup repair.
+      }
+    }
+
+    let health = checkDatabaseHealth(databasePath);
+    let poisonReportAfter = health.status === 'ok' ? inspectLibraryDatabaseForPoison(databasePath) : poisonReportBefore;
+
+    if (health.status === 'ok' && poisonReportAfter.status === 'poisoned') {
+      let discardResult: ReturnType<typeof discardUnsafeTrackRows> = {
+        discardedTracks: 0,
+        discardedTrackIds: [],
+        archivedRows: [],
+      };
+      database = null;
+      try {
+        database = new Database(databasePath, { fileMustExist: true });
+        database.transaction(() => {
+          discardResult = discardUnsafeTrackRows(database!);
+          scrubNonTrackLibraryTables(database!);
+        })();
+        try {
+          database.pragma('wal_checkpoint(TRUNCATE)');
+        } catch {
+          // The health check below captures whether recovery really succeeded.
+        }
+      } finally {
+        try {
+          database?.close();
+        } catch {
+          // Ignore close errors after best-effort startup discard.
+        }
+      }
+
+      if (discardResult.discardedTracks <= 0) {
+        return null;
+      }
+      health = checkDatabaseHealth(databasePath);
+      poisonReportAfter = health.status === 'ok' ? inspectLibraryDatabaseForPoison(databasePath) : poisonReportAfter;
+    }
+
+    if (health.status !== 'ok' || poisonReportAfter.status !== 'ok') {
+      return null;
+    }
+
+    recordLibraryDatabaseMaintenanceEvent(
+      {
+        action: 'startup-auto-repair',
+        databasePath,
+        archivePath,
+        removedDatabaseFiles: [],
+        health,
+        poisonReport: poisonReportBefore,
+      },
+      userDataPath,
+    );
+    return { health, poisonReportAfter };
+  } catch (error) {
+    recordLibraryDatabaseMaintenanceEvent(
+      {
+        action: 'startup-auto-repair',
+        databasePath,
+        archivePath,
+        removedDatabaseFiles: [],
+        health: {
+          status: 'unreadable',
+          databasePath,
+          checkedAt: new Date().toISOString(),
+          message: error instanceof Error ? error.message : String(error),
+        },
+        poisonReport: poisonReportBefore,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      userDataPath,
+    );
+    return null;
+  }
+};
+
 const protectPoisonedLibraryDatabase = (userDataPath: string, currentHealth: DatabaseHealthResult): LibraryRecoveryResult => {
   if (currentHealth.status !== 'ok') {
     return { action: 'none', health: currentHealth };
@@ -1930,6 +2086,11 @@ const protectPoisonedLibraryDatabase = (userDataPath: string, currentHealth: Dat
     if (!archivePath || !existsSync(libraryPathFor(archivePath))) {
       throw new Error('Poisoned library archive was not created; active database was left untouched.');
     }
+    const autoRepair = autoRepairPoisonedLibraryDatabase(userDataPath, archivePath, poisonReport);
+    if (autoRepair) {
+      return { action: 'none', archivePath, health: autoRepair.health, poisonReport: autoRepair.poisonReportAfter };
+    }
+
     const removeResult = tryRemoveLibraryTriplet(userDataPath);
     const removeWarning = removeResult.failed.length > 0
       ? ` Active database files are still locked: ${describeRemoveLibraryTripletFailure(removeResult)}`
@@ -1995,7 +2156,22 @@ export const ensureDataProtection = async (
     const migration = await migrateLegacyProtectedData(userDataPath);
     const restore = restoreMissingProtectedData(userDataPath);
     writeDataProtectionManifest(userDataPath);
-    const initialHealth = checkDatabaseHealth(libraryPathFor(userDataPath));
+    let initialHealth = checkDatabaseHealth(libraryPathFor(userDataPath));
+    if (initialHealth.status === 'ok') {
+      const diagnosticRows = scrubDiagnosticLibraryText(libraryPathFor(userDataPath));
+      if (diagnosticRows > 0) {
+        initialHealth = checkDatabaseHealth(libraryPathFor(userDataPath));
+        recordLibraryDatabaseMaintenanceEvent(
+          {
+            action: 'startup-auto-repair',
+            databasePath: libraryPathFor(userDataPath),
+            removedDatabaseFiles: [],
+            health: initialHealth,
+          },
+          userDataPath,
+        );
+      }
+    }
     const corruptRecovery = protectCorruptLibraryDatabase(userDataPath, initialHealth);
     const recovery = corruptRecovery.action === 'none'
       ? protectPoisonedLibraryDatabase(userDataPath, initialHealth)

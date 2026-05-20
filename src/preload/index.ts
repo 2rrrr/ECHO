@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IpcChannels } from '../shared/constants/ipcChannels';
 import type { EchoApi } from './apiTypes';
-import type { AudioOutputSettings, AudioStatus, PlaybackSpeedMode } from '../shared/types/audio';
+import type { AudioOutputSettings, AudioStatus, ChannelBalanceMonoMode, ChannelBalanceState, PlaybackSpeedMode } from '../shared/types/audio';
 import type { AppSettings, ReplayGainMode } from '../shared/types/appSettings';
 import type { GlobalShortcutAction } from '../shared/types/globalShortcuts';
 import type {
@@ -13,6 +13,7 @@ import type {
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { UpdateStatus } from '../shared/types/updates';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../shared/utils/replayGain';
+import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../shared/constants/replayGain';
 
 const sanitizePathList = (paths: unknown): string[] =>
   Array.isArray(paths) ? paths.filter((path): path is string => typeof path === 'string') : [];
@@ -85,6 +86,10 @@ let systemAudioElement: HTMLAudioElement | null = null;
 let systemAudioContext: AudioContext | null = null;
 let systemAudioSourceNode: MediaElementAudioSourceNode | null = null;
 let systemAudioGainNode: GainNode | null = null;
+let systemAudioSplitterNode: ChannelSplitterNode | null = null;
+let systemAudioMonoLeftGainNode: GainNode | null = null;
+let systemAudioMonoRightGainNode: GainNode | null = null;
+let systemAudioMonoMergerNode: ChannelMergerNode | null = null;
 let systemAudioModeActive = readPersistedSystemAudioMode();
 let systemAudioState: AudioStatus['state'] = 'idle';
 let systemAudioSource: SystemPlaybackSource | null = null;
@@ -96,6 +101,7 @@ let systemPlaybackGeneration = 0;
 let systemMediaPlaybackContext: SystemMediaPlaybackContext | null = null;
 let systemReplayGainEnabled = false;
 let systemReplayGainMode: ReplayGainMode = 'track';
+let systemReplayGainTargetLufs = DEFAULT_REPLAY_GAIN_TARGET_LUFS;
 let systemReplayGainCalculation: ReplayGainCalculation = {
   appliedDb: 0,
   selectedGainDb: null,
@@ -103,6 +109,7 @@ let systemReplayGainCalculation: ReplayGainCalculation = {
   preventedClipping: false,
   active: false,
 };
+let systemChannelBalanceMonoMode: ChannelBalanceMonoMode = 'off';
 let systemOutputSettings: Pick<AudioStatus, 'volume' | 'playbackRate' | 'playbackSpeedMode'> = {
   volume: 1,
   playbackRate: 1,
@@ -214,8 +221,8 @@ const createFallbackAudioStatus = (): AudioStatus => ({
   sampleRateMismatch: false,
   latencyProfile: 'balanced',
   eqEnabled: false,
-  channelBalanceEnabled: false,
-  dspActive: false,
+  channelBalanceEnabled: systemChannelBalanceActive(),
+  dspActive: systemChannelBalanceActive(),
   preampDb: 0,
   eqPresetName: null,
   clippingRisk: false,
@@ -299,8 +306,8 @@ const createSystemAudioStatus = (): AudioStatus => {
     sampleRateMismatch: false,
     latencyProfile: 'balanced',
     eqEnabled: false,
-    channelBalanceEnabled: false,
-    dspActive: systemReplayGainCalculation.active && Math.abs(systemReplayGainCalculation.appliedDb) >= 0.001,
+    channelBalanceEnabled: systemChannelBalanceActive(),
+    dspActive: systemChannelBalanceActive() || (systemReplayGainCalculation.active && Math.abs(systemReplayGainCalculation.appliedDb) >= 0.001),
     preampDb: 0,
     eqPresetName: null,
     clippingRisk: false,
@@ -366,6 +373,81 @@ const replayGainLinearGain = (): number =>
     ? Math.max(0, Math.min(16, dbToLinearGain(systemReplayGainCalculation.appliedDb)))
     : 1;
 
+const systemChannelBalanceActive = (): boolean => systemChannelBalanceMonoMode !== 'off';
+
+const disconnectAudioNode = (node: AudioNode | null): void => {
+  try {
+    node?.disconnect();
+  } catch {
+    // The WebAudio graph is best-effort for system output DSP.
+  }
+};
+
+const connectSystemAudioGraph = (): void => {
+  if (!systemAudioContext || !systemAudioSourceNode || !systemAudioGainNode) {
+    return;
+  }
+
+  disconnectAudioNode(systemAudioSourceNode);
+  disconnectAudioNode(systemAudioSplitterNode);
+  disconnectAudioNode(systemAudioMonoLeftGainNode);
+  disconnectAudioNode(systemAudioMonoRightGainNode);
+  disconnectAudioNode(systemAudioMonoMergerNode);
+  disconnectAudioNode(systemAudioGainNode);
+
+  if (!systemChannelBalanceActive()) {
+    systemAudioSourceNode.connect(systemAudioGainNode);
+    systemAudioGainNode.connect(systemAudioContext.destination);
+    return;
+  }
+
+  systemAudioSplitterNode = systemAudioSplitterNode ?? systemAudioContext.createChannelSplitter(2);
+  systemAudioMonoLeftGainNode = systemAudioMonoLeftGainNode ?? systemAudioContext.createGain();
+  systemAudioMonoRightGainNode = systemAudioMonoRightGainNode ?? systemAudioContext.createGain();
+  systemAudioMonoMergerNode = systemAudioMonoMergerNode ?? systemAudioContext.createChannelMerger(2);
+
+  const leftGain =
+    systemChannelBalanceMonoMode === 'right'
+      ? 0
+      : systemChannelBalanceMonoMode === 'sum'
+        ? 0.5
+        : 1;
+  const rightGain =
+    systemChannelBalanceMonoMode === 'left'
+      ? 0
+      : systemChannelBalanceMonoMode === 'sum'
+        ? 0.5
+        : 1;
+
+  systemAudioMonoLeftGainNode.gain.value = leftGain;
+  systemAudioMonoRightGainNode.gain.value = rightGain;
+  systemAudioSourceNode.connect(systemAudioSplitterNode);
+  systemAudioSplitterNode.connect(systemAudioMonoLeftGainNode, 0);
+  systemAudioSplitterNode.connect(systemAudioMonoRightGainNode, 1);
+  systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 0);
+  systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 1);
+  systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 0);
+  systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 1);
+  systemAudioMonoMergerNode.connect(systemAudioGainNode);
+  systemAudioGainNode.connect(systemAudioContext.destination);
+};
+
+const applySystemChannelBalanceState = (state: Partial<ChannelBalanceState> | null | undefined): void => {
+  const monoMode =
+    state?.enabled === true && (state.monoMode === 'sum' || state.monoMode === 'left' || state.monoMode === 'right')
+      ? state.monoMode
+      : 'off';
+  if (monoMode === systemChannelBalanceMonoMode) {
+    return;
+  }
+
+  systemChannelBalanceMonoMode = monoMode;
+  connectSystemAudioGraph();
+  if (systemAudioModeActive) {
+    emitSystemAudioStatus();
+  }
+};
+
 const ensureSystemAudioGraph = (element: HTMLAudioElement): void => {
   if (systemAudioGainNode) {
     return;
@@ -380,8 +462,7 @@ const ensureSystemAudioGraph = (element: HTMLAudioElement): void => {
     systemAudioContext = systemAudioContext ?? new AudioContextConstructor();
     systemAudioSourceNode = systemAudioSourceNode ?? systemAudioContext.createMediaElementSource(element);
     systemAudioGainNode = systemAudioContext.createGain();
-    systemAudioSourceNode.connect(systemAudioGainNode);
-    systemAudioGainNode.connect(systemAudioContext.destination);
+    connectSystemAudioGraph();
   } catch {
     systemAudioGainNode = null;
   }
@@ -412,13 +493,16 @@ const refreshSystemReplayGain = async (source: SystemPlaybackSource): Promise<vo
 
   systemReplayGainEnabled = settings?.replayGainEnabled === true;
   systemReplayGainMode = settings?.replayGainMode ?? 'track';
+  systemReplayGainTargetLufs = settings?.replayGainTargetLufs ?? DEFAULT_REPLAY_GAIN_TARGET_LUFS;
   systemReplayGainCalculation = calculateReplayGain({
     ...(source.replayGain ?? {}),
     enabled: systemReplayGainEnabled,
     mode: systemReplayGainMode,
+    targetLufs: systemReplayGainTargetLufs,
     preampDb: settings?.replayGainPreampDb ?? 0,
     preventClipping: settings?.replayGainPreventClipping !== false,
   });
+  applySystemChannelBalanceState(settings?.channelBalance);
 };
 
 const applySystemOutputSettings = (settings: Partial<AudioOutputSettings> | null | undefined, base?: AudioStatus | null): void => {
@@ -989,6 +1073,7 @@ const echoApi: EchoApi = {
     restoreDatabaseSnapshot: (snapshotId) => ipcRenderer.invoke(IpcChannels.LibraryRestoreDatabaseSnapshot, snapshotId),
     scrubQuarantinedDatabase: () => ipcRenderer.invoke(IpcChannels.LibraryScrubQuarantinedDatabase),
     discardQuarantinedProblemTracks: () => ipcRenderer.invoke(IpcChannels.LibraryDiscardQuarantinedProblemTracks),
+    relaunchRecoveryMode: () => ipcRenderer.invoke(IpcChannels.LibraryRelaunchRecoveryMode),
     openDataProtectionFolder: () => ipcRenderer.invoke(IpcChannels.LibraryOpenDataProtectionFolder),
     repairMissingMetadata: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryNetworkRepairMissingMetadata, trackId),
     scanMissingMetadata: (options) => ipcRenderer.invoke(IpcChannels.LibraryNetworkScanMissingMetadata, options),
@@ -1379,9 +1464,21 @@ const echoApi: EchoApi = {
     savePreset: (request) => ipcRenderer.invoke(IpcChannels.EqSavePreset, request),
     exportPreset: (request) => ipcRenderer.invoke(IpcChannels.EqExportPreset, request),
     deletePreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqDeletePreset, presetId),
-    getChannelBalanceState: () => ipcRenderer.invoke(IpcChannels.ChannelBalanceGetState),
-    setChannelBalanceState: (patch) => ipcRenderer.invoke(IpcChannels.ChannelBalanceSetState, patch),
-    resetChannelBalance: () => ipcRenderer.invoke(IpcChannels.ChannelBalanceReset),
+    getChannelBalanceState: async () => {
+      const state = await ipcRenderer.invoke(IpcChannels.ChannelBalanceGetState) as ChannelBalanceState;
+      applySystemChannelBalanceState(state);
+      return state;
+    },
+    setChannelBalanceState: async (patch) => {
+      const state = await ipcRenderer.invoke(IpcChannels.ChannelBalanceSetState, patch) as ChannelBalanceState;
+      applySystemChannelBalanceState(state);
+      return state;
+    },
+    resetChannelBalance: async () => {
+      const state = await ipcRenderer.invoke(IpcChannels.ChannelBalanceReset) as ChannelBalanceState;
+      applySystemChannelBalanceState(state);
+      return state;
+    },
   },
 };
 

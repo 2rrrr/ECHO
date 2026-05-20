@@ -46,6 +46,10 @@ const closeDatabaseUserMocks = vi.hoisted(() => ({
   mv: vi.fn(),
   streaming: vi.fn(),
 }));
+const appLifecycleMocks = vi.hoisted(() => ({
+  relaunch: vi.fn(),
+  quit: vi.fn(),
+}));
 const databaseManagerMock = vi.hoisted(() => ({
   closeAllUsers: vi.fn(),
   getState: vi.fn(() => ({
@@ -73,6 +77,8 @@ const appSettingsMock = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn((name: string) => (name === 'downloads' ? 'D:\\Downloads' : 'D:\\UserData')),
+    relaunch: appLifecycleMocks.relaunch,
+    quit: appLifecycleMocks.quit,
   },
   ipcMain: {
     handle: handleMock,
@@ -299,6 +305,20 @@ const installLibraryService = () => {
       selectedBatch: null,
       scope: (query as { scope?: string }).scope ?? 'latest',
       filter: (query as { filter?: string }).filter ?? 'all',
+      story: {
+        trackCount: 0,
+        albumCount: 0,
+        artistCount: 0,
+        folderCount: 0,
+        missingCoverCount: 0,
+        metadataIssueCount: 0,
+        unknownArtistCount: 0,
+        unknownAlbumCount: 0,
+        totalDuration: 0,
+        topFolders: [],
+        topArtists: [],
+      },
+      albums: [],
       facets: { folders: [], albums: [], artists: [] },
     })),
     createPlaylistFromLibraryInbox: vi.fn(() => ({
@@ -456,6 +476,8 @@ describe('library IPC', () => {
       updatedAt: null,
     });
     Object.values(closeDatabaseUserMocks).forEach((mock) => mock.mockReset());
+    appLifecycleMocks.relaunch.mockReset();
+    appLifecycleMocks.quit.mockReset();
     databaseManagerMock.closeAllUsers.mockReset();
     databaseManagerMock.getState.mockClear();
     databaseManagerMock.runExclusiveMaintenance.mockClear();
@@ -950,6 +972,23 @@ describe('library IPC', () => {
     expect(closeDatabaseUserMocks.lyrics).not.toHaveBeenCalled();
     expect(closeDatabaseUserMocks.mv).not.toHaveBeenCalled();
     expect(closeDatabaseUserMocks.streaming).not.toHaveBeenCalled();
+  });
+
+  it('schedules a recovery-mode relaunch and closes database users even during scan pressure', async () => {
+    const service = installLibraryService();
+    service.hasRunningJobs.mockReturnValue(true);
+
+    const result = await handlers[IpcChannels.LibraryRelaunchRecoveryMode]!();
+
+    expect(result).toMatchObject({ scheduled: true, mode: 'startup-auto-repair' });
+    expect(appLifecycleMocks.relaunch).toHaveBeenCalledWith({
+      args: expect.arrayContaining(['--echo-library-recovery-mode']),
+    });
+    expect(closeDatabaseUserMocks.lyrics).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.mv).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.streaming).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.remote).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.library).toHaveBeenCalledTimes(1);
   });
 
   it('archives a corrupt database and closes database users before rebuilding an empty library', async () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Disc3, Folder, FolderOpen, ListPlus, RefreshCw, Search, UserRound } from 'lucide-react';
 import type {
+  LibraryInboxAlbumSummary,
   LibraryInboxBatch,
   LibraryInboxFilterKind,
   LibraryInboxIssueReason,
@@ -22,6 +23,20 @@ const emptyInboxPage = (scope: LibraryInboxScope, filter: LibraryInboxFilterKind
   selectedBatch: null,
   scope,
   filter,
+  story: {
+    trackCount: 0,
+    albumCount: 0,
+    artistCount: 0,
+    folderCount: 0,
+    missingCoverCount: 0,
+    metadataIssueCount: 0,
+    unknownArtistCount: 0,
+    unknownAlbumCount: 0,
+    totalDuration: 0,
+    topFolders: [],
+    topArtists: [],
+  },
+  albums: [],
   facets: {
     folders: [],
     albums: [],
@@ -79,6 +94,38 @@ const batchSelectValue = (scope: LibraryInboxScope, batchId: string | null): str
   scope === 'all' ? '__all__' : scope === 'latest' ? '__latest__' : batchId ?? '__latest__';
 
 const readTrackPath = (item: LibraryInboxTrackItem): string => item.track.path;
+
+const formatDurationHours = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0h';
+  }
+
+  const hours = seconds / 3600;
+  return hours >= 10 ? `${Math.round(hours)}h` : `${hours.toFixed(1)}h`;
+};
+
+const buildStoryLine = (
+  scopeLabel: string,
+  story: LibraryInboxTrackPage['story'],
+): string => {
+  if (story.trackCount <= 0) {
+    return '完成一次扫描后，ECHO 会把新增歌曲、专辑和资料问题整理在这里。';
+  }
+
+  const pieces = [
+    `${scopeLabel}新增 ${story.trackCount} 首`,
+    `${story.albumCount} 张专辑`,
+    `${story.artistCount} 位艺人`,
+  ];
+  const warnings = [
+    story.missingCoverCount > 0 ? `${story.missingCoverCount} 首缺封面` : null,
+    story.metadataIssueCount > 0 ? `${story.metadataIssueCount} 首资料异常` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return `${pieces.join('、')}。${warnings.length > 0 ? `其中 ${warnings.join('、')}。` : '资料看起来很干净。'}`;
+};
+
+const albumKey = (album: LibraryInboxAlbumSummary): string => `${album.album}\0${album.albumArtist}`;
 
 export const InboxPage = (): JSX.Element => {
   const [scope, setScope] = useState<LibraryInboxScope>('latest');
@@ -164,6 +211,8 @@ export const InboxPage = (): JSX.Element => {
   }, [loadInbox]);
 
   const selectedBatch = pageData.selectedBatch;
+  const story = pageData.story;
+  const albumSummaries = pageData.albums;
   const hasFilters = filter !== 'all' || Boolean(folderId || album || artist || search);
   const visibleCount = items.length;
 
@@ -176,6 +225,8 @@ export const InboxPage = (): JSX.Element => {
     }
     return selectedBatch ? folderLabel(selectedBatch) : '指定扫描';
   }, [scope, selectedBatch]);
+
+  const storyLine = useMemo(() => buildStoryLine(selectedScopeLabel, story), [selectedScopeLabel, story]);
 
   const handleSelectBatch = (value: string): void => {
     setMessage(null);
@@ -252,6 +303,12 @@ export const InboxPage = (): JSX.Element => {
     setMessage(null);
   };
 
+  const selectAlbumSummary = (summary: LibraryInboxAlbumSummary): void => {
+    setMessage(null);
+    setAlbum(summary.album === 'Unknown Album' ? null : summary.album);
+    setArtist(null);
+  };
+
   return (
     <div className="inbox-page">
       <header className="inbox-hero">
@@ -278,6 +335,39 @@ export const InboxPage = (): JSX.Element => {
           </span>
         </div>
       </header>
+
+      <section className="inbox-story-panel" aria-label="入库故事">
+        <div className="inbox-story-copy">
+          <span className="panel-kicker">Import Story</span>
+          <strong>{storyLine}</strong>
+          <div className="inbox-story-tags">
+            {story.topFolders.slice(0, 3).map((folder) => (
+              <button key={folder.value} onClick={() => setFolderId(folder.value)} type="button">
+                {folder.label} · {folder.count}
+              </button>
+            ))}
+            {story.topArtists.slice(0, 3).map((artistFacet) => (
+              <button key={artistFacet.value} onClick={() => setArtist(artistFacet.value)} type="button">
+                {artistFacet.label} · {artistFacet.count}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="inbox-story-numbers">
+          <span>
+            <strong>{story.albumCount}</strong>
+            <em>新增专辑</em>
+          </span>
+          <span>
+            <strong>{story.artistCount}</strong>
+            <em>新增艺人</em>
+          </span>
+          <span>
+            <strong>{formatDurationHours(story.totalDuration)}</strong>
+            <em>总时长</em>
+          </span>
+        </div>
+      </section>
 
       <section className="inbox-toolbar" aria-label="新歌收件箱筛选">
         <label className="inbox-select-field">
@@ -375,6 +465,36 @@ export const InboxPage = (): JSX.Element => {
           </select>
         </label>
       </section>
+
+      {albumSummaries.length > 0 ? (
+        <section className="inbox-album-wall" aria-label="新增专辑墙">
+          <div className="inbox-section-heading">
+            <span className="panel-kicker">New Albums</span>
+            <strong>新增专辑墙</strong>
+          </div>
+          <div className="inbox-album-grid">
+            {albumSummaries.map((summary) => (
+              <button
+                className="inbox-album-card"
+                key={albumKey(summary)}
+                onClick={() => selectAlbumSummary(summary)}
+                type="button"
+              >
+                <span className="inbox-album-art" data-empty={!summary.coverThumb ? 'true' : undefined}>
+                  {summary.coverThumb ? <img alt="" loading="lazy" src={summary.coverThumb} /> : <Disc3 size={24} />}
+                </span>
+                <span className="inbox-album-copy">
+                  <strong>{summary.album}</strong>
+                  <em>{summary.albumArtist}</em>
+                  <small>
+                    {summary.trackCount} 首 · {formatDurationHours(summary.duration)}
+                  </small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {message ? <div className="inbox-notice">{message}</div> : null}
       {error ? (

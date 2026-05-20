@@ -171,15 +171,30 @@ const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
+const pendingRouteStorageKey = 'echo-next.pending-route';
 
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
+
+const readInitialRouteId = (routes: AppRoute[]): AppRouteId => {
+  try {
+    const pendingRoute = window.localStorage.getItem(pendingRouteStorageKey);
+    if (pendingRoute && routes.some((route) => route.id === pendingRoute)) {
+      window.localStorage.removeItem(pendingRouteStorageKey);
+      return pendingRoute as AppRouteId;
+    }
+  } catch {
+    // Fall back to the normal songs entrypoint when localStorage is unavailable.
+  }
+
+  return 'songs';
+};
 
 export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const { t } = useI18n();
   const playbackQueue = usePlaybackQueue();
   const playbackStatusSnapshot = useSharedPlaybackStatus();
-  const [activeRouteId, setActiveRouteId] = useState<AppRouteId>('songs');
+  const [activeRouteId, setActiveRouteId] = useState<AppRouteId>(() => readInitialRouteId(routes));
   const [chromeNotice, setChromeNotice] = useState<string | null>(null);
   const [isChromeNoticeVisible, setIsChromeNoticeVisible] = useState(false);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);

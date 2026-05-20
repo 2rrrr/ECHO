@@ -28,6 +28,7 @@ import { closeDefaultMvService } from '../mv/MvService';
 import { closeDefaultStreamingService } from '../streaming/StreamingService';
 import { disposeDefaultAudioSessionGracefully } from '../audio/AudioSession';
 import { closeDefaultLibraryDatabaseManager, getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
+import { isLibraryRecoveryMode } from './libraryRecoveryMode';
 
 const sendAccountStatusesChanged = (statuses: AccountStatus[]): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -66,7 +67,21 @@ const notifyLibraryDatabaseProtected = (): void => {
   });
 };
 
+const notifyLibraryRecoveryMode = (): void => {
+  void dialog.showMessageBox({
+    type: 'info',
+    title: '曲库恢复模式',
+    message: 'ECHO Next 已进入曲库恢复模式。',
+    detail: '本次启动会跳过播放集成、账号检查、自动更新和后台服务，避免它们占用曲库数据库。请在设置的数据库恢复工具里执行修复、归档或健康检查。',
+    buttons: ['知道了'],
+    defaultId: 0,
+    noLink: true,
+  });
+};
+
 export const registerAppLifecycle = (): void => {
+  const libraryRecoveryMode = isLibraryRecoveryMode();
+
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-background-timer-throttling');
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -92,6 +107,9 @@ export const registerAppLifecycle = (): void => {
 
     window.show();
     window.focus();
+    if (libraryRecoveryMode || isLibraryRecoveryMode(argv)) {
+      return;
+    }
     dispatchLocalAudioFilesOpened(parseLocalAudioFileArguments(argv));
   });
 
@@ -101,10 +119,12 @@ export const registerAppLifecycle = (): void => {
     registerAudioProtocolHandler();
     registerCoverProtocolHandler();
     registerVideoProtocolHandler();
-    if (dataProtection.libraryHealth.status === 'ok') {
+    if (dataProtection.libraryHealth.status === 'ok' && !libraryRecoveryMode) {
       void initializeSmtcIntegration();
       initializeLastFmIntegration();
       void initializeDiscordPresenceIntegration();
+    } else if (libraryRecoveryMode) {
+      getCrashReportService().getLogger()?.info?.('main', '[Lifecycle] library recovery mode is active; skipping library-backed startup integrations');
     } else {
       getCrashReportService().getLogger()?.warn('main', '[Lifecycle] library database is unhealthy; starting without library-backed integrations', {
         status: dataProtection.libraryHealth.status,
@@ -112,6 +132,9 @@ export const registerAppLifecycle = (): void => {
       });
     }
     createMainWindow();
+    if (libraryRecoveryMode) {
+      notifyLibraryRecoveryMode();
+    }
     if (
       dataProtection.recovery.action === 'protected' ||
       dataProtection.recovery.action === 'archivedOnly' ||
@@ -119,6 +142,15 @@ export const registerAppLifecycle = (): void => {
     ) {
       notifyLibraryDatabaseProtected();
     }
+    if (libraryRecoveryMode) {
+      app.on('activate', () => {
+        if (getMainWindow() === null) {
+          createMainWindow();
+        }
+      });
+      return;
+    }
+
     initializeBackgroundPlaybackShortcuts();
     const appSettings = getAppSettings();
     if (appSettings.autoAccountCheckOnStartup !== false) {

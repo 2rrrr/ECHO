@@ -4,10 +4,13 @@ import { startDevApiServer } from './app/devApiServer';
 import { registerIpc } from './ipc/registerIpc';
 import { registerCoverProtocolScheme } from './protocol/coverProtocol';
 import { initializeProtectedUserDataPath } from './app/dataProtection';
+import { isLibraryRecoveryMode } from './app/libraryRecoveryMode';
 
 initializeProtectedUserDataPath();
 registerCrashHandlers();
 registerCoverProtocolScheme();
 registerIpc();
-startDevApiServer();
+if (!isLibraryRecoveryMode()) {
+  startDevApiServer();
+}
 registerAppLifecycle();

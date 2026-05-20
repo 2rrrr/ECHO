@@ -7,6 +7,7 @@ import electron from 'electron';
 import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { defaultSettings, getAppSettings, setAppSettings } from '../app/appSettings';
+import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
 import {
   assertProtectedLibraryAvailable,
   createDataProtectionSnapshot,
@@ -2215,7 +2216,7 @@ export const createLibraryService = (
   const albumOnlineInfoService = new AlbumOnlineInfoService(database);
   const bpmAnalysisJobQueue = new BpmAnalysisJobQueue(store);
   const replayGainAnalysisJobQueue = new ReplayGainAnalysisJobQueue(store, {
-    getTargetLufs: () => readSettings().replayGainTargetLufs ?? -18,
+    getTargetLufs: () => readSettings().replayGainTargetLufs ?? DEFAULT_REPLAY_GAIN_TARGET_LUFS,
   });
   const artistImageCacheDir = resolve(dependencies.artistImageCacheDir ?? join(dirname(databasePath), 'artist-images'));
   const artistImageCacheService = new ArtistImageCacheService(database, {

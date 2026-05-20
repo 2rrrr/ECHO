@@ -97,6 +97,16 @@ describe('LibraryStore new-songs inbox', () => {
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.hasMore).toBe(true);
     expect(firstPage.facets.folders[0]).toMatchObject({ value: folder.id, count: 2 });
+    expect(firstPage.story).toMatchObject({
+      trackCount: 2,
+      albumCount: 2,
+      artistCount: 1,
+      folderCount: 1,
+      missingCoverCount: 2,
+      metadataIssueCount: 1,
+      unknownAlbumCount: 1,
+    });
+    expect(firstPage.albums.map((item) => item.album)).toEqual(expect.arrayContaining(['Album', 'Unknown Album']));
 
     const issuePage = store.getLibraryInboxTracks({ filter: 'metadata_issue', pageSize: 10 });
     expect(issuePage.total).toBe(1);

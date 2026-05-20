@@ -124,6 +124,7 @@ export type LibraryDatabaseMaintenanceEventInfo = {
     | 'manual-discard-quarantined'
     | 'startup-protected'
     | 'startup-poisoned'
+    | 'startup-auto-repair'
     | 'scan-health-failed'
     | 'scan-auto-restore';
   databasePath: string;
@@ -189,6 +190,12 @@ export type LibraryDatabaseRestoreResult = {
   restoredSnapshot: LibraryDatabaseSnapshotInfo;
   restoredDatabaseFiles: string[];
   health: LibraryDatabaseHealthInfo;
+};
+
+export type LibraryDatabaseRecoveryRelaunchResult = {
+  scheduled: boolean;
+  mode: 'startup-auto-repair';
+  message: string;
 };
 
 export type ArtistImageCacheStatus = 'pending' | 'loading' | 'matched' | 'not_found' | 'error' | 'rate_limited';
@@ -1090,6 +1097,31 @@ export type LibraryInboxTrackItem = {
   reasons: LibraryInboxIssueReason[];
 };
 
+export type LibraryInboxAlbumSummary = {
+  album: string;
+  albumArtist: string;
+  coverId: string | null;
+  coverThumb: string | null;
+  trackCount: number;
+  missingCoverCount: number;
+  metadataIssueCount: number;
+  duration: number;
+};
+
+export type LibraryInboxStory = {
+  trackCount: number;
+  albumCount: number;
+  artistCount: number;
+  folderCount: number;
+  missingCoverCount: number;
+  metadataIssueCount: number;
+  unknownArtistCount: number;
+  unknownAlbumCount: number;
+  totalDuration: number;
+  topFolders: LibraryInboxFacetOption[];
+  topArtists: LibraryInboxFacetOption[];
+};
+
 export type LibraryInboxTrackQuery = {
   batchId?: string | null;
   scope?: LibraryInboxScope;
@@ -1107,6 +1139,8 @@ export type LibraryInboxTrackPage = LibraryPage<LibraryInboxTrackItem> & {
   selectedBatch: LibraryInboxBatch | null;
   scope: LibraryInboxScope;
   filter: LibraryInboxFilterKind;
+  story: LibraryInboxStory;
+  albums: LibraryInboxAlbumSummary[];
   facets: {
     folders: LibraryInboxFacetOption[];
     albums: LibraryInboxFacetOption[];

@@ -16,6 +16,7 @@ import { createDsfDopStream, createDsfNativeDsdStream, readDsfDopInfo } from './
 import { AutomixAnalyzer } from './AutomixAnalyzer';
 import { getAppSettings } from '../app/appSettings';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../../shared/utils/replayGain';
+import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
 import type { ReplayGainMode } from '../../shared/types/appSettings';
 import {
   createEstimatedAutomixAnalysis,
@@ -218,6 +219,7 @@ const inactiveDeviceReasons = new Set(['disabled', 'not_present', 'unplugged', '
 type ReplayGainAudioSettings = {
   replayGainEnabled: boolean;
   replayGainMode: ReplayGainMode;
+  replayGainTargetLufs: number;
   replayGainPreampDb: number;
   replayGainPreventClipping: boolean;
 };
@@ -225,6 +227,7 @@ type ReplayGainAudioSettings = {
 const defaultReplayGainAudioSettings: ReplayGainAudioSettings = {
   replayGainEnabled: false,
   replayGainMode: 'track',
+  replayGainTargetLufs: DEFAULT_REPLAY_GAIN_TARGET_LUFS,
   replayGainPreampDb: 0,
   replayGainPreventClipping: true,
 };
@@ -235,6 +238,7 @@ const getReplayGainAudioSettings = (): ReplayGainAudioSettings => {
     return {
       replayGainEnabled: settings.replayGainEnabled === true,
       replayGainMode: settings.replayGainMode ?? 'track',
+      replayGainTargetLufs: settings.replayGainTargetLufs ?? DEFAULT_REPLAY_GAIN_TARGET_LUFS,
       replayGainPreampDb: settings.replayGainPreampDb ?? 0,
       replayGainPreventClipping: settings.replayGainPreventClipping !== false,
     };
@@ -5048,6 +5052,7 @@ export class AudioSession extends EventEmitter {
       ...(replayGain ?? {}),
       enabled: settings.replayGainEnabled,
       mode: settings.replayGainMode,
+      targetLufs: settings.replayGainTargetLufs,
       preampDb: settings.replayGainPreampDb,
       preventClipping: settings.replayGainPreventClipping,
     });

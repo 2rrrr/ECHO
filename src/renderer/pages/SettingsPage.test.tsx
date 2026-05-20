@@ -113,6 +113,8 @@ const audioSetOutputMock = vi.fn();
 const audioResetEngineMock = vi.fn();
 const audioForceRestartMock = vi.fn();
 const audioRestartWindowsAudioServiceMock = vi.fn();
+const getChannelBalanceStateMock = vi.fn();
+const setChannelBalanceStateMock = vi.fn();
 const validateGlobalShortcutMock = vi.fn();
 const kickoffArtistImageBackfillMock = vi.fn();
 const getArtistImageJobStatusMock = vi.fn();
@@ -242,6 +244,10 @@ vi.mock('../utils/echoBridge', () => ({
     resetEngine: audioResetEngineMock,
     forceRestart: audioForceRestartMock,
     restartWindowsAudioService: audioRestartWindowsAudioServiceMock,
+  }),
+  getEqBridge: () => ({
+    getChannelBalanceState: getChannelBalanceStateMock,
+    setChannelBalanceState: setChannelBalanceStateMock,
   }),
   getAccountsBridge: () => ({
     getStatuses: vi.fn().mockResolvedValue([]),
@@ -402,6 +408,8 @@ beforeEach(() => {
   audioResetEngineMock.mockResolvedValue({ state: 'stopped', warnings: [] });
   audioForceRestartMock.mockResolvedValue({ state: 'stopped', warnings: [] });
   audioRestartWindowsAudioServiceMock.mockResolvedValue({ state: 'stopped', warnings: [] });
+  getChannelBalanceStateMock.mockResolvedValue(settings.channelBalance);
+  setChannelBalanceStateMock.mockResolvedValue({ ...settings.channelBalance, enabled: true, monoMode: 'sum' });
   openExternalUrlMock.mockResolvedValue(undefined);
   openPluginDirectoryMock.mockResolvedValue(undefined);
   createPluginExampleMock.mockResolvedValue({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel' });
@@ -1027,7 +1035,7 @@ describe('SettingsPage', () => {
       gaplessPlaybackEnabled: false,
       replayGainEnabled: false,
       replayGainMode: 'track',
-      replayGainTargetLufs: -18,
+      replayGainTargetLufs: -14,
       replayGainPreampDb: 0,
       replayGainPreventClipping: true,
       replayGainAnalyzeOnPlay: true,
@@ -1061,17 +1069,19 @@ describe('SettingsPage', () => {
     const gaplessRow = screen.getByText('真无缝播放').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(gaplessRow).getByRole('button'));
 
-    const row = screen.getByText('音量自动平衡').closest('.setting-row') as HTMLElement;
+    const row = screen.getByText('音量标准化').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(row).getByText('未开启').closest('.settings-inline-toggle')?.querySelector('button') as HTMLButtonElement);
     fireEvent.click(within(row).getByRole('button', { name: '高级' }));
     fireEvent.click(within(row).getByText('播放时分析').closest('.settings-inline-toggle')?.querySelector('button') as HTMLButtonElement);
     fireEvent.click(within(row).getByRole('button', { name: '专辑' }));
     fireEvent.click(within(row).getByRole('button', { name: '分析缺失音量' }));
+    fireEvent.click(screen.getByText('单声道音频').closest('.setting-row')?.querySelector('button') as HTMLButtonElement);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ gaplessPlaybackEnabled: true }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainEnabled: true }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainAnalyzeOnPlay: false }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainMode: 'album' }));
+    await waitFor(() => expect(setChannelBalanceStateMock).toHaveBeenCalledWith({ enabled: true, monoMode: 'sum' }));
     await waitFor(() => expect(startReplayGainAnalysisMock).toHaveBeenCalledWith({ limit: 500 }));
     expect(await within(row).findByText('2/2')).toBeTruthy();
   });

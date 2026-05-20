@@ -20,6 +20,7 @@ import {
   Palette,
   Pause,
   Play,
+  Power,
   RotateCw,
   Search,
   Save,
@@ -33,7 +34,8 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus, PlaybackSpeedMode } from '../../shared/types/audio';
+import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus, ChannelBalanceState, PlaybackSpeedMode } from '../../shared/types/audio';
+import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
 import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
 import type { AppSettings, AppThemeMode, AppThemePreset, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
 import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
@@ -100,6 +102,7 @@ import {
   getDiagnosticsBridge,
   getDiscordPresenceBridge,
   getDownloadsBridge,
+  getEqBridge,
   getLastFmBridge,
   getLibraryBridge,
   getPluginsBridge,
@@ -509,6 +512,28 @@ type SettingRowProps = {
   children: ReactNode;
 };
 
+const defaultSettingsChannelBalance: ChannelBalanceState = {
+  enabled: false,
+  balance: 0,
+  leftGainDb: 0,
+  rightGainDb: 0,
+  swapLeftRight: false,
+  monoMode: 'off',
+  invertLeft: false,
+  invertRight: false,
+  constantPower: true,
+  clippingRisk: false,
+};
+
+const hasNonMonoChannelBalanceEffect = (state: ChannelBalanceState): boolean =>
+  Math.abs(state.balance) > 0.001 ||
+  Math.abs(state.leftGainDb) > 0.001 ||
+  Math.abs(state.rightGainDb) > 0.001 ||
+  state.swapLeftRight ||
+  state.invertLeft ||
+  state.invertRight ||
+  state.constantPower === false;
+
 const scheduleSettingsIdleTask = (callback: () => void): (() => void) => {
   let cancelled = false;
   let idleId: number | null = null;
@@ -566,6 +591,7 @@ const settingsNavItems: SettingsNavItem[] = [
 ];
 
 const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
+const pendingRouteStorageKey = 'echo-next.pending-route';
 const pluginsDocumentationUrl = 'https://github.com/moekotori/echo/blob/main/docs/ECHO_NEXT_PLUGINS.md';
 const settingsNavKeys = new Set<SettingsNavKey>(settingsNavItems.map((item) => item.key));
 
@@ -574,10 +600,15 @@ const readInitialSettingsSection = (): SettingsNavKey => {
     return 'general';
   }
 
-  const pendingSection = window.sessionStorage.getItem(pendingSettingsSectionStorageKey);
-  if (pendingSection && settingsNavKeys.has(pendingSection as SettingsNavKey)) {
-    window.sessionStorage.removeItem(pendingSettingsSectionStorageKey);
-    return pendingSection as SettingsNavKey;
+  try {
+    const pendingSection = window.sessionStorage.getItem(pendingSettingsSectionStorageKey) ?? window.localStorage.getItem(pendingSettingsSectionStorageKey);
+    if (pendingSection && settingsNavKeys.has(pendingSection as SettingsNavKey)) {
+      window.sessionStorage.removeItem(pendingSettingsSectionStorageKey);
+      window.localStorage.removeItem(pendingSettingsSectionStorageKey);
+      return pendingSection as SettingsNavKey;
+    }
+  } catch {
+    // Fall through to the default section when browser storage is unavailable.
   }
 
   return 'general';
@@ -2975,6 +3006,7 @@ export const SettingsPage = (): JSX.Element => {
   const [replayGainAnalysisBusy, setReplayGainAnalysisBusy] = useState(false);
   const [replayGainAnalysisMessage, setReplayGainAnalysisMessage] = useState<string | null>(null);
   const [replayGainAdvancedOpen, setReplayGainAdvancedOpen] = useState(false);
+  const [channelBalanceState, setChannelBalanceState] = useState<ChannelBalanceState>(defaultSettingsChannelBalance);
   const [audioResetBusy, setAudioResetBusy] = useState(false);
   const [windowsAudioRestartBusy, setWindowsAudioRestartBusy] = useState(false);
   const [audioResetMessage, setAudioResetMessage] = useState<string | null>(null);
@@ -2987,7 +3019,9 @@ export const SettingsPage = (): JSX.Element => {
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
   const [fontPickerQuery, setFontPickerQuery] = useState('');
   const [databaseProtectionStatus, setDatabaseProtectionStatus] = useState<LibraryDatabaseProtectionStatus | null>(null);
-  const [databaseProtectionBusyAction, setDatabaseProtectionBusyAction] = useState<'refresh' | 'snapshot' | 'restore' | 'scrub' | 'discard' | 'open' | null>(null);
+  const [databaseProtectionBusyAction, setDatabaseProtectionBusyAction] = useState<'refresh' | 'snapshot' | 'restore' | 'scrub' | 'discard' | 'relaunch' | 'open' | null>(null);
+  const [databaseProtectionMessage, setDatabaseProtectionMessage] = useState<string | null>(null);
+  const [databaseProtectionError, setDatabaseProtectionError] = useState<string | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
   const [dangerMessage, setDangerMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3163,9 +3197,17 @@ export const SettingsPage = (): JSX.Element => {
         id: 'row-volume-balance',
         sectionKey: 'playback',
         targetId: 'settings-row-volume-balance',
-        title: '音量自动平衡',
-        description: '自动拉齐歌曲音量；只读取标签或写入 ECHO 数据库。',
-        terms: ['音量自动平衡', '音量平衡', '响度', 'ReplayGain', 'replay gain', 'loudness', 'lufs'],
+        title: '音量标准化',
+        description: 'Spotify Normal 风格的响度拉齐；只读取标签或写入 ECHO 数据库。',
+        terms: ['音量标准化', '音量自动平衡', '音量平衡', '响度', 'Spotify', 'ReplayGain', 'replay gain', 'loudness', 'lufs'],
+      },
+      {
+        id: 'row-mono-audio',
+        sectionKey: 'playback',
+        targetId: 'settings-row-mono-audio',
+        title: '单声道音频',
+        description: '把左右声道合并后同时输出到两边，默认关闭。',
+        terms: ['单声道', 'mono', 'mono sum', '左右声道', '声道合并', '单耳'],
       },
       {
         id: 'row-output-device',
@@ -3526,6 +3568,7 @@ export const SettingsPage = (): JSX.Element => {
         setAppearancePreferences(updateAppearancePreferences(settings.appearancePreferences));
       }
       setSharedBackend(settings.rememberedAudioOutput?.sharedBackend ?? 'auto');
+      setChannelBalanceState(settings.channelBalance ?? defaultSettingsChannelBalance);
     }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
@@ -3812,6 +3855,16 @@ export const SettingsPage = (): JSX.Element => {
         : nextState,
     );
   }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'playback' && activeSection !== 'eq') {
+      return undefined;
+    }
+
+    return scheduleSettingsIdleTask(() => {
+      void getEqBridge()?.getChannelBalanceState().then(setChannelBalanceState).catch(() => undefined);
+    });
+  }, [activeSection]);
 
   useEffect(() => {
     const scrollShell = settingsScrollShellRef.current;
@@ -4336,6 +4389,31 @@ export const SettingsPage = (): JSX.Element => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
   }, [dispatchSettingsChanged, refreshTaskbarPlaybackStatus]);
+
+  const handleMonoAudioToggle = useCallback((enabled: boolean): void => {
+    const eq = getEqBridge();
+
+    if (!eq) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to change mono audio.');
+      return;
+    }
+
+    const nextPatch: Partial<ChannelBalanceState> = enabled
+      ? { enabled: true, monoMode: 'sum' }
+      : { enabled: hasNonMonoChannelBalanceEffect(channelBalanceState), monoMode: 'off' };
+
+    void eq
+      .setChannelBalanceState(nextPatch)
+      .then((state) => {
+        setChannelBalanceState(state);
+        setAppSettings((current) => (current ? { ...current, channelBalance: state } : current));
+        dispatchSettingsChanged({ channelBalance: state });
+        void refreshStatus();
+      })
+      .catch((monoError) => {
+        setError(monoError instanceof Error ? monoError.message : String(monoError));
+      });
+  }, [channelBalanceState, dispatchSettingsChanged, refreshStatus]);
 
   const mvQualityLabels = useMemo<Record<MvSettings['maxQuality'], string>>(
     () => ({
@@ -5638,7 +5716,14 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const requireDangerConfirmWord = (word: string, message: string): boolean => {
-    const input = window.prompt(`${message}\n\n请输入「${word}」继续。`);
+    let input: string | null = null;
+    try {
+      input = window.prompt(`${message}\n\n请输入「${word}」继续。`);
+    } catch {
+      setDangerMessage('确认窗口无法打开，已取消。');
+      return false;
+    }
+
     if (input?.trim() === word) {
       return true;
     }
@@ -5647,12 +5732,26 @@ export const SettingsPage = (): JSX.Element => {
     return false;
   };
 
+  const clearDatabaseProtectionFeedback = (): void => {
+    setDatabaseProtectionMessage(null);
+    setDatabaseProtectionError(null);
+  };
+
+  const setDatabaseProtectionFailure = (failure: unknown): void => {
+    setDatabaseProtectionMessage(null);
+    setDatabaseProtectionError(failure instanceof Error ? failure.message : String(failure));
+  };
+
   const handleRefreshDatabaseProtectionStatus = async (): Promise<void> => {
     try {
       setDatabaseProtectionBusyAction('refresh');
+      clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
       await refreshDatabaseProtectionStatus();
+      setDatabaseProtectionMessage('数据库健康状态已刷新。');
+    } catch (refreshError) {
+      setDatabaseProtectionFailure(refreshError);
     } finally {
       setDatabaseProtectionBusyAction(null);
     }
@@ -5661,20 +5760,21 @@ export const SettingsPage = (): JSX.Element => {
   const handleCreateDatabaseSnapshot = async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.createDatabaseSnapshot) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to create a database snapshot.');
+      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里创建健康快照。');
       return;
     }
 
     try {
       setDatabaseProtectionBusyAction('snapshot');
+      clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
+      setDatabaseProtectionMessage('正在创建健康快照...');
       const nextStatus = await library.createDatabaseSnapshot();
       setDatabaseProtectionStatus(nextStatus);
-      setDangerMessage('已创建新的健康快照。');
+      setDatabaseProtectionMessage('已创建新的健康快照。');
     } catch (snapshotError) {
-      setDangerMessage(null);
-      setError(snapshotError instanceof Error ? snapshotError.message : String(snapshotError));
+      setDatabaseProtectionFailure(snapshotError);
     } finally {
       setDatabaseProtectionBusyAction(null);
     }
@@ -5683,31 +5783,34 @@ export const SettingsPage = (): JSX.Element => {
   const handleRestoreDatabaseSnapshot = async (): Promise<void> => {
     const snapshot = databaseProtectionStatus?.latestHealthySnapshot;
     if (!snapshot) {
-      setDangerMessage('没有可恢复的健康快照。');
+      setDatabaseProtectionFailure('没有可恢复的健康快照。');
       return;
     }
     if (!requireDangerConfirmWord('恢复曲库', '恢复最近健康快照会先归档当前数据库，再复制快照数据库；音乐文件不会被删除。')) {
+      setDatabaseProtectionMessage('已取消恢复。需要输入确认词“恢复曲库”后才会执行。');
+      setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.restoreDatabaseSnapshot) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to restore the library database.');
+      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里恢复曲库数据库。');
       return;
     }
 
     try {
       setDatabaseProtectionBusyAction('restore');
       setDangerBusy(true);
+      clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
+      setDatabaseProtectionMessage('正在恢复最近健康快照...');
       const result = await library.restoreDatabaseSnapshot(snapshot.id);
-      setDangerMessage(`已从健康快照恢复曲库数据库。当前库检查：${getDatabaseHealthLabel(result.health.status)}。`);
+      setDatabaseProtectionMessage(`已从健康快照恢复曲库数据库。当前库检查：${getDatabaseHealthLabel(result.health.status)}。`);
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (restoreError) {
-      setDangerMessage(null);
-      setError(restoreError instanceof Error ? restoreError.message : String(restoreError));
+      setDatabaseProtectionFailure(restoreError);
     } finally {
       setDangerBusy(false);
       setDatabaseProtectionBusyAction(null);
@@ -5716,27 +5819,30 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleScrubQuarantinedDatabase = async (): Promise<void> => {
     if (!requireDangerConfirmWord('修复隔离曲库', 'ECHO 会先修复隔离库的副本，验证通过后才替换当前曲库；原隔离库和当前库都会保留归档，音乐文件不会被删除。')) {
+      setDatabaseProtectionMessage('已取消修复。需要输入确认词“修复隔离曲库”后才会执行。');
+      setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.scrubQuarantinedDatabase) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to repair the quarantined library database.');
+      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里修复隔离曲库副本。');
       return;
     }
 
     try {
       setDatabaseProtectionBusyAction('scrub');
       setDangerBusy(true);
+      clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
+      setDatabaseProtectionMessage('正在修复隔离曲库副本...');
       const result = await library.scrubQuarantinedDatabase();
-      setDangerMessage(`已修复隔离曲库副本并恢复：清理 ${result.scrubbedRows} 行，当前检查：${getDatabaseHealthLabel(result.health.status)}。`);
+      setDatabaseProtectionMessage(`已修复隔离曲库副本并恢复：清理 ${result.scrubbedRows} 行，当前检查：${getDatabaseHealthLabel(result.health.status)}。`);
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (scrubError) {
-      setDangerMessage(null);
-      setError(scrubError instanceof Error ? scrubError.message : String(scrubError));
+      setDatabaseProtectionFailure(scrubError);
     } finally {
       setDangerBusy(false);
       setDatabaseProtectionBusyAction(null);
@@ -5745,57 +5851,96 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleDiscardQuarantinedProblemTracks = async (): Promise<void> => {
     if (!requireDangerConfirmWord('归档问题曲目', 'ECHO 会复制隔离库副本，把含有危险元数据的曲目记录归档成 JSON 后从曲库数据库移除；音乐文件不会被删除。')) {
+      setDatabaseProtectionMessage('已取消归档。需要输入确认词“归档问题曲目”后才会执行。');
+      setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.discardQuarantinedProblemTracks) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to archive problem library tracks.');
+      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里归档问题曲目。');
       return;
     }
 
     try {
       setDatabaseProtectionBusyAction('discard');
       setDangerBusy(true);
+      clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
+      setDatabaseProtectionMessage('正在归档问题曲目...');
       const result = await library.discardQuarantinedProblemTracks();
-      setDangerMessage(`已归档并移除 ${result.discardedTracks} 首问题曲目，当前检查：${getDatabaseHealthLabel(result.health.status)}。归档：${result.discardArchivePath}`);
+      setDatabaseProtectionMessage(`已归档并移除 ${result.discardedTracks} 首问题曲目，当前检查：${getDatabaseHealthLabel(result.health.status)}。归档：${result.discardArchivePath}`);
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (discardError) {
-      setDangerMessage(null);
-      setError(discardError instanceof Error ? discardError.message : String(discardError));
+      setDatabaseProtectionFailure(discardError);
     } finally {
       setDangerBusy(false);
       setDatabaseProtectionBusyAction(null);
     }
   };
 
+  const handleRelaunchLibraryRecoveryMode = async (): Promise<void> => {
+    if (!window.confirm('退出 ECHO Next 并重启到恢复模式？重启时会先关闭当前实例，再在播放、扫描、歌词和 MV 服务占用数据库前检查并自动修复曲库。音乐文件不会被删除。')) {
+      setDatabaseProtectionMessage('已取消重启到恢复模式。');
+      setDatabaseProtectionError(null);
+      return;
+    }
+
+    const library = getLibraryBridge();
+    if (!library?.relaunchRecoveryMode) {
+      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里重启到恢复模式。');
+      return;
+    }
+
+    try {
+      setDatabaseProtectionBusyAction('relaunch');
+      clearDatabaseProtectionFeedback();
+      setDangerMessage(null);
+      setError(null);
+      setDatabaseProtectionMessage('正在安排退出并重启到恢复模式...');
+      try {
+        window.localStorage.setItem(pendingRouteStorageKey, 'settings');
+        window.localStorage.setItem(pendingSettingsSectionStorageKey, 'danger');
+      } catch {
+        // Recovery can still proceed; this only controls which page reopens after relaunch.
+      }
+      const result = await library.relaunchRecoveryMode();
+      setDatabaseProtectionMessage(result.message);
+    } catch (relaunchError) {
+      setDatabaseProtectionFailure(relaunchError);
+      setDatabaseProtectionBusyAction(null);
+    }
+  };
+
   const handleRebuildEmptyLibraryDatabase = async (): Promise<void> => {
     if (!requireDangerConfirmWord('重建空库', '数据库无法从健康快照恢复。此操作会先归档当前坏库和数据库三件套，再重建为空库；音乐文件不会被删除。')) {
+      setDatabaseProtectionMessage('已取消重建。需要输入确认词“重建空库”后才会执行。');
+      setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.repairDatabase) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to rebuild the library database.');
+      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里重建曲库数据库。');
       return;
     }
 
     try {
       setDatabaseProtectionBusyAction('restore');
       setDangerBusy(true);
+      clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
+      setDatabaseProtectionMessage('正在归档坏库并重建空库...');
       const result = await library.repairDatabase();
       const archived = result.archivePath ? `已归档坏库：${result.archivePath}` : '没有发现可归档的数据库文件。';
-      setDangerMessage(`已归档坏库并重建为空库。${archived} 请重新添加曲库文件夹并扫描；如果重扫后再次报错，请导出诊断。`);
+      setDatabaseProtectionMessage(`已归档坏库并重建为空库。${archived} 请重新添加曲库文件夹并扫描；如果重扫后再次报错，请导出诊断。`);
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (rebuildError) {
-      setDangerMessage(null);
-      setError(rebuildError instanceof Error ? rebuildError.message : String(rebuildError));
+      setDatabaseProtectionFailure(rebuildError);
     } finally {
       setDangerBusy(false);
       setDatabaseProtectionBusyAction(null);
@@ -5805,17 +5950,19 @@ export const SettingsPage = (): JSX.Element => {
   const handleOpenDataProtectionFolder = async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.openDataProtectionFolder) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to open the data protection folder.');
+      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里打开保护目录。');
       return;
     }
 
     try {
       setDatabaseProtectionBusyAction('open');
+      clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
       await library.openDataProtectionFolder();
+      setDatabaseProtectionMessage('已请求打开保护目录。');
     } catch (openError) {
-      setError(openError instanceof Error ? openError.message : String(openError));
+      setDatabaseProtectionFailure(openError);
     } finally {
       setDatabaseProtectionBusyAction(null);
     }
@@ -6158,6 +6305,14 @@ export const SettingsPage = (): JSX.Element => {
   const databaseArchiveLabel = databaseProtectionStatus?.latestArchive
     ? `${formatProtectionTimestamp(databaseProtectionStatus.latestArchive.createdAt)} · ${formatUpdateBytes(databaseProtectionStatus.latestArchive.databaseSizeBytes)}`
     : '暂无坏库归档';
+  const databasePrimaryActionUnavailableReason =
+    databaseProtectionStatus?.hasRunningScan
+      ? null
+      : databaseQuarantined && !databaseProtectionStatus?.canScrubQuarantinedDatabase
+      ? '没有找到可修复的隔离库副本；请打开保护目录确认归档是否存在，或直接导出诊断。'
+      : !databaseQuarantined && !databaseUnrecoverable && !latestHealthySnapshot
+      ? '暂无健康快照可恢复。可以先创建健康快照；如果当前库不可用，请导出诊断。'
+      : null;
   const formatLastFmTimestamp = (value: string | null | undefined): string => {
     if (!value) {
       return t('settings.integrations.lastfm.never');
@@ -6535,8 +6690,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-volume-balance"
                 highlighted={highlightedSettingId === 'settings-row-volume-balance'}
-                title="音量自动平衡"
-                description="自动拉齐歌曲音量；只读取标签或写入 ECHO 数据库，不修改你的音乐文件。"
+                title="音量标准化"
+                description="Spotify Normal 风格的响度拉齐；只读取标签或写入 ECHO 数据库，不修改你的音乐文件。"
               >
                 <div className="settings-cache-panel settings-cache-panel--bpm-analysis">
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
@@ -6566,10 +6721,44 @@ export const SettingsPage = (): JSX.Element => {
                       高级
                     </button>
                   </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <ChipButton
+                      active={(appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS) === SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS}
+                      onClick={() =>
+                        patchAppSettings({
+                          replayGainEnabled: true,
+                          replayGainMode: 'track',
+                          replayGainTargetLufs: SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS,
+                          replayGainPreventClipping: true,
+                          replayGainAnalyzeOnPlay: true,
+                        })
+                      }
+                    >
+                      Spotify Normal (-14 LUFS)
+                    </ChipButton>
+                    <ChipButton
+                      active={(appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS) === QUIET_REPLAY_GAIN_TARGET_LUFS}
+                      onClick={() =>
+                        patchAppSettings({
+                          replayGainEnabled: true,
+                          replayGainMode: 'track',
+                          replayGainTargetLufs: QUIET_REPLAY_GAIN_TARGET_LUFS,
+                          replayGainPreventClipping: true,
+                          replayGainAnalyzeOnPlay: true,
+                        })
+                      }
+                    >
+                      Quiet (-18 LUFS)
+                    </ChipButton>
+                  </div>
                   <div className="settings-status-grid">
                     <span>
                       <em>模式</em>
                       <strong>{(appSettings?.replayGainMode ?? 'track') === 'album' ? '专辑' : (appSettings?.replayGainMode ?? 'track') === 'off' ? '关闭' : '单曲'}</strong>
+                    </span>
+                    <span>
+                      <em>目标响度</em>
+                      <strong>{appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS} LUFS</strong>
                     </span>
                     <span>
                       <em>当前应用</em>
@@ -6633,9 +6822,9 @@ export const SettingsPage = (): JSX.Element => {
                           <input
                             type="number"
                             min={-24}
-                            max={-12}
+                            max={-11}
                             step={0.5}
-                            value={appSettings?.replayGainTargetLufs ?? -18}
+                            value={appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS}
                             onChange={(event) => patchAppSettings({ replayGainTargetLufs: Number(event.currentTarget.value) })}
                           />
                         </label>
@@ -6656,6 +6845,18 @@ export const SettingsPage = (): JSX.Element => {
                   {replayGainAnalysisMessage ? <p className="settings-inline-note">{replayGainAnalysisMessage}</p> : null}
                   {replayGainAnalysisJob?.errorCount ? <p className="settings-inline-error">音量分析错误 {replayGainAnalysisJob.errorCount} 个，已跳过问题文件。</p> : null}
                 </div>
+              </SettingRow>
+              <SettingRow
+                id="settings-row-mono-audio"
+                highlighted={highlightedSettingId === 'settings-row-mono-audio'}
+                title="单声道音频"
+                description="把左右声道合并后同时输出到两边；默认关闭，适合单耳听、坏声道耳机或临时检查混音。"
+              >
+                <ToggleButton
+                  active={channelBalanceState.enabled && channelBalanceState.monoMode === 'sum'}
+                  disabled={!appSettings}
+                  onClick={() => handleMonoAudioToggle(!(channelBalanceState.enabled && channelBalanceState.monoMode === 'sum'))}
+                />
               </SettingRow>
               <SettingRow title={t('settings.playback.wireless.title')} description={t('settings.playback.wireless.description')}>
                 <ToggleButton />
@@ -8366,6 +8567,10 @@ export const SettingsPage = (): JSX.Element => {
                       {databaseProtectionBusyAction === 'discard' ? '归档中...' : '归档问题曲目'}
                     </button>
                   ) : null}
+                  <button className="settings-danger-button" type="button" disabled={databaseProtectionBusy} onClick={() => void handleRelaunchLibraryRecoveryMode()}>
+                    <Power size={15} />
+                    {databaseProtectionBusyAction === 'relaunch' ? '重启中...' : '重启到恢复模式'}
+                  </button>
                   <button className="settings-action-button" type="button" disabled={databaseProtectionBusyAction === 'open'} onClick={() => void handleOpenDataProtectionFolder()}>
                     <FolderOpen size={15} />
                     打开保护目录
@@ -8375,6 +8580,9 @@ export const SettingsPage = (): JSX.Element => {
                     {diagnosticsBusy ? '导出中...' : '导出诊断'}
                   </button>
                 </div>
+                {databasePrimaryActionUnavailableReason ? <p className="settings-inline-note">{databasePrimaryActionUnavailableReason}</p> : null}
+                {databaseProtectionError ? <p className="settings-inline-error" role="alert">{databaseProtectionError}</p> : null}
+                {databaseProtectionMessage ? <p className="settings-inline-note" role="status">{databaseProtectionMessage}</p> : null}
                 {databaseProtectionStatus?.hasRunningScan ? <p className="settings-inline-error">曲库扫描正在运行，恢复、重建和删除会被拒绝。请等扫描结束后再操作。</p> : null}
                 {databaseProtectionStatus?.maintenanceEvents.length ? (
                   <div className="settings-database-events">

@@ -1,15 +1,18 @@
 import type { ReplayGainMode } from '../types/appSettings';
+import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../constants/replayGain';
 
 export type ReplayGainTrackData = {
   trackGainDb?: number | null;
   albumGainDb?: number | null;
   trackPeak?: number | null;
   albumPeak?: number | null;
+  integratedLufs?: number | null;
 };
 
 export type ReplayGainCalculationInput = ReplayGainTrackData & {
   enabled: boolean;
   mode: ReplayGainMode;
+  targetLufs?: number | null;
   preampDb: number;
   preventClipping: boolean;
 };
@@ -54,7 +57,10 @@ export const calculateReplayGain = (input: ReplayGainCalculationInput): ReplayGa
 
   const trackGainDb = finiteNumberOrNull(input.trackGainDb);
   const albumGainDb = finiteNumberOrNull(input.albumGainDb);
-  const selectedGainDb = input.mode === 'album' ? albumGainDb ?? trackGainDb : trackGainDb;
+  const integratedLufs = finiteNumberOrNull(input.integratedLufs);
+  const targetLufs = finiteNumberOrNull(input.targetLufs) ?? DEFAULT_REPLAY_GAIN_TARGET_LUFS;
+  const targetDerivedTrackGainDb = integratedLufs === null ? null : targetLufs - integratedLufs;
+  const selectedGainDb = input.mode === 'album' ? albumGainDb ?? targetDerivedTrackGainDb ?? trackGainDb : targetDerivedTrackGainDb ?? trackGainDb;
   const trackPeak = finiteNumberOrNull(input.trackPeak);
   const albumPeak = finiteNumberOrNull(input.albumPeak);
   const selectedPeak = input.mode === 'album' ? albumPeak ?? trackPeak : trackPeak;

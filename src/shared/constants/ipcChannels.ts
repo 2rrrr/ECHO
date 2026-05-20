@@ -198,6 +198,7 @@ export const IpcChannels = {
   LibraryRestoreDatabaseSnapshot: 'library:restore-database-snapshot',
   LibraryScrubQuarantinedDatabase: 'library:scrub-quarantined-database',
   LibraryDiscardQuarantinedProblemTracks: 'library:discard-quarantined-problem-tracks',
+  LibraryRelaunchRecoveryMode: 'library:relaunch-recovery-mode',
   LibraryOpenDataProtectionFolder: 'library:open-data-protection-folder',
   LibraryNetworkRepairMissingMetadata: 'library:network-repair-missing-metadata',
   LibraryNetworkScanMissingMetadata: 'library:network-scan-missing-metadata',

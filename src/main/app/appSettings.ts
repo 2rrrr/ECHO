@@ -35,6 +35,7 @@ import {
   type ChannelBalanceMonoMode,
   type ChannelBalanceState,
 } from '../../shared/types/audio';
+import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 const imageWallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
@@ -288,7 +289,7 @@ export const defaultSettings: AppSettings = {
   gaplessPlaybackEnabled: false,
   replayGainEnabled: false,
   replayGainMode: 'track',
-  replayGainTargetLufs: -18,
+  replayGainTargetLufs: DEFAULT_REPLAY_GAIN_TARGET_LUFS,
   replayGainPreampDb: 0,
   replayGainPreventClipping: true,
   replayGainAnalyzeOnPlay: true,
@@ -925,7 +926,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     replayGainEnabled: settings.replayGainEnabled === true,
     replayGainMode: normalizeReplayGainMode(settings.replayGainMode),
     replayGainTargetLufs: Number.isFinite(replayGainTargetLufs)
-      ? Math.round(clamp(replayGainTargetLufs, -24, -12) * 10) / 10
+      ? Math.round(clamp(replayGainTargetLufs, -24, -11) * 10) / 10
       : defaultSettings.replayGainTargetLufs,
     replayGainPreampDb: Number.isFinite(replayGainPreampDb)
       ? Math.round(clamp(replayGainPreampDb, -12, 12) * 10) / 10

@@ -325,6 +325,7 @@ const replayGainFromTrack = (track: LibraryTrack): ReplayGainTrackData | null =>
     albumGainDb: track.replayGainAlbumGainDb ?? null,
     trackPeak: track.replayGainTrackPeak ?? null,
     albumPeak: track.replayGainAlbumPeak ?? null,
+    integratedLufs: track.replayGainIntegratedLufs ?? null,
   };
   return Object.values(replayGain).some((value) => typeof value === 'number' && Number.isFinite(value)) ? replayGain : null;
 };

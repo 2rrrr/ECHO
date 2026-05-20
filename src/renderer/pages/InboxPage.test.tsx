@@ -69,6 +69,31 @@ const inboxPage = (overrides: Partial<LibraryInboxTrackPage> = {}): LibraryInbox
     createdAt: '2026-05-20T00:00:00.000Z',
     finishedAt: '2026-05-20T00:00:00.000Z',
   },
+  story: {
+    trackCount: 1,
+    albumCount: 1,
+    artistCount: 1,
+    folderCount: 1,
+    missingCoverCount: 1,
+    metadataIssueCount: 0,
+    unknownArtistCount: 0,
+    unknownAlbumCount: 0,
+    totalDuration: 180,
+    topFolders: [{ value: 'folder-1', label: 'Music', count: 1 }],
+    topArtists: [{ value: 'Artist', label: 'Artist', count: 1 }],
+  },
+  albums: [
+    {
+      album: 'Album',
+      albumArtist: 'Artist',
+      coverId: null,
+      coverThumb: null,
+      trackCount: 1,
+      missingCoverCount: 1,
+      metadataIssueCount: 0,
+      duration: 180,
+    },
+  ],
   facets: {
     folders: [{ value: 'folder-1', label: 'Music', count: 1 }],
     albums: [{ value: 'Album', label: 'Album', count: 1 }],
@@ -102,6 +127,8 @@ describe('InboxPage', () => {
     render(<InboxPage />);
 
     expect(await screen.findByText('Song track-1')).toBeTruthy();
+    expect(screen.getByText('新增专辑墙')).toBeTruthy();
+    expect(screen.getByText(/新增 1 首/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '资料异常' }));
 
     await waitFor(() =>

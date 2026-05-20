@@ -31,6 +31,7 @@ import type {
   LibraryDatabaseDeleteResult,
   LibraryDatabaseDiscardProblemTracksResult,
   LibraryDatabaseRepairResult,
+  LibraryDatabaseRecoveryRelaunchResult,
   LibraryDatabaseProtectionStatus,
   LibraryDatabaseRestoreResult,
   LibraryDatabaseScrubResult,
@@ -327,6 +328,7 @@ export type EchoApi = {
     restoreDatabaseSnapshot: (snapshotId: string) => Promise<LibraryDatabaseRestoreResult>;
     scrubQuarantinedDatabase: () => Promise<LibraryDatabaseScrubResult>;
     discardQuarantinedProblemTracks: () => Promise<LibraryDatabaseDiscardProblemTracksResult>;
+    relaunchRecoveryMode: () => Promise<LibraryDatabaseRecoveryRelaunchResult>;
     openDataProtectionFolder: () => Promise<void>;
     repairMissingMetadata: (trackId: string) => Promise<NetworkRepairResult>;
     scanMissingMetadata: (options?: number | MissingMetadataScanOptions) => Promise<MissingMetadataScanResult>;

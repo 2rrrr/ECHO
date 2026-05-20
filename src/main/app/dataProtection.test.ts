@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
@@ -63,6 +63,27 @@ const createPoisonedLibrary = (path: string): void => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run('track-1', 'D:\\Music\\Safe Artist - Safe Title.mp3', badTitle, badTitle, badTitle, badTitle, badTitle, badTitle, badTitle);
   database.close();
+};
+
+const createQuarantinedLibraryArchive = (root: string, databasePath: string): string => {
+  const archivePath = join(root, 'data-protection', 'corrupt-archives', '2026-05-20T00-00-00-000Z-startup-poisoned-library');
+  mkdirSync(archivePath, { recursive: true });
+  copyFileSync(databasePath, join(archivePath, 'echo-library.sqlite'));
+  writeFileSync(
+    join(archivePath, 'archive.json'),
+    `${JSON.stringify(
+      {
+        formatVersion: 1,
+        reason: 'startup-poisoned-library',
+        createdAt: '2026-05-20T00:00:00.000Z',
+        copied: ['echo-library.sqlite'],
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  return archivePath;
 };
 
 const scanStatus = (patch: Partial<LibraryScanStatus> = {}): LibraryScanStatus => ({
@@ -396,7 +417,7 @@ describe('dataProtection', () => {
     expect(readText(join(archivesPath, archiveNames[0], 'echo-library.sqlite'))).toBe('bad current database');
   });
 
-  it('quarantines a structurally healthy database with poisoned metadata before startup library access', async () => {
+  it('auto-repairs a structurally healthy database with poisoned metadata before startup library access', async () => {
     const databasePath = join(tempDir, 'echo-library.sqlite');
     createPoisonedLibrary(databasePath);
 
@@ -406,20 +427,54 @@ describe('dataProtection', () => {
 
     const result = await ensureDataProtection('startup', tempDir);
     const status = getLibraryDatabaseProtectionStatus(tempDir);
+    const repairedDatabase = new Database(databasePath, { readonly: true });
+    const row = repairedDatabase.prepare<[string], { title: string; artist: string; search_terms: string }>(
+      'SELECT title, artist, search_terms FROM tracks WHERE id = ?',
+    ).get('track-1');
+    repairedDatabase.close();
 
-    expect(result.recovery.action).toBe('quarantined');
-    expect(result.libraryHealth.status).toBe('corrupt');
-    expect(existsSync(databasePath)).toBe(false);
-    expect(status.status).toBe('quarantined');
-    expect(status.reason).toBe('poisoned_metadata');
-    expect(status.recommendedAction).toBe('scrub-quarantined-database');
-    expect(status.canScrubQuarantinedDatabase).toBe(true);
-    expect(isProtectedLibraryAvailable()).toBe(false);
+    expect(result.recovery.action).toBe('none');
+    expect(result.libraryHealth.status).toBe('ok');
+    expect(existsSync(databasePath)).toBe(true);
+    expect(inspectLibraryDatabaseForPoison(databasePath).status).toBe('ok');
+    expect(row).toMatchObject({ title: 'Safe Title', artist: 'Safe Artist' });
+    expect(row?.search_terms).toContain('safe title');
+    expect(status.status).toBe('ok');
+    expect(status.reason).toBe('none');
+    expect(status.recommendedAction).toBe('none');
+    expect(status.maintenanceEvents[0]).toEqual(expect.objectContaining({ action: 'startup-auto-repair' }));
+    expect(isProtectedLibraryAvailable()).toBe(true);
+  });
+
+  it('compacts oversized scan diagnostics without protecting the library', async () => {
+    const databasePath = join(tempDir, 'echo-library.sqlite');
+    createHealthyLibrary(databasePath);
+    const database = new Database(databasePath);
+    database.exec('CREATE TABLE scan_jobs (id TEXT PRIMARY KEY, errors_json TEXT)');
+    database.prepare('INSERT INTO scan_jobs (id, errors_json) VALUES (?, ?)').run(
+      'scan-1',
+      JSON.stringify(Array.from({ length: 400 }, (_value, index) => `D:\\Music\\track-${index}.flac: metadata warning ${'x'.repeat(240)}`)),
+    );
+    database.close();
+
+    const result = await ensureDataProtection('startup', tempDir);
+    const restoredDatabase = new Database(databasePath, { readonly: true });
+    const row = restoredDatabase.prepare<[string], { length: number }>('SELECT length(errors_json) AS length FROM scan_jobs WHERE id = ?').get('scan-1');
+    restoredDatabase.close();
+
+    expect(result.recovery.action).toBe('none');
+    expect(result.libraryHealth.status).toBe('ok');
+    expect(inspectLibraryDatabaseForPoison(databasePath).status).toBe('ok');
+    expect(row?.length).toBeLessThanOrEqual(4096);
+    expect(getLibraryDatabaseProtectionStatus(tempDir).recommendedAction).toBe('none');
+    expect(isProtectedLibraryAvailable()).toBe(true);
   });
 
   it('scrubs a quarantined database copy before restoring it to the active slot', async () => {
     const databasePath = join(tempDir, 'echo-library.sqlite');
     createPoisonedLibrary(databasePath);
+    createQuarantinedLibraryArchive(tempDir, databasePath);
+    rmSync(databasePath);
     await ensureDataProtection('startup', tempDir);
 
     const result = scrubQuarantinedLibraryDatabase(tempDir, new Date('2026-05-20T00:00:00.000Z'));
@@ -448,6 +503,8 @@ describe('dataProtection', () => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run('track-2', 'D:\\Music\\Good Artist - Good Title.mp3', 'Good Title', 'Good Artist', 'Good Album', 'Good Artist', null, 'MP3', 'good title good artist');
     database.close();
+    createQuarantinedLibraryArchive(tempDir, databasePath);
+    rmSync(databasePath);
     await ensureDataProtection('startup', tempDir);
 
     const result = discardQuarantinedProblemTracks(tempDir, new Date('2026-05-20T00:10:00.000Z'));
