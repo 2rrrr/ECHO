@@ -67,6 +67,19 @@ describe('lyricsParser', () => {
     ]);
   });
 
+  it('parses provider YRC word timings relative to the line start', () => {
+    expect(parseSyncedLyrics('[1000,1200](0,300,0)Hello (300,400,0)world')).toEqual([
+      {
+        timeMs: 1000,
+        text: 'Hello world',
+        words: [
+          { text: 'Hello ', startMs: 1000, endMs: 1300 },
+          { text: 'world', startMs: 1300, endMs: 1700 },
+        ],
+      },
+    ]);
+  });
+
   it('drops word timings with non-increasing timestamps but keeps the lyric line', () => {
     expect(parseSyncedLyrics('[00:01.00]<00:01.50>Hello <00:01.20>world')).toEqual([
       { timeMs: 1000, text: 'Hello world' },

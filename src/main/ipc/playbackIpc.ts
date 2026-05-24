@@ -11,6 +11,7 @@ import type {
   PlaybackResolvedMediaSource,
   PlaybackStartRequest,
   PlaybackStatus,
+  PlaybackTrackMetadataHint,
   PersistedPlaybackSessionV1,
 } from '../../shared/types/playback';
 import type { LibraryTrack } from '../../shared/types/library';
@@ -418,6 +419,26 @@ const normalizeReplayGainTrackData = (value: unknown): ReplayGainTrackData | nul
   return Object.keys(output).length > 0 ? output : null;
 };
 
+const normalizeTrackMetadataHint = (value: unknown): PlaybackTrackMetadataHint | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Record<string, unknown>;
+  const output: PlaybackTrackMetadataHint = {};
+  const title = optionalText(input.title);
+  const artist = optionalText(input.artist);
+  const album = optionalText(input.album);
+  const albumArtist = optionalText(input.albumArtist);
+  const coverUrl = optionalText(input.coverUrl);
+  if (title !== undefined) output.title = title;
+  if (artist !== undefined) output.artist = artist;
+  if (album !== undefined) output.album = album;
+  if (albumArtist !== undefined) output.albumArtist = albumArtist;
+  if (coverUrl !== undefined) output.coverUrl = coverUrl;
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
 const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('playback request must be an object');
@@ -428,6 +449,7 @@ const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
   return {
     filePath: normalizePlaybackFilePath(requireText(input.filePath, 'filePath')),
     trackId: typeof input.trackId === 'string' && input.trackId.trim() ? input.trackId : undefined,
+    metadata: normalizeTrackMetadataHint(input.metadata),
     startSeconds: optionalNonNegativeNumber(input.startSeconds),
     output: normalizeOutputSettings(input.output),
     probe: normalizeProbeHint(input.probe),
@@ -1276,6 +1298,13 @@ export const registerPlaybackIpc = (): void => {
           filePath: prepared.filePath,
           inputHeaders: prepared.inputHeaders,
           trackId: item.trackId,
+          metadata: {
+            title: item.title,
+            artist: item.artist,
+            album: item.album,
+            albumArtist: item.albumArtist,
+            coverUrl: item.coverThumb,
+          },
           replayGain: createReplayGainHintForMediaItem(item),
           startSeconds: request.startSeconds,
           output: request.output,
@@ -1318,6 +1347,13 @@ export const registerPlaybackIpc = (): void => {
             filePath: prepared.filePath,
             inputHeaders: prepared.inputHeaders,
             trackId: item.trackId,
+            metadata: {
+              title: item.title,
+              artist: item.artist,
+              album: item.album,
+              albumArtist: item.albumArtist,
+              coverUrl: item.coverThumb,
+            },
             replayGain: createReplayGainHintForMediaItem(item),
             startSeconds: request.startSeconds,
             output: request.output,

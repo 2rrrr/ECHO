@@ -7,6 +7,7 @@ import { createSmtcService } from './getSmtcService';
 import type { SmtcCommand, SmtcService } from './SmtcService';
 
 const getTrackMock = vi.fn();
+const getTrackByPathMock = vi.fn();
 const resolveCoverAssetMock = vi.fn();
 
 vi.mock('electron', () => ({
@@ -21,6 +22,7 @@ vi.mock('electron', () => ({
 vi.mock('../../library/LibraryService', () => ({
   getLibraryService: () => ({
     getTrack: getTrackMock,
+    getTrackByPath: getTrackByPathMock,
     resolveCoverAsset: resolveCoverAssetMock,
   }),
 }));
@@ -149,6 +151,27 @@ describe('SMTC service', () => {
     expect(metadata.title).toBe('Loose File.flac');
     expect(metadata.artist).toBe('Local file');
     expect(metadata.coverPath).toBeNull();
+  });
+
+  it('uses playback metadata when the track is not in the library', () => {
+    getTrackMock.mockReturnValue(null);
+    getTrackByPathMock.mockReturnValue(null);
+
+    const metadata = createSmtcMetadataFromStatus(makeStatus({
+      currentFilePath: 'LX3ZDQd+jqEaBackODkKyHTFJgyA',
+      currentTrackId: 'temporary-local:missing',
+      currentTrackTitle: 'Real Song',
+      currentTrackArtist: 'Real Artist',
+      currentTrackAlbum: 'Real Album',
+      currentTrackAlbumArtist: 'Real Album Artist',
+      currentTrackCoverUrl: 'blob:cover',
+    }));
+
+    expect(metadata.title).toBe('Real Song');
+    expect(metadata.artist).toBe('Real Artist');
+    expect(metadata.album).toBe('Real Album');
+    expect(metadata.albumArtist).toBe('Real Album Artist');
+    expect(metadata.coverUrl).toBe('blob:cover');
   });
 
   it('does not throw when cover resolution fails', () => {

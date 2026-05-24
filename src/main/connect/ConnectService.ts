@@ -38,6 +38,8 @@ type HqPlayerConnectService = Pick<
   'getSettings' | 'setSettings' | 'getStatus' | 'testConnection' | 'createPlaybackHandoff' | 'sendLastPlaybackControl'
 >;
 
+type HqPlayerConnectSettings = ReturnType<HqPlayerConnectService['getSettings']>;
+
 type PlaybackSource = {
   track: ConnectPlaybackTarget | LibraryTrack | null;
   trackId: string | null;
@@ -551,7 +553,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   private async waitForHqPlayerPlayback(
-    settings: ReturnType<HqPlayerConnectService['getSettings']>,
+    settings: HqPlayerConnectSettings,
   ): Promise<HqPlayerConnectionTestResult> {
     let latest: HqPlayerConnectionTestResult | null = null;
     for (let attempt = 0; attempt < hqPlayerPlaybackConfirmAttempts; attempt += 1) {
@@ -571,6 +573,25 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
 
     const remoteState = latest?.playbackStatus?.state ?? 'no_status';
     throw new Error(`HQPlayer 未确认播放：${remoteState}`);
+  }
+
+  private async releaseEchoPlaybackBeforeHqPlayerControl(settings: HqPlayerConnectSettings): Promise<void> {
+    const audioSession = getAudioSession();
+    const audioStatus = audioSession.getStatus();
+    if (audioStatus.state !== 'playing' && audioStatus.state !== 'loading') {
+      return;
+    }
+
+    if (settings.connectionMode === 'localDesktop') {
+      try {
+        audioSession.stop();
+      } catch {
+        // Best-effort release before handing the local audio device to HQPlayer.
+      }
+      return;
+    }
+
+    await audioSession.pause().catch(() => undefined);
   }
 
   private startHqPlayerStatusSync(): void {
@@ -670,6 +691,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
         throw new Error(hqPlayerReasonText(handoff.reason));
       }
 
+      await this.releaseEchoPlaybackBeforeHqPlayerControl(settings);
       const send = await this.hqPlayerService.sendLastPlaybackControl();
       if (send.state !== 'sent') {
         throw new Error(send.message ?? hqPlayerReasonText(send.reason));
@@ -677,10 +699,6 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
 
       const confirmed = await this.waitForHqPlayerPlayback(settings);
       const playbackStatus = confirmed.playbackStatus ?? null;
-      const audioStatus = getAudioSession().getStatus();
-      if (audioStatus.state === 'playing' || audioStatus.state === 'loading') {
-        await getAudioSession().pause().catch(() => undefined);
-      }
 
       this.setSession({
         deviceId: hqPlayerConnectDeviceId,

@@ -8,7 +8,7 @@ import { bindTaskbarPlaybackIntegration } from './taskbarPlaybackIntegration';
 import { ensureTray, isAppQuitRequested } from './tray';
 import { clearMainWindow, setMainWindow } from './windowManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
-import { recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
+import { closeDevConsoleWindow, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
 
 const mainOutputDir = import.meta.dirname;
@@ -126,6 +126,7 @@ export const createMainWindow = (): BrowserWindow => {
     }
 
     rememberMainWindowSize(window);
+    closeDevConsoleWindow();
 
     if (!isAppQuitRequested() && getAppSettings().hideToTrayOnClose) {
       event.preventDefault();
@@ -141,6 +142,7 @@ export const createMainWindow = (): BrowserWindow => {
     }
 
     clearMainWindow();
+    closeDevConsoleWindow();
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {

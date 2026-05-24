@@ -1230,6 +1230,13 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 39,
+    apply: (database) => {
+      addColumnIfMissing(database, 'artist_online_info_cache', 'region', 'region TEXT');
+      addColumnIfMissing(database, 'artist_event_cache', 'region', 'region TEXT');
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

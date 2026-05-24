@@ -1026,6 +1026,12 @@ export type TranslationKey =
   | 'settings.eq.preset.searchPlaceholder'
   | 'settings.eq.preset.selectorAria'
   | 'settings.eq.preset.user'
+  | 'settings.eq.mode.aria'
+  | 'settings.eq.mode.current'
+  | 'settings.eq.mode.pro'
+  | 'settings.eq.mode.simple'
+  | 'settings.eq.section.channel'
+  | 'settings.eq.section.compare'
   | 'settings.eq.state.eqDisabled'
   | 'settings.eq.state.eqEnabled'
   | 'settings.eq.status.bitPerfect'
@@ -2238,8 +2244,14 @@ const zhCN: TranslationMap = {
   'settings.eq.status.safe': '安全',
   'settings.eq.status.safeHeadroomShort': '安全余量',
   'settings.eq.status.warning': '警告',
-  'settings.eq.subtitle': '实时 PEQ、Headroom 管理与输出配置档',
-  'settings.eq.title': '参数均衡工作台',
+  'settings.eq.mode.aria': 'EQ 显示模式',
+  'settings.eq.mode.current': '模式',
+  'settings.eq.mode.pro': 'Pro',
+  'settings.eq.mode.simple': 'Simple',
+  'settings.eq.section.channel': '声道与监听工具',
+  'settings.eq.section.compare': 'A/B 与旁路对比',
+  'settings.eq.subtitle': '声音曲线、安全余量与高级调音',
+  'settings.eq.title': 'EQ',
   'settings.eq.warning.channelClipping': '存在削波风险：降低增益或前级可获得更安全的余量。',
   'settings.eq.warning.lowerPreamp': '降低前级可避免削波。',
   'settings.nav.about.description': '版本、更新与开发工具',
@@ -2969,8 +2981,14 @@ const zhTW: TranslationMap = {
   'settings.eq.signal.preamp': '前級',
   'settings.eq.signal.protecting': '保護中',
   'settings.eq.signal.title': '訊號鏈',
-  'settings.eq.subtitle': '即時 PEQ、Headroom 管理與輸出設定檔',
-  'settings.eq.title': '參數均衡工作台',
+  'settings.eq.mode.aria': 'EQ 顯示模式',
+  'settings.eq.mode.current': '模式',
+  'settings.eq.mode.pro': 'Pro',
+  'settings.eq.mode.simple': 'Simple',
+  'settings.eq.section.channel': '聲道與監聽工具',
+  'settings.eq.section.compare': 'A/B 與旁路對比',
+  'settings.eq.subtitle': '聲音曲線、安全餘量與進階調音',
+  'settings.eq.title': 'EQ',
   'settings.eq.warning.channelClipping': '存在削波風險：降低增益或前級可獲得更安全的餘量。',
   'settings.eq.warning.lowerPreamp': '降低前級可避免削波。',
   'settings.general.closeToTray': '關閉時隱藏到系統匣',
@@ -3932,8 +3950,14 @@ const jaJP: TranslationMap = {
   'settings.eq.signal.preamp': 'プリアンプ',
   'settings.eq.signal.protecting': '保護中',
   'settings.eq.signal.title': '信号チェーン',
-  'settings.eq.subtitle': 'リアルタイム PEQ、ヘッドルーム管理、出力プロファイル',
-  'settings.eq.title': 'パラメトリック EQ ワークベンチ',
+  'settings.eq.mode.aria': 'EQ 表示モード',
+  'settings.eq.mode.current': 'モード',
+  'settings.eq.mode.pro': 'Pro',
+  'settings.eq.mode.simple': 'Simple',
+  'settings.eq.section.channel': 'チャンネルとモニター',
+  'settings.eq.section.compare': 'A/B とバイパス比較',
+  'settings.eq.subtitle': '音のカーブ、安全ヘッドルーム、詳細調整',
+  'settings.eq.title': 'EQ',
   'settings.eq.warning.channelClipping': 'クリップの危険があります。ゲインまたはプリアンプを下げると安全です。',
   'settings.eq.warning.lowerPreamp': 'クリップを避けるにはプリアンプを下げてください。',
   'settings.nav.appearance.label': '外観',
@@ -5030,8 +5054,14 @@ const enUS: TranslationMap = {
   'settings.eq.status.safe': 'Safe',
   'settings.eq.status.safeHeadroomShort': 'Safe headroom',
   'settings.eq.status.warning': 'Warning',
-  'settings.eq.subtitle': 'Realtime PEQ, headroom management, and output profiles',
-  'settings.eq.title': 'Parametric EQ Workbench',
+  'settings.eq.mode.aria': 'EQ view mode',
+  'settings.eq.mode.current': 'Mode',
+  'settings.eq.mode.pro': 'Pro',
+  'settings.eq.mode.simple': 'Simple',
+  'settings.eq.section.channel': 'Channel and monitor tools',
+  'settings.eq.section.compare': 'A/B and bypass compare',
+  'settings.eq.subtitle': 'Sound curve, safe headroom, and advanced tuning',
+  'settings.eq.title': 'EQ',
   'settings.eq.warning.channelClipping': 'Clipping risk: lower gain or preamp for safer headroom.',
   'settings.eq.warning.lowerPreamp': 'Lower Preamp to avoid clipping.',
   'settings.nav.appearance.label': 'Appearance',

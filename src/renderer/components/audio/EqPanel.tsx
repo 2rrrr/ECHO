@@ -33,6 +33,18 @@ type EqPanelProps = {
   onAudioStatusRefresh?: () => void;
 };
 
+type EqUiMode = 'simple' | 'pro';
+
+const eqUiModeStorageKey = 'echo-next.eq.uiMode';
+
+const readEqUiMode = (): EqUiMode => {
+  try {
+    return window.localStorage.getItem(eqUiModeStorageKey) === 'pro' ? 'pro' : 'simple';
+  } catch {
+    return 'simple';
+  }
+};
+
 const fallbackState: EqState = {
   enabled: false,
   preampDb: 0,
@@ -112,10 +124,11 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const [redoStack, setRedoStack] = useState<EqSnapshot[]>([]);
   const [loudnessMatchedAb, setLoudnessMatchedAb] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState(false);
-  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
+  const [eqUiMode, setEqUiMode] = useState<EqUiMode>(readEqUiMode);
   const debounceTimers = useRef<Record<number, number>>({});
   const frequencyDebounceTimers = useRef<Record<number, number>>({});
   const editStartSnapshot = useRef<EqSnapshot | null>(null);
+  const showAdvancedTools = eqUiMode === 'pro';
 
   const selectedPreset = presets.find((preset) => preset.id === state.presetId);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
@@ -191,6 +204,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       setFrequencyUnlocked(false);
     }
   }, [frequencyUnlocked, showAdvancedTools]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(eqUiModeStorageKey, eqUiMode);
+    } catch {
+      // UI mode persistence is best-effort; EQ state and audio processing are unaffected.
+    }
+  }, [eqUiMode]);
 
   useEffect(() => {
     const profile = profiles.find((item) => item.id === selectedProfileId);
@@ -1007,10 +1028,15 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <input type="checkbox" checked={state.enabled} onChange={(event) => setEnabled(event.currentTarget.checked)} />
             <span>{state.enabled ? t('settings.eq.state.eqEnabled') : t('settings.eq.state.eqDisabled')}</span>
           </label>
+          <div className="eq-mode-toggle" role="group" aria-label={t('settings.eq.mode.aria')}>
+            <button type="button" data-active={eqUiMode === 'simple'} onClick={() => setEqUiMode('simple')}>
+              {t('settings.eq.mode.simple')}
+            </button>
+            <button type="button" data-active={eqUiMode === 'pro'} onClick={() => setEqUiMode('pro')}>
+              {t('settings.eq.mode.pro')}
+            </button>
+          </div>
           <EqPresetSelector presets={presets} value={state.presetId} onChange={setPreset} />
-          <button className="eq-soft-button" type="button" data-active={showAdvancedTools} onClick={() => setShowAdvancedTools((current) => !current)}>
-            {showAdvancedTools ? t('settings.eq.action.hideAdvanced') : t('settings.eq.action.showAdvanced')}
-          </button>
           {showAdvancedTools ? (
             <>
               <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.undo')} title={t('settings.eq.action.undo')} disabled={undoStack.length === 0} onClick={undoEq}>
@@ -1027,6 +1053,26 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </div>
       </header>
 
+      <div className="eq-simple-summary" data-risk={clippingRisk} data-mode={eqUiMode}>
+        <span>
+          <em>{t('settings.eq.status.preset')}</em>
+          <strong>{state.presetId === 'custom' ? t('settings.eq.preset.modified') : state.presetName}</strong>
+        </span>
+        <span>
+          <em>{t('settings.eq.status.headroom')}</em>
+          <strong>{formatLevelDb(audioLevels?.headroomDb)}</strong>
+        </span>
+        <span>
+          <em>{t('settings.eq.status.bitPerfect')}</em>
+          <strong>{dspActive ? t('common.disabled') : t('common.ready')}</strong>
+        </span>
+        <span>
+          <em>{t('settings.eq.mode.current')}</em>
+          <strong>{eqUiMode === 'pro' ? t('settings.eq.mode.pro') : t('settings.eq.mode.simple')}</strong>
+        </span>
+      </div>
+
+      {showAdvancedTools ? (
       <div className="eq-signal-strip" aria-label={t('settings.eq.signal.title')}>
         <div className="eq-signal-heading">
           <Activity size={16} aria-hidden="true" />
@@ -1061,7 +1107,9 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           </span>
         </div>
       </div>
+      ) : null}
 
+      {showAdvancedTools ? (
       <div className="eq-status-cards">
         <div className="eq-status-card">
           <span>{t('settings.eq.status.eq')}</span>
@@ -1088,6 +1136,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <strong>{dspActive ? t('common.disabled') : t('common.ready')}</strong>
         </div>
       </div>
+      ) : null}
 
       {selectedPresetMetadata && showAdvancedTools ? (
         <aside className="eq-preset-metadata" data-category={selectedPresetMetadata.category}>
@@ -1160,6 +1209,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             onBandFrequencyChange={handleBandFrequencyChange}
             onBandFrequencyCommit={handleBandFrequencyCommit}
           />
+          {showAdvancedTools ? (
           <div className="eq-band-console" aria-label={t('settings.eq.band.console')} data-bypassed={!selectedBandEnabled}>
             <div className="eq-band-console-heading">
               <span>
@@ -1195,6 +1245,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </span>
             </div>
           </div>
+          ) : null}
           {showAdvancedTools ? (
             <div className="eq-advanced-grid">
               <section className="eq-advanced-section eq-inspector" aria-label={t('settings.eq.band.inspector')}>
@@ -1357,6 +1408,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </section>
             </div>
           ) : null}
+          {showAdvancedTools ? (
           <div className="eq-band-strip" aria-label={t('settings.eq.band.readoutsAria')}>
             <div className="eq-band-strip-heading">
               <span>{t('settings.eq.band.matrix')}</span>
@@ -1395,10 +1447,13 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               ) : null}
             </div>
           </div>
+          ) : null}
         </div>
       </div>
 
       {showAdvancedTools ? (
+        <details className="eq-pro-section" open>
+          <summary>{t('settings.eq.section.compare')}</summary>
         <div className="eq-compare-panel">
           <div className="eq-compare-heading">
             <div>
@@ -1471,8 +1526,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             </span>
           </div>
         </div>
+        </details>
       ) : null}
 
+      {showAdvancedTools ? (
+      <details className="eq-pro-section" open>
+        <summary>{t('settings.eq.section.channel')}</summary>
       <section className="channel-balance-panel" aria-label="Channel balance panel" data-enabled={channelBalance.enabled}>
         <header className="channel-balance-header">
           <div className="eq-title-block">
@@ -1683,6 +1742,8 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           {channelBalance.enabled ? <p>{t('settings.eq.bitPerfect.channelDisabled')}</p> : null}
         </div>
       </section>
+      </details>
+      ) : null}
 
       <footer className="eq-preset-tools eq-preset-console">
         <div className="eq-preset-console-main">

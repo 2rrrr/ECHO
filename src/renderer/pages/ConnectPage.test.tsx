@@ -391,41 +391,13 @@ describe('ConnectPage HQPlayer controls', () => {
     expect(screen.getByText(/2822400Hz/u)).toBeTruthy();
   });
 
-  it('auto refreshes an enabled local HQPlayer before keeping a stale unavailable state', async () => {
+  it('keeps enabled local HQPlayer passive until the user manually tests it', async () => {
     const bridge = installEchoBridge(hqStatus('unavailable'), hqSettings);
-    bridge.hqPlayer.testConnection.mockResolvedValueOnce({
-      ok: true,
-      state: 'available',
-      endpoint: {
-        connectionMode: 'localDesktop',
-        host: '127.0.0.1',
-        port: 4321,
-      },
-      elapsedMs: 9,
-      checkedAt: '2026-05-21T01:00:01.000Z',
-      error: null,
-      controlInfo: {
-        name: 'Moekotori',
-        product: 'Signalyst HQPlayer Desktop',
-        version: '5',
-        platform: 'Windows',
-        engine: '5.25.0',
-        receivedAt: '2026-05-21T01:00:01.000Z',
-      },
-      playbackStatus: null,
-    });
     render(<ConnectPage />);
 
-    await waitFor(() => expect(bridge.hqPlayer.testConnection).toHaveBeenCalledWith(
-      expect.objectContaining({
-        enabled: true,
-        connectionMode: 'localDesktop',
-        host: '127.0.0.1',
-        port: 4321,
-      }),
-    ));
-    expect(await screen.findByText('Signalyst HQPlayer Desktop 5')).toBeTruthy();
-    expect(screen.getByText('5.25.0')).toBeTruthy();
+    await screen.findByText('HQPlayer Desktop');
+    await waitFor(() => expect(bridge.hqPlayer.getStatus).toHaveBeenCalled());
+    expect(bridge.hqPlayer.testConnection).not.toHaveBeenCalled();
   });
 
   it('disables unsupported transport controls while HQPlayer is the active output', async () => {

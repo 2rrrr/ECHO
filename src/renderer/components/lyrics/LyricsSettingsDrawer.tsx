@@ -9,6 +9,7 @@ import {
   Globe2,
   GripVertical,
   Image as ImageIcon,
+  Languages,
   Lock,
   Monitor,
   Music2,
@@ -1517,6 +1518,31 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   </button>
                 </div>
               </div>
+
+              <label className="audio-toggle-row">
+                <span>
+                  <Languages size={17} />
+                  <strong>桌面歌词显示罗马音</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={desktopLyricsRomanizationEnabled}
+                  disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                  onChange={(event) => patchDesktopLyricsStyle({ desktopLyricsRomanizationEnabled: event.currentTarget.checked })}
+                />
+              </label>
+              <label className="audio-toggle-row">
+                <span>
+                  <Languages size={17} />
+                  <strong>桌面歌词显示翻译</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={desktopLyricsTranslationEnabled}
+                  disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                  onChange={(event) => patchDesktopLyricsStyle({ desktopLyricsTranslationEnabled: event.currentTarget.checked })}
+                />
+              </label>
 
               {desktopLyricsVisible ? (
                 <>

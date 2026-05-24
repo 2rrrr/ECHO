@@ -267,17 +267,6 @@ const createHqPlayerConnectSettings = (settings: HqPlayerSettings): HqPlayerSett
   enabled: true,
 });
 
-const shouldAutoProbeLocalHqPlayer = (settings: HqPlayerSettings, status: HqPlayerStatus): boolean => {
-  const effective = withHqPlayerFriendlyDefaults(settings);
-  return (
-    settings.enabled &&
-    effective.connectionMode === 'localDesktop' &&
-    effective.port === hqPlayerDefaultPort &&
-    status.state !== 'available' &&
-    status.state !== 'checking'
-  );
-};
-
 const createHqPlayerStatusFromConnectionTest = (
   settings: HqPlayerSettings,
   result: HqPlayerConnectionTestResult,
@@ -539,19 +528,8 @@ export const ConnectPage = (): JSX.Element => {
         hqPlayer.getLastPlaybackControl(),
       ]);
       const effectiveSettings = withHqPlayerFriendlyDefaults(settings);
-      let displayStatus = nextStatus;
-      if (shouldAutoProbeLocalHqPlayer(effectiveSettings, nextStatus)) {
-        const result = await hqPlayer.testConnection(effectiveSettings);
-        displayStatus = createHqPlayerStatusFromConnectionTest(effectiveSettings, result);
-        setHqPlayerTestResult(result);
-        const nextDevices = await window.echo?.connect?.listDevices?.();
-        if (nextDevices) {
-          setDevices(nextDevices);
-        }
-      }
-
       setHqPlayerDraft(effectiveSettings);
-      setHqPlayerStatus(displayStatus);
+      setHqPlayerStatus(nextStatus);
       setHqPlayerLastHandoff(lastHandoff);
       setHqPlayerLastControl(lastControl);
     } catch {

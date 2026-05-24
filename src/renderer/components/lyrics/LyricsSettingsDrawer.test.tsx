@@ -154,11 +154,13 @@ const makeDesktopLyricsState = (overrides: Partial<DesktopLyricsState> = {}): De
     desktopLyricsLocked: false,
     desktopLyricsFontSizePx: 34,
     desktopLyricsScalePercent: 100,
-    desktopLyricsFontFamily: 'Outfit',
+    desktopLyricsFontFamily: 'Microsoft YaHei',
     desktopLyricsFontFilePath: null,
     desktopLyricsColor: '#FFFFFF',
     desktopLyricsStrokeColor: '#111827',
     desktopLyricsOpacityPercent: 96,
+    desktopLyricsRomanizationEnabled: true,
+    desktopLyricsTranslationEnabled: true,
     desktopLyricsBounds: null,
   },
   ...overrides,
@@ -306,16 +308,22 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /重置桌面歌词位置/ }));
     await waitFor(() => expect(resetBounds).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole('button', { name: /默认 Outfit/ }));
+    fireEvent.click(screen.getByRole('button', { name: /默认微软雅黑/ }));
     fireEvent.click(await screen.findByRole('button', { name: /Inter/ }));
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({
       desktopLyricsFontFamily: 'Inter',
       desktopLyricsFontFilePath: null,
     }));
 
+    fireEvent.click(screen.getByRole('checkbox', { name: '桌面歌词显示罗马音' }));
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsRomanizationEnabled: false }));
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '桌面歌词显示翻译' }));
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsTranslationEnabled: false }));
+
     fireEvent.click(screen.getByRole('button', { name: /恢复桌面歌词默认字体/ }));
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({
-      desktopLyricsFontFamily: 'Outfit',
+      desktopLyricsFontFamily: 'Microsoft YaHei',
       desktopLyricsFontFilePath: null,
     }));
   });

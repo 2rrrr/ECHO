@@ -1125,6 +1125,7 @@ export class AudioSession extends EventEmitter {
   private currentProbe: AudioProbeResult | null = null;
   private currentTrackId: string | null = null;
   private currentFilePath: string | null = null;
+  private currentTrackMetadata: AudioSessionPlayRequest['metadata'] | null = null;
   private currentInputHeaders: Record<string, string> | null = null;
   private currentOutputSettings: AudioOutputSettings | null = null;
   private currentPlan: SampleRatePlan | null = null;
@@ -1213,6 +1214,9 @@ export class AudioSession extends EventEmitter {
   };
   private lastNativeTelemetryStatusEmittedAt = 0;
   private lastLevelMeterStatusEmittedAt = 0;
+  private nativeStartupStatusGuardActive = false;
+  private nativePositionReportedBeforePlaying = false;
+  private nativePositionBeforePlayingBaselineSeconds: number | null = null;
   private nativeUnderrunWindow:
     | {
         startedAt: number;
@@ -1586,6 +1590,7 @@ export class AudioSession extends EventEmitter {
     this.currentFilePath = request.filePath;
     this.currentInputHeaders = request.inputHeaders ?? null;
     this.currentTrackId = request.trackId ?? null;
+    this.currentTrackMetadata = request.metadata ?? null;
     this.currentReplayGain = request.replayGain ?? null;
     this.currentReplayGainCalculation = {
       appliedDb: 0,
@@ -1606,6 +1611,9 @@ export class AudioSession extends EventEmitter {
     this.currentResamplerFallbackActive = false;
     this.activeAutomix = null;
     this.currentDecodeBackendImpl = null;
+    this.nativeStartupStatusGuardActive = false;
+    this.nativePositionReportedBeforePlaying = false;
+    this.nativePositionBeforePlayingBaselineSeconds = null;
     this.currentOutputSettings = this.createOutputSettingsForRequest(request.output);
     this.recordPlaybackDiagnosticEvent('play_request', 'info', 'playLocalFile', {
       trackId: request.trackId ?? null,
@@ -1738,6 +1746,7 @@ export class AudioSession extends EventEmitter {
           this.state = 'playing';
           this.hostStatus = 'ready';
           this.resetWatchdogProgress();
+          this.markNativeStartupStatusGuard();
           this.emitStatus();
           return this.getStatus();
         } catch (error) {
@@ -1792,6 +1801,7 @@ export class AudioSession extends EventEmitter {
           this.state = 'playing';
           this.hostStatus = 'ready';
           this.resetWatchdogProgress();
+          this.markNativeStartupStatusGuard();
           this.emitStatus();
           return this.getStatus();
         } catch (error) {
@@ -1908,6 +1918,7 @@ export class AudioSession extends EventEmitter {
       this.state = 'playing';
       this.hostStatus = 'ready';
       this.resetWatchdogProgress();
+      this.markNativeStartupStatusGuard();
       this.emitStatus();
       return this.getStatus();
     } catch (error) {
@@ -1948,6 +1959,7 @@ export class AudioSession extends EventEmitter {
     this.currentFilePath = request.sourceId;
     this.currentInputHeaders = null;
     this.currentTrackId = request.trackId ?? null;
+    this.currentTrackMetadata = null;
     this.pausedPositionSeconds = null;
     this.currentProbe = null;
     this.currentPlan = null;
@@ -2047,6 +2059,7 @@ export class AudioSession extends EventEmitter {
       this.state = 'playing';
       this.hostStatus = 'ready';
       this.resetWatchdogProgress();
+      this.markNativeStartupStatusGuard();
       this.emitStatus();
       return this.getStatus();
     } catch (error) {
@@ -2179,6 +2192,7 @@ export class AudioSession extends EventEmitter {
         this.hostStatus = this.hostStatus === 'starting' ? 'starting' : 'ready';
         this.nativeUnderrunWindow = null;
         this.resetWatchdogProgress();
+        this.markNativeStartupStatusGuard();
         this.emitStatus();
         return this.getStatus();
       }
@@ -2188,6 +2202,7 @@ export class AudioSession extends EventEmitter {
       return this.playLocalFile({
         filePath: this.currentFilePath,
         trackId: this.currentTrackId ?? undefined,
+        metadata: this.currentTrackMetadata ?? undefined,
         startSeconds: this.pausedPositionSeconds ?? this.clock.getPositionSeconds(),
         output: this.currentOutputSettings,
         probe: this.currentProbe ? createProbeHint(this.currentProbe) : undefined,
@@ -2411,6 +2426,7 @@ export class AudioSession extends EventEmitter {
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.currentProbe = null;
     this.currentTrackId = null;
+    this.currentTrackMetadata = null;
     this.currentReplayGain = null;
     this.currentReplayGainCalculation = {
       appliedDb: 0,
@@ -2492,6 +2508,7 @@ export class AudioSession extends EventEmitter {
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.currentProbe = null;
     this.currentTrackId = null;
+    this.currentTrackMetadata = null;
     this.currentReplayGain = null;
     this.currentReplayGainCalculation = {
       appliedDb: 0,
@@ -2666,6 +2683,7 @@ export class AudioSession extends EventEmitter {
     return this.playLocalFile({
       filePath: this.currentFilePath,
       trackId: this.currentTrackId ?? undefined,
+      metadata: this.currentTrackMetadata ?? undefined,
       startSeconds: safePositionSeconds,
       output: this.currentOutputSettings,
       inputHeaders: this.currentInputHeaders ?? undefined,
@@ -2817,6 +2835,11 @@ export class AudioSession extends EventEmitter {
       },
       currentFilePath: this.currentFilePath,
       currentTrackId: this.currentTrackId,
+      currentTrackTitle: this.currentTrackMetadata?.title ?? null,
+      currentTrackArtist: this.currentTrackMetadata?.artist ?? null,
+      currentTrackAlbum: this.currentTrackMetadata?.album ?? null,
+      currentTrackAlbumArtist: this.currentTrackMetadata?.albumArtist ?? null,
+      currentTrackCoverUrl: this.currentTrackMetadata?.coverUrl ?? null,
       durationSeconds: automixDurationSeconds,
       positionSeconds: automixPositionSeconds,
       channels: this.currentProbe?.channels ?? null,
@@ -5066,7 +5089,14 @@ export class AudioSession extends EventEmitter {
         }
 
         const now = Date.now();
+        const positionReportedBeforePlaying = this.state !== 'playing';
         const previousClockPositionSeconds = this.clock.getPositionSeconds();
+        if (positionReportedBeforePlaying) {
+          this.nativePositionReportedBeforePlaying = true;
+          if (this.nativePositionBeforePlayingBaselineSeconds === null) {
+            this.nativePositionBeforePlayingBaselineSeconds = previousClockPositionSeconds;
+          }
+        }
         this.clock.updateFrames(Number(frames));
         const positionSeconds = this.clock.getPositionSeconds();
         const nativeTelemetry =
@@ -5091,6 +5121,9 @@ export class AudioSession extends EventEmitter {
 
         this.watchdogLastPositionSeconds = positionSeconds;
         this.handlePositionSample(token, positionSeconds, nativeTelemetry, now);
+        if (!positionReportedBeforePlaying) {
+          this.nativePositionReportedBeforePlaying = false;
+        }
         this.maybeAdvanceAutomix(token);
         this.watchdogStalledChecks = 0;
         if (nativeTelemetry) {
@@ -5167,9 +5200,44 @@ export class AudioSession extends EventEmitter {
 
   private updatePositionFromOutput(): void {
     if (this.state === 'playing' && this.bridge?.getPositionSeconds) {
-      const positionSeconds = this.bridge.getPositionSeconds();
+      const reportedPositionSeconds = this.bridge.getPositionSeconds();
+      if (!Number.isFinite(reportedPositionSeconds)) {
+        return;
+      }
+
+      const now = Date.now();
+      const previousClockPositionSeconds = this.clock.getPositionSeconds();
+      const guardedBaselinePositionSeconds =
+        this.nativePositionReportedBeforePlaying && this.nativePositionBeforePlayingBaselineSeconds !== null
+          ? this.nativePositionBeforePlayingBaselineSeconds
+          : previousClockPositionSeconds;
+      const shouldGuardStartupPosition = this.nativePositionReportedBeforePlaying || this.nativeStartupStatusGuardActive;
+      const guardedRebasePositionSeconds = shouldGuardStartupPosition
+        ? this.createGuardedPositionJumpRebase(
+            reportedPositionSeconds,
+            now,
+            guardedBaselinePositionSeconds,
+            { ignorePreviousSample: true },
+          )
+        : null;
+      const positionSeconds = guardedRebasePositionSeconds ?? reportedPositionSeconds;
       const plan = this.currentPlan;
       const sampleRate = plan?.actualDeviceSampleRate ?? plan?.requestedOutputSampleRate ?? null;
+      if (guardedRebasePositionSeconds !== null) {
+        this.bridge.rebaseOutputClock?.(
+          guardedRebasePositionSeconds,
+          this.currentOutputSettings?.playbackRate ?? this.outputSettings.playbackRate,
+        );
+        this.watchdogLastPositionSeconds = guardedRebasePositionSeconds;
+        this.handlePositionSample(this.runToken, guardedRebasePositionSeconds, null, now);
+        this.nativePositionReportedBeforePlaying = false;
+        this.nativePositionBeforePlayingBaselineSeconds = null;
+        this.nativeStartupStatusGuardActive = false;
+      } else if (shouldGuardStartupPosition) {
+        this.nativePositionReportedBeforePlaying = false;
+        this.nativePositionBeforePlayingBaselineSeconds = null;
+        this.nativeStartupStatusGuardActive = false;
+      }
       this.clock.reset(positionSeconds, sampleRate);
     }
   }
@@ -6162,6 +6230,10 @@ export class AudioSession extends EventEmitter {
     this.emit('status', this.getStatus());
   }
 
+  private markNativeStartupStatusGuard(): void {
+    this.nativeStartupStatusGuardActive = true;
+  }
+
   private isCurrentLivePcmStream(): boolean {
     return isLivePcmSourcePath(this.currentFilePath) || (
       this.currentFilePath !== null &&
@@ -6244,8 +6316,9 @@ export class AudioSession extends EventEmitter {
     reportedPositionSeconds: number,
     now: number,
     previousPositionHintSeconds: number,
+    options: { ignorePreviousSample?: boolean } = {},
   ): number | null {
-    const previousSample = this.lastPositionSample;
+    const previousSample = options.ignorePreviousSample ? null : this.lastPositionSample;
     if (
       !Number.isFinite(reportedPositionSeconds) ||
       !Number.isFinite(previousPositionHintSeconds) ||
@@ -6551,6 +6624,7 @@ export class AudioSession extends EventEmitter {
       await this.playLocalFile({
         filePath,
         trackId: trackId ?? undefined,
+        metadata: this.currentTrackMetadata ?? undefined,
         startSeconds: safePositionSeconds,
         output,
         probe,
@@ -6877,6 +6951,7 @@ export class AudioSession extends EventEmitter {
       await this.playLocalFile({
         filePath,
         trackId: trackId ?? undefined,
+        metadata: this.currentTrackMetadata ?? undefined,
         startSeconds: safePositionSeconds,
         output,
         probe,
@@ -7001,6 +7076,7 @@ export class AudioSession extends EventEmitter {
       await this.playLocalFile({
         filePath,
         trackId: trackId ?? undefined,
+        metadata: this.currentTrackMetadata ?? undefined,
         startSeconds: safePositionSeconds,
         output,
         probe,

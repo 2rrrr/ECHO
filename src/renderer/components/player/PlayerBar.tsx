@@ -580,13 +580,15 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
   const realtimePositionMatchesPlayback = progressClockRef.current.trackKey === playbackProgressKey;
   const positionSeconds = seekPreviewSeconds ?? (realtimePositionMatchesPlayback ? realtimePositionSeconds : sourcePositionSeconds);
   const receiverMetadata = activeReceiverStatus ? activeReceiverStatus.metadata ?? null : null;
-  const title = receiverMetadata?.title ?? currentTrack?.title ?? titleFromPath(filePath);
+  const title = receiverMetadata?.title ?? currentTrack?.title ?? playbackAudioStatus?.currentTrackTitle ?? titleFromPath(filePath);
   const artist =
     receiverMetadata?.artist ??
     currentTrack?.artist ??
     currentTrack?.albumArtist ??
+    playbackAudioStatus?.currentTrackArtist ??
+    playbackAudioStatus?.currentTrackAlbumArtist ??
     (filePath ? (isAirPlayReceiverPlaybackActive ? 'AirPlay stream' : 'DLNA stream') : 'Ready');
-  const artworkUrl = receiverMetadata?.coverHttpUrl || playerArtworkUrl(currentTrack);
+  const artworkUrl = receiverMetadata?.coverHttpUrl || playerArtworkUrl(currentTrack) || playbackAudioStatus?.currentTrackCoverUrl || null;
   const isLibraryCurrentTrack = Boolean(currentTrack && !currentTrack.isTemporary && currentTrack.mediaType !== 'streaming');
   const streamingTrackId = currentTrack?.id ?? null;
   const streamingTrackMediaType = currentTrack?.mediaType ?? null;

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
   const audioSession = {
     getStatus: vi.fn(),
     pause: vi.fn(),
+    stop: vi.fn(),
   };
   const libraryService = {
     getTrack: vi.fn(),
@@ -184,6 +185,7 @@ describe('ConnectService HQPlayer output device', () => {
       positionSeconds: 7,
     });
     mocks.audioSession.pause.mockResolvedValue({});
+    mocks.audioSession.stop.mockReturnValue({});
     mocks.libraryService.getTrack.mockReturnValue(localTrack);
     mocks.libraryService.resolveCoverAsset.mockReturnValue(null);
   });
@@ -235,7 +237,7 @@ describe('ConnectService HQPlayer output device', () => {
     ]));
   });
 
-  it('connects HQPlayer through the official control sender and pauses ECHO playback', async () => {
+  it('connects HQPlayer through the official control sender after releasing local ECHO playback', async () => {
     const { ConnectService } = await import('./ConnectService');
     const hqPlayer = createHqPlayerService();
     const service = new ConnectService(hqPlayer);
@@ -268,7 +270,11 @@ describe('ConnectService HQPlayer output device', () => {
       }),
     }));
     expect(hqPlayer.sendLastPlaybackControl).toHaveBeenCalledOnce();
-    expect(mocks.audioSession.pause).toHaveBeenCalledOnce();
+    expect(mocks.audioSession.stop).toHaveBeenCalledOnce();
+    expect(mocks.audioSession.pause).not.toHaveBeenCalled();
+    expect(mocks.audioSession.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      hqPlayer.sendLastPlaybackControl.mock.invocationCallOrder[0],
+    );
   });
 
   it('preserves configured remote HQPlayer endpoint when connecting', async () => {
@@ -300,6 +306,11 @@ describe('ConnectService HQPlayer output device', () => {
       port: 4322,
       mediaServerEnabled: true,
     }));
+    expect(mocks.audioSession.pause).toHaveBeenCalledOnce();
+    expect(mocks.audioSession.stop).not.toHaveBeenCalled();
+    expect(mocks.audioSession.pause.mock.invocationCallOrder[0]).toBeLessThan(
+      hqPlayer.sendLastPlaybackControl.mock.invocationCallOrder[0],
+    );
   });
 
   it('keeps HQPlayer connection failures visible on the Connect session', async () => {
@@ -321,6 +332,7 @@ describe('ConnectService HQPlayer output device', () => {
       error: 'hqplayer_connection_refused',
     });
     expect(hqPlayer.sendLastPlaybackControl).not.toHaveBeenCalled();
+    expect(mocks.audioSession.stop).not.toHaveBeenCalled();
   });
 
   it('does not mark HQPlayer as playing until Status confirms playback', async () => {
@@ -336,6 +348,7 @@ describe('ConnectService HQPlayer output device', () => {
     })).rejects.toThrow(/未确认播放/u);
 
     expect(hqPlayer.sendLastPlaybackControl).toHaveBeenCalledOnce();
+    expect(mocks.audioSession.stop).toHaveBeenCalledOnce();
     expect(service.getStatus()).toMatchObject({
       deviceId: hqPlayerConnectDeviceId,
       protocol: 'hqplayer',

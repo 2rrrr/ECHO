@@ -10,7 +10,7 @@ import type {
   AudioPlaybackState,
   AudioStatus,
 } from '../../shared/types/audio';
-import type { PlaybackProbeHint } from '../../shared/types/playback';
+import type { PlaybackProbeHint, PlaybackTrackMetadataHint } from '../../shared/types/playback';
 import type { ReplayGainTrackData } from '../../shared/utils/replayGain';
 import type { FfmpegToolchainInfo } from './FfmpegToolchain';
 import type { AutomixTransitionPlan, AutomixTransitionMode, TrackTransitionAnalysis } from './AutomixPlanner';
@@ -29,6 +29,7 @@ export type {
 export type LocalAudioSource = {
   filePath: string;
   trackId?: string;
+  metadata?: PlaybackTrackMetadataHint;
   inputHeaders?: Record<string, string>;
   replayGain?: ReplayGainTrackData | null;
 };

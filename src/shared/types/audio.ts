@@ -124,6 +124,11 @@ export type AudioStatus = {
   automix?: AudioAutomixStatus;
   currentFilePath: string | null;
   currentTrackId: string | null;
+  currentTrackTitle?: string | null;
+  currentTrackArtist?: string | null;
+  currentTrackAlbum?: string | null;
+  currentTrackAlbumArtist?: string | null;
+  currentTrackCoverUrl?: string | null;
   durationSeconds: number;
   positionSeconds: number;
   channels: number | null;

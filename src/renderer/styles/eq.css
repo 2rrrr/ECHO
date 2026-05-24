@@ -7,10 +7,13 @@
 .eq-header,
 .eq-title-block,
 .eq-header-actions,
+.eq-mode-toggle,
 .eq-signal-strip,
 .eq-signal-heading,
 .eq-signal-chain,
 .eq-signal-node,
+.eq-simple-summary span,
+.eq-pro-section > summary,
 .eq-status-cards,
 .eq-compare-row,
 .eq-compare-heading,
@@ -240,6 +243,82 @@
 
 .eq-enable-pill input:checked::before {
   transform: translate(14px, -50%);
+}
+
+.eq-mode-toggle {
+  gap: 2px;
+  min-height: 32px;
+  padding: 2px;
+  border: 1px solid rgba(28, 47, 67, 0.12);
+  border-radius: 9px;
+  background: rgba(244, 248, 250, 0.72);
+}
+
+.eq-mode-toggle button {
+  min-height: 26px;
+  padding: 0 10px;
+  color: var(--theme-legacy-muted-text);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.eq-mode-toggle button[data-active="true"] {
+  color: var(--theme-legacy-accent-text);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 4px rgba(28, 47, 67, 0.08);
+}
+
+.eq-simple-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(28, 47, 67, 0.1);
+  border-radius: 10px;
+  background: rgba(247, 250, 252, 0.68);
+}
+
+.eq-simple-summary span {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.eq-simple-summary[data-risk="true"] span:nth-child(2) {
+  border-color: rgba(189, 93, 45, 0.24);
+  background: rgba(255, 245, 237, 0.78);
+}
+
+.eq-simple-summary em,
+.eq-simple-summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-simple-summary em {
+  color: var(--theme-legacy-muted-text);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.eq-simple-summary strong {
+  color: var(--theme-legacy-heading-text);
+  font-size: 12px;
+  font-weight: 920;
 }
 
 .eq-preset-browser {
@@ -1040,6 +1119,50 @@
   background: rgba(247, 250, 252, 0.66);
 }
 
+.eq-pro-section {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 10px;
+  background: rgba(247, 250, 252, 0.52);
+}
+
+.eq-pro-section > summary {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 10px;
+  color: var(--theme-legacy-heading-text);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.eq-pro-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.eq-pro-section > summary::after {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  content: "";
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.eq-pro-section[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+.eq-pro-section > .eq-compare-panel,
+.eq-pro-section > .channel-balance-panel {
+  margin-top: 0;
+}
+
 .eq-compare-heading {
   justify-content: space-between;
   gap: 12px;
@@ -1639,6 +1762,11 @@
 
 .app-shell--wallpaper .eq-title-icon,
 .app-shell--wallpaper .eq-enable-pill,
+.app-shell--wallpaper .eq-mode-toggle,
+.app-shell--wallpaper .eq-mode-toggle button[data-active="true"],
+.app-shell--wallpaper .eq-simple-summary,
+.app-shell--wallpaper .eq-simple-summary span,
+.app-shell--wallpaper .eq-pro-section,
 .app-shell--wallpaper .eq-icon-action,
 .app-shell--wallpaper .eq-preset-console,
 .app-shell--wallpaper .eq-preset-tools input,
@@ -1709,6 +1837,7 @@
 
 .app-shell--wallpaper .eq-preset-filter-chip[data-active="true"],
 .app-shell--wallpaper .eq-preset-option[data-selected="true"],
+.app-shell--wallpaper .eq-mode-toggle button[data-active="true"],
 .app-shell--wallpaper .eq-signal-node[data-active="true"],
 .app-shell--wallpaper .eq-status-card[data-active="true"],
 .app-shell--wallpaper .eq-preset-metadata strong,
@@ -1720,6 +1849,7 @@
 
 .app-shell--wallpaper .eq-status-card[data-risk="true"],
 .app-shell--wallpaper .eq-signal-node[data-risk="true"],
+.app-shell--wallpaper .eq-simple-summary[data-risk="true"] span:nth-child(2),
 .app-shell--wallpaper .eq-level-meter[data-risk="true"],
 .app-shell--wallpaper .eq-soft-button[data-risk="true"] {
   border-color: rgb(189 93 45 / var(--app-wallpaper-ui-border-alpha));
@@ -1732,6 +1862,12 @@
 
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-title-icon,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-enable-pill,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-mode-toggle,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-mode-toggle button[data-active="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-simple-summary,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-simple-summary span,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-simple-summary[data-risk="true"] span:nth-child(2),
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-pro-section,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-icon-action,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-console,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-tools input,
@@ -1808,6 +1944,11 @@ html[data-theme="dark"] .eq-panel {
 
 html[data-theme="dark"] .eq-title-icon,
 html[data-theme="dark"] .eq-enable-pill,
+html[data-theme="dark"] .eq-mode-toggle,
+html[data-theme="dark"] .eq-mode-toggle button[data-active="true"],
+html[data-theme="dark"] .eq-simple-summary,
+html[data-theme="dark"] .eq-simple-summary span,
+html[data-theme="dark"] .eq-pro-section,
 html[data-theme="dark"] .eq-icon-action,
 html[data-theme="dark"] .eq-preset-console,
 html[data-theme="dark"] .eq-preset-tools input,
@@ -1889,6 +2030,7 @@ html[data-theme="dark"] .eq-preset-option,
 html[data-theme="dark"] .eq-preset-trigger,
 html[data-theme="dark"] .eq-preset-search input,
 html[data-theme="dark"] .eq-enable-pill,
+html[data-theme="dark"] .eq-mode-toggle button,
 html[data-theme="dark"] .eq-icon-action,
 html[data-theme="dark"] .eq-preset-tools input,
 html[data-theme="dark"] .eq-preset-tools button,
@@ -1909,6 +2051,7 @@ html[data-theme="dark"] .eq-status-card span,
 html[data-theme="dark"] .eq-preamp-bar span,
 html[data-theme="dark"] .eq-preset-tools span,
 html[data-theme="dark"] .eq-preset-save-field span,
+html[data-theme="dark"] .eq-simple-summary em,
 html[data-theme="dark"] .eq-preset-menu-heading,
 html[data-theme="dark"] .eq-preset-metadata p,
 html[data-theme="dark"] .eq-preset-metadata em,
@@ -1942,6 +2085,7 @@ html[data-theme="dark"] .eq-band-chip strong {
 html[data-theme="dark"] .eq-title-block h2,
 html[data-theme="dark"] .channel-balance-header h3,
 html[data-theme="dark"] .eq-status-card strong,
+html[data-theme="dark"] .eq-simple-summary strong,
 html[data-theme="dark"] .eq-preamp-bar strong,
 html[data-theme="dark"] .eq-preset-metadata span,
 html[data-theme="dark"] .eq-signal-heading strong,
@@ -1953,6 +2097,7 @@ html[data-theme="dark"] .eq-inspector-title strong,
 html[data-theme="dark"] .eq-section-heading strong,
 html[data-theme="dark"] .eq-ab-slot-header strong,
 html[data-theme="dark"] .eq-compare-label,
+html[data-theme="dark"] .eq-pro-section > summary,
 html[data-theme="dark"] .channel-balance-status-strip strong,
 html[data-theme="dark"] .channel-tool-group header strong,
 html[data-theme="dark"] .channel-tool-group label strong,
@@ -1975,6 +2120,7 @@ html[data-theme="dark"] .eq-preset-option[data-selected="true"],
 html[data-theme="dark"] .eq-signal-node[data-active="true"],
 html[data-theme="dark"] .eq-status-card[data-active="true"],
 html[data-theme="dark"] .eq-preset-metadata strong,
+html[data-theme="dark"] .eq-mode-toggle button[data-active="true"],
 html[data-theme="dark"] .eq-band-chip[data-selected="true"],
 html[data-theme="dark"] .eq-soft-button[data-active="true"],
 html[data-theme="dark"] .eq-preset-state-badge[data-readonly="false"] {
@@ -1984,6 +2130,7 @@ html[data-theme="dark"] .eq-preset-state-badge[data-readonly="false"] {
 }
 
 html[data-theme="dark"] .eq-icon-action:hover,
+html[data-theme="dark"] .eq-mode-toggle button:hover,
 html[data-theme="dark"] .eq-soft-button:hover,
 html[data-theme="dark"] .eq-preset-tools button:hover,
 html[data-theme="dark"] .eq-band-chip:hover,
@@ -1997,6 +2144,7 @@ html[data-theme="dark"] .eq-preset-option:hover {
 
 html[data-theme="dark"] .eq-status-card[data-risk="true"],
 html[data-theme="dark"] .eq-signal-node[data-risk="true"],
+html[data-theme="dark"] .eq-simple-summary[data-risk="true"] span:nth-child(2),
 html[data-theme="dark"] .eq-level-meter[data-risk="true"],
 html[data-theme="dark"] .channel-balance-status-strip[data-risk="true"] span:last-child,
 html[data-theme="dark"] .eq-soft-button[data-risk="true"] {
@@ -2098,6 +2246,10 @@ html[data-theme="dark"] .eq-panel-error {
     grid-template-columns: 1fr;
   }
 
+  .eq-simple-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .eq-ab-slots {
     grid-template-columns: 1fr;
   }
@@ -2131,6 +2283,20 @@ html[data-theme="dark"] .eq-panel-error {
 }
 
 @media (max-width: 680px) {
+  .eq-header-actions,
+  .eq-preset-browser,
+  .eq-mode-toggle {
+    width: 100%;
+  }
+
+  .eq-mode-toggle button {
+    flex: 1 1 0;
+  }
+
+  .eq-simple-summary {
+    grid-template-columns: 1fr;
+  }
+
   .eq-status-card {
     flex-basis: calc(50% - 6px);
   }

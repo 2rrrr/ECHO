@@ -35,6 +35,7 @@ const automixAdvanceHandlers = new Set<(event: AutomixAdvancePayload) => void>()
 
 type SystemPlaybackSource = PlaybackResolvedMediaSource & {
   trackId?: string | null;
+  metadata?: PlaybackStartRequest['metadata'];
   replayGain?: ReplayGainTrackData | null;
 };
 
@@ -234,9 +235,14 @@ const createFallbackAudioStatus = (): AudioStatus => ({
   replayGainMode: 'track',
   replayGainAppliedDb: 0,
   replayGainPreventedClipping: false,
-  currentFilePath: null,
-  currentTrackId: null,
-  durationSeconds: 0,
+    currentFilePath: null,
+    currentTrackId: null,
+    currentTrackTitle: null,
+    currentTrackArtist: null,
+    currentTrackAlbum: null,
+    currentTrackAlbumArtist: null,
+    currentTrackCoverUrl: null,
+    durationSeconds: 0,
   positionSeconds: 0,
   channels: null,
   codec: null,
@@ -396,6 +402,11 @@ const createSystemAudioStatus = (): AudioStatus => {
     replayGainPreventedClipping: systemReplayGainCalculation.preventedClipping,
     currentFilePath: systemAudioSource?.filePath ?? null,
     currentTrackId: systemAudioSource?.trackId ?? null,
+    currentTrackTitle: systemAudioSource?.metadata?.title ?? null,
+    currentTrackArtist: systemAudioSource?.metadata?.artist ?? null,
+    currentTrackAlbum: systemAudioSource?.metadata?.album ?? null,
+    currentTrackAlbumArtist: systemAudioSource?.metadata?.albumArtist ?? null,
+    currentTrackCoverUrl: systemAudioSource?.metadata?.coverUrl ?? null,
     durationSeconds: getSystemDurationSeconds(),
     positionSeconds: getSystemPositionSeconds(),
     channels: probe?.channels ?? null,
@@ -847,7 +858,18 @@ const handleSystemPlaybackFailure = async (
     }
 
     const recoveredStatus = await playSystemSource(
-      { ...resolved, trackId: context.request.item.trackId, replayGain: context.request.item.replayGain ?? null },
+      {
+        ...resolved,
+        trackId: context.request.item.trackId,
+        metadata: {
+          title: context.request.item.title,
+          artist: context.request.item.artist,
+          album: context.request.item.album,
+          albumArtist: context.request.item.albumArtist,
+          coverUrl: context.request.item.coverThumb,
+        },
+        replayGain: context.request.item.replayGain ?? null,
+      },
       startSeconds,
       { generation, request: context.request, allowRecovery: false },
     );
@@ -959,6 +981,7 @@ const playLocalFileWithSystemAudio = (request: PlaybackStartRequest): Promise<Pl
       probe: request.probe,
       durationSeconds: request.probe?.durationSeconds ?? null,
       trackId: request.trackId ?? null,
+      metadata: request.metadata,
       mimeType: null,
       replayGain: request.replayGain ?? null,
     },
@@ -973,7 +996,18 @@ const playMediaItemWithSystemAudio = async (request: PlaybackMediaStartRequest):
   if (generation !== systemPlaybackGeneration) {
     throw new Error(systemPlaybackSupersededMessage);
   }
-  return playSystemSource({ ...resolved, trackId: request.item.trackId, replayGain: request.item.replayGain ?? null }, request.startSeconds, {
+  return playSystemSource({
+    ...resolved,
+    trackId: request.item.trackId,
+    metadata: {
+      title: request.item.title,
+      artist: request.item.artist,
+      album: request.item.album,
+      albumArtist: request.item.albumArtist,
+      coverUrl: request.item.coverThumb,
+    },
+    replayGain: request.item.replayGain ?? null,
+  }, request.startSeconds, {
     generation,
     request,
     allowRecovery: true,

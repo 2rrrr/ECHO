@@ -4299,6 +4299,107 @@ describe('AudioSession playback watchdog', () => {
     }
   });
 
+  it('does not expose a stale first native position through status polling', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'));
+    const reportAudioError = vi.fn();
+    const longProbe = {
+      ...probe('song.flac', 48000),
+      durationSeconds: 120,
+    };
+    const decoder = new PcmChunkDecoder(new Map([[longProbe.filePath, longProbe]]), [pcmBuffer([0, 0, 0, 0])]);
+    class PrePlayingPositionBridge extends FakeBridge {
+      override beginSession(options: { startSeconds?: number } = {}): number {
+        const sessionId = super.beginSession(options);
+        this.positionSeconds = 4.75;
+        this.emit('position', 4.75 * 48000, {
+          positionFrames: 4.75 * 48000,
+          bufferedFrames: 4800,
+          underrunCallbacks: 0,
+          underrunFrames: 0,
+        });
+        return sessionId;
+      }
+    }
+    const bridges: PrePlayingPositionBridge[] = [];
+    const session = createAudioSessionForTest({
+      decoder,
+      createBridge: () => {
+        const bridge = new PrePlayingPositionBridge(48000);
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+      reportAudioError,
+    });
+
+    try {
+      const status = await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-1', output: { outputMode: 'shared' } });
+
+      expect(reportAudioError).not.toHaveBeenCalled();
+      expect(bridges.reduce((total, bridge) => total + bridge.sessionBegins, 0)).toBe(1);
+      expect(decoder.decodeRequests).toHaveLength(1);
+      expect(status.positionSeconds).toBeGreaterThanOrEqual(0);
+      expect(status.positionSeconds).toBeLessThanOrEqual(0.1);
+      expect(bridges[0].positionSeconds).toBeLessThanOrEqual(0.1);
+      expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
+        kind: 'position_jump_suspected',
+        reason: 'guarded_position_jump_ignored',
+        details: expect.objectContaining({
+          firstPositionSample: true,
+          reportedPositionSeconds: 4.75,
+        }),
+      });
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('guards the first playing status when the native clock starts ahead before the first position event', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'));
+    const reportAudioError = vi.fn();
+    const longProbe = {
+      ...probe('song.flac', 48000),
+      durationSeconds: 120,
+    };
+    const decoder = new PcmChunkDecoder(new Map([[longProbe.filePath, longProbe]]), [pcmBuffer([0, 0, 0, 0])]);
+    class AheadStartupClockBridge extends FakeBridge {
+      override beginSession(options: { startSeconds?: number } = {}): number {
+        const sessionId = super.beginSession(options);
+        this.positionSeconds = 4.25;
+        return sessionId;
+      }
+    }
+    const bridges: AheadStartupClockBridge[] = [];
+    const session = createAudioSessionForTest({
+      decoder,
+      createBridge: () => {
+        const bridge = new AheadStartupClockBridge(48000);
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+      reportAudioError,
+    });
+
+    try {
+      const status = await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-1', output: { outputMode: 'shared' } });
+
+      expect(reportAudioError).not.toHaveBeenCalled();
+      expect(status.positionSeconds).toBeGreaterThanOrEqual(0);
+      expect(status.positionSeconds).toBeLessThanOrEqual(0.1);
+      expect(bridges[0].positionSeconds).toBeLessThanOrEqual(0.1);
+      expect(decoder.decodeRequests).toHaveLength(1);
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not inherit the previous track position when the reused native bridge reports a stale first position', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'));

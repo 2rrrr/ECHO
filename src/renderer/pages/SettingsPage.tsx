@@ -2981,7 +2981,9 @@ const SettingSection = ({ id, activeKey, icon: Icon, title, children }: SettingS
   return (
     <section className="settings-section" id={`settings-sec-${id}`} data-visible={isActive}>
       <div className="section-title">
-        <Icon size={18} />
+        <span className="section-title-icon">
+          <Icon size={18} />
+        </span>
         <h2>{title}</h2>
       </div>
       {isActive ? children : null}
@@ -7634,6 +7636,8 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
+  const activeNavItem = settingsNavItems.find((item) => item.key === activeSection) ?? settingsNavItems[0];
+  const ActiveNavIcon = activeNavItem.icon;
   const activeFontValue =
     fontPickerTarget === 'chinese'
       ? appearancePreferences.chineseFontFamily
@@ -7774,7 +7778,16 @@ export const SettingsPage = (): JSX.Element => {
   return (
     <div className="settings-page no-drag">
       <header className="settings-header">
-        <h1>{t('route.settings.label')}</h1>
+        <div className="settings-header-copy">
+          <h1>{t('route.settings.label')}</h1>
+          <div className="settings-header-context">
+            <span className="settings-header-context-icon">
+              <ActiveNavIcon size={14} aria-hidden="true" />
+            </span>
+            <span>{t(activeNavItem.labelKey)}</span>
+            <em>{t(activeNavItem.descriptionKey)}</em>
+          </div>
+        </div>
         <label className="settings-search">
           <Search size={16} aria-hidden="true" />
           <input
@@ -7820,9 +7833,12 @@ export const SettingsPage = (): JSX.Element => {
                 className={`settings-nav-item ${isActive ? 'active' : ''} ${isDanger ? 'is-danger' : ''}`}
                 key={item.key}
                 type="button"
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => handleNavClick(item.key)}
               >
-                <Icon size={17} />
+                <span className="settings-nav-icon">
+                  <Icon size={17} />
+                </span>
                 <span className="settings-nav-copy">
                   <span className="settings-nav-label">{t(item.labelKey)}</span>
                   <span className="settings-nav-desc">{t(item.descriptionKey)}</span>

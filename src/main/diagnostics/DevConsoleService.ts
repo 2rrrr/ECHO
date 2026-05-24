@@ -805,6 +805,15 @@ export const openDevConsoleDevTools = (sender: WebContents): void => {
   owner?.webContents.openDevTools({ mode: 'detach' });
 };
 
+export const closeDevConsoleWindow = (): void => {
+  if (!consoleWindow || consoleWindow.isDestroyed()) {
+    consoleWindow = null;
+    return;
+  }
+
+  consoleWindow.close();
+};
+
 export const openDevConsoleWindow = (): void => {
   initializeDevConsoleCapture();
 

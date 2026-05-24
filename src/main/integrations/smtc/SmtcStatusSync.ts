@@ -114,26 +114,44 @@ const resolveCoverPath = (coverId: string | null): string | null => {
 };
 
 export const createSmtcMetadataFromStatus = (status: AudioStatus): SmtcTrackMetadata => {
-  const track = status.currentTrackId
-    ? (() => {
-        try {
-          return getLibraryService().getTrack(status.currentTrackId ?? '');
-        } catch (error) {
-          logWarn('[SMTC] Failed to load track metadata', {
-            trackId: status.currentTrackId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          recordSmtcDiagnosticError('sync', `Failed to load track metadata: ${error instanceof Error ? error.message : String(error)}`);
-          return null;
+  const library = getLibraryService();
+  const track = (() => {
+    if (status.currentTrackId) {
+      try {
+        const trackById = library.getTrack(status.currentTrackId);
+        if (trackById) {
+          return trackById;
         }
-      })()
-    : null;
+      } catch (error) {
+        logWarn('[SMTC] Failed to load track metadata', {
+          trackId: status.currentTrackId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        recordSmtcDiagnosticError('sync', `Failed to load track metadata: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    if (status.currentFilePath) {
+      try {
+        return library.getTrackByPath(status.currentFilePath);
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  })();
 
   const fileTitle = status.currentFilePath ? basename(status.currentFilePath) : 'ECHO Next';
-  const title = track?.title?.trim() || fileTitle;
-  const artist = track?.artist?.trim() || track?.albumArtist?.trim() || (status.currentFilePath ? 'Local file' : 'ECHO Next');
-  const album = track?.album?.trim() || null;
-  const albumArtist = track?.albumArtist?.trim() || null;
+  const title = track?.title?.trim() || status.currentTrackTitle?.trim() || fileTitle;
+  const artist =
+    track?.artist?.trim() ||
+    track?.albumArtist?.trim() ||
+    status.currentTrackArtist?.trim() ||
+    status.currentTrackAlbumArtist?.trim() ||
+    (status.currentFilePath ? 'Local file' : 'ECHO Next');
+  const album = track?.album?.trim() || status.currentTrackAlbum?.trim() || null;
+  const albumArtist = track?.albumArtist?.trim() || status.currentTrackAlbumArtist?.trim() || null;
 
   return {
     trackId: status.currentTrackId,
@@ -144,7 +162,7 @@ export const createSmtcMetadataFromStatus = (status: AudioStatus): SmtcTrackMeta
     durationSeconds: safeNumber(status.durationSeconds || track?.duration || 0),
     positionSeconds: safeNumber(status.positionSeconds),
     coverPath: resolveCoverPath(track?.coverId ?? null),
-    coverUrl: null,
+    coverUrl: status.currentTrackCoverUrl ?? null,
   };
 };
 

@@ -108,46 +108,62 @@ const parseNeteaseYrcLine = (line: string): LyricLine | null => {
   }
 
   const timeMs = Number(lineMatch[1]);
-  if (!Number.isFinite(timeMs) || timeMs < 0) {
+  const lineDurationMs = Number(lineMatch[2]);
+  if (!Number.isFinite(timeMs) || !Number.isFinite(lineDurationMs) || timeMs < 0 || lineDurationMs < 0) {
     return null;
   }
 
   const content = lineMatch[3] ?? '';
   const matches = [...content.matchAll(neteaseYrcWordPattern)];
-  if (matches.length === 0) {
-    const text = cleanLyricText(content);
+  const textOnlyLine = (): LyricLine | null => {
+    const text = cleanLyricText(content.replace(neteaseYrcWordPattern, ''));
     return text ? { timeMs, ...splitInlineTranslation(text) } : null;
+  };
+
+  if (matches.length === 0) {
+    return textOnlyLine();
   }
 
-  const segments: TimedSegment[] = [];
+  const rawSegments: Array<{ text: string; rawStartMs: number; durationMs: number }> = [];
   for (let index = 0; index < matches.length; index += 1) {
     const match = matches[index];
     if (match.index === undefined) {
-      return null;
+      return textOnlyLine();
     }
 
     const rawStartMs = Number(match[1]);
     const durationMs = Number(match[2]);
     if (!Number.isFinite(rawStartMs) || !Number.isFinite(durationMs) || rawStartMs < 0 || durationMs < 0) {
-      return null;
+      return textOnlyLine();
     }
 
     const textStart = match.index + match[0].length;
     const textEnd = matches[index + 1]?.index ?? content.length;
-    const text = content.slice(textStart, textEnd);
-    const startMs = rawStartMs < timeMs && timeMs - rawStartMs > 1000 ? timeMs + rawStartMs : rawStartMs;
-
-    segments.push({
-      text,
-      startMs,
-      endMs: durationMs > 0 ? startMs + durationMs : null,
-    });
+    rawSegments.push({ text: content.slice(textStart, textEnd), rawStartMs, durationMs });
   }
 
   const text = cleanLyricText(content.replace(neteaseYrcWordPattern, ''));
   if (!text) {
     return null;
   }
+
+  const yrcTimingToleranceMs = 50;
+  const usesRelativeWordTimes =
+    lineDurationMs > 0 &&
+    rawSegments.every((segment) => segment.rawStartMs + segment.durationMs <= lineDurationMs + yrcTimingToleranceMs);
+  const segments: TimedSegment[] = rawSegments.map((segment) => {
+    const startMs = usesRelativeWordTimes
+      ? timeMs + segment.rawStartMs
+      : segment.rawStartMs < timeMs && timeMs - segment.rawStartMs > 1000
+        ? timeMs + segment.rawStartMs
+        : segment.rawStartMs;
+
+    return {
+      text: segment.text,
+      startMs,
+      endMs: segment.durationMs > 0 ? startMs + segment.durationMs : null,
+    };
+  });
 
   return { timeMs, ...attachWordTimings(splitInlineTranslation(text), normalizeWordTimings(segments)) };
 };

@@ -51,6 +51,17 @@ export const PlayerTransport = ({
   onToggleCurrentTrackLiked,
 }: PlayerTransportProps): JSX.Element => (
   <div className="transport">
+    <button
+      className={`icon-button ${isCurrentTrackLiked ? 'is-soft-active' : ''}`}
+      type="button"
+      aria-label={isCurrentTrackLiked ? 'Unlike current track' : 'Like current track'}
+      aria-pressed={isCurrentTrackLiked}
+      title={isCurrentTrackLiked ? 'Unlike' : 'Like'}
+      disabled={!canLikeCurrentTrack}
+      onClick={onToggleCurrentTrackLiked}
+    >
+      <Heart size={17} fill={isCurrentTrackLiked ? 'currentColor' : 'none'} />
+    </button>
     <button className="icon-button" type="button" aria-label="Playback queue" title="Playback queue" onClick={onOpenQueue}>
       <ListMusic size={17} />
     </button>
@@ -88,17 +99,6 @@ export const PlayerTransport = ({
     </button>
     <button className="icon-button" type="button" aria-label="MV" title="MV" onClick={onOpenMv}>
       <Film size={17} />
-    </button>
-    <button
-      className={`icon-button ${isCurrentTrackLiked ? 'is-soft-active' : ''}`}
-      type="button"
-      aria-label={isCurrentTrackLiked ? 'Unlike current track' : 'Like current track'}
-      aria-pressed={isCurrentTrackLiked}
-      title={isCurrentTrackLiked ? 'Unlike' : 'Like'}
-      disabled={!canLikeCurrentTrack}
-      onClick={onToggleCurrentTrackLiked}
-    >
-      <Heart size={17} fill={isCurrentTrackLiked ? 'currentColor' : 'none'} />
     </button>
   </div>
 );

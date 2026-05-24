@@ -23,6 +23,14 @@ export type PlaybackProbeHint = {
   beatOffsetMs?: number | null;
 };
 
+export type PlaybackTrackMetadataHint = {
+  title?: string | null;
+  artist?: string | null;
+  album?: string | null;
+  albumArtist?: string | null;
+  coverUrl?: string | null;
+};
+
 export type PlaybackAutomixOptions = {
   enabled?: boolean;
   maxTransitionSeconds?: number;
@@ -44,6 +52,7 @@ export type PlaybackGaplessOptions = {
 export type PlaybackStartRequest = {
   filePath: string;
   trackId?: string;
+  metadata?: PlaybackTrackMetadataHint;
   startSeconds?: number;
   output?: AudioOutputSettings;
   probe?: PlaybackProbeHint;

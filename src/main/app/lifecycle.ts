@@ -38,6 +38,7 @@ import { closeDefaultLibraryDatabaseManager, getLibraryDatabaseManager } from '.
 import { isLibraryRecoveryMode } from './libraryRecoveryMode';
 import { applyNetworkProxySettings } from '../network/proxySettings';
 import { markStartupStage, openSafeModeStartupConsoleIfEnabled } from '../diagnostics/StartupDiagnostics';
+import { closeDevConsoleWindow } from '../diagnostics/DevConsoleService';
 import { restoreDesktopLyricsWindowOnStartup } from './desktopLyricsWindow';
 
 const sendAccountStatusesChanged = (statuses: AccountStatus[]): void => {
@@ -343,6 +344,7 @@ export const registerAppLifecycle = (): void => {
   let gracefulQuitCompleted = false;
 
   const cleanupBeforeQuit = async (): Promise<void> => {
+    closeDevConsoleWindow();
     savePlaybackMemoryNow();
     disposeLastFmIntegration();
     disposeDiscordPresenceIntegration();

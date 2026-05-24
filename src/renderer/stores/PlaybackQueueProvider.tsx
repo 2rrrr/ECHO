@@ -850,6 +850,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const playbackStatusTokensRef = useRef<WeakMap<PlaybackStatus, number>>(new WeakMap());
   const playbackStatusPreviousItemRef = useRef<WeakMap<PlaybackStatus, QueueItem | null>>(new WeakMap());
   const cancelLocalPrepareRef = useRef<(() => void) | null>(null);
+  const cancelPlaybackSessionPersistRef = useRef<(() => void) | null>(null);
   const sessionHydratedRef = useRef(sessionHydrated);
 
   const setItems = useCallback((nextItems: QueueItem[] | ((current: QueueItem[]) => QueueItem[])): void => {
@@ -979,6 +980,23 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     writeAutomixEnabledMemory(snapshot.mode.automixEnabled);
   }, [createCurrentPersistedSession, setResumeMemory]);
 
+  const cancelScheduledPlaybackSessionPersistence = useCallback((): void => {
+    cancelPlaybackSessionPersistRef.current?.();
+    cancelPlaybackSessionPersistRef.current = null;
+  }, []);
+
+  const schedulePlaybackSessionPersistence = useCallback((): void => {
+    if (!sessionHydratedRef.current) {
+      return;
+    }
+
+    cancelScheduledPlaybackSessionPersistence();
+    cancelPlaybackSessionPersistRef.current = deferQueueBackgroundTask(() => {
+      cancelPlaybackSessionPersistRef.current = null;
+      void persistPlaybackSessionNow();
+    });
+  }, [cancelScheduledPlaybackSessionPersistence, persistPlaybackSessionNow]);
+
   const applyPlaybackSettings = useCallback((settings: Partial<AppSettings> | null | undefined): void => {
     const enabled = settings?.gaplessPlaybackEnabled === true;
     gaplessPlaybackEnabledRef.current = enabled;
@@ -1063,17 +1081,29 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      void persistPlaybackSessionNow();
-    }, 350);
+    schedulePlaybackSessionPersistence();
 
     return () => {
-      window.clearTimeout(timeoutId);
+      cancelScheduledPlaybackSessionPersistence();
     };
-  }, [automixEnabled, currentQueueId, currentTrackId, history, items, lastPlayedTrack, persistPlaybackSessionNow, repeatMode, resumeMemory, sessionHydrated, isShuffleEnabled]);
+  }, [
+    automixEnabled,
+    cancelScheduledPlaybackSessionPersistence,
+    currentQueueId,
+    currentTrackId,
+    history,
+    items,
+    lastPlayedTrack,
+    repeatMode,
+    resumeMemory,
+    schedulePlaybackSessionPersistence,
+    sessionHydrated,
+    isShuffleEnabled,
+  ]);
 
   useEffect(() => {
     const flush = (): void => {
+      cancelScheduledPlaybackSessionPersistence();
       void persistPlaybackSessionNow();
     };
 
@@ -1084,7 +1114,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('beforeunload', flush);
     };
-  }, [persistPlaybackSessionNow]);
+  }, [cancelScheduledPlaybackSessionPersistence, persistPlaybackSessionNow]);
 
   useEffect(() => {
     const unsubscribe = window.echo?.connect?.onReceiverStatus?.((status) => {
@@ -1618,6 +1648,13 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
                 : playback.playLocalFile({
                     filePath: track.path,
                     trackId: track.id,
+                    metadata: {
+                      title: track.title,
+                      artist: track.artist,
+                      album: track.album,
+                      albumArtist: track.albumArtist,
+                      coverUrl: track.coverThumb,
+                    },
                     startSeconds: resumeStartSeconds,
                     output,
                     probe: createProbeFromTrack(track),
@@ -1744,9 +1781,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         autoSearchMv(item.track.id);
       }
       prepareNextMediaItem(item);
-      void persistPlaybackSessionNow();
+      schedulePlaybackSessionPersistence();
     },
-    [autoSearchMv, persistPlaybackSessionNow, prepareNextMediaItem, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack],
+    [autoSearchMv, prepareNextMediaItem, schedulePlaybackSessionPersistence, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack],
   );
 
   useEffect(() => {
@@ -1767,13 +1804,13 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       setLastPlayedTrack(next.track);
       void startPlaybackHistorySession(next);
       prepareNextMediaItem(next);
-      void persistPlaybackSessionNow();
+      schedulePlaybackSessionPersistence();
     });
 
     return () => {
       unsubscribe?.();
     };
-  }, [finishPlaybackHistorySession, persistPlaybackSessionNow, prepareNextMediaItem, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack, startPlaybackHistorySession]);
+  }, [finishPlaybackHistorySession, prepareNextMediaItem, schedulePlaybackSessionPersistence, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack, startPlaybackHistorySession]);
 
   const replaceQueue = useCallback(
     (tracks: LibraryTrack[], options: ReplaceQueueOptions = {}): void => {

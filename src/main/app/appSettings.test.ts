@@ -127,8 +127,10 @@ describe('app settings normalization', () => {
     expect(settings.lyricsCoverBlurPx).toBe(10);
     expect(settings.lyricsCoverBrightnessPercent).toBe(100);
     expect(settings.lyricsBackgroundScalePercent).toBe(100);
-    expect(settings.desktopLyricsFontFamily).toBe('Outfit');
+    expect(settings.desktopLyricsFontFamily).toBe('Microsoft YaHei');
     expect(settings.desktopLyricsFontFilePath).toBeNull();
+    expect(settings.desktopLyricsRomanizationEnabled).toBe(true);
+    expect(settings.desktopLyricsTranslationEnabled).toBe(true);
     expect(settings.mvEnabled).toBe(true);
     expect(settings.mvEnabledProviders).toEqual(['bilibili', 'youtube']);
     expect(settings.mvProviderOrder).toEqual(['bilibili', 'youtube']);
@@ -1060,6 +1062,8 @@ describe('app settings normalization', () => {
         lyricsCoverBlurPx: 999,
         lyricsCoverBrightnessPercent: 12,
         lyricsBackgroundScalePercent: 999,
+        desktopLyricsRomanizationEnabled: false,
+        desktopLyricsTranslationEnabled: false,
       }),
     ).toMatchObject({
       lyricsNetworkEnabled: false,
@@ -1103,6 +1107,8 @@ describe('app settings normalization', () => {
       lyricsCoverBlurPx: 60,
       lyricsCoverBrightnessPercent: 40,
       lyricsBackgroundScalePercent: 180,
+      desktopLyricsRomanizationEnabled: false,
+      desktopLyricsTranslationEnabled: false,
     });
 
 
@@ -1149,6 +1155,8 @@ describe('app settings normalization', () => {
       lyricsRomanizationEnabled: true,
       lyricsTranslationEnabled: true,
       lyricsWordHighlightEnabled: true,
+      desktopLyricsRomanizationEnabled: true,
+      desktopLyricsTranslationEnabled: true,
     });
   });
 

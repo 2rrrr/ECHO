@@ -95,11 +95,12 @@ const renderEqPanel = (status: AudioStatus | null = audioStatus): ReturnType<typ
   );
 
 const showAdvancedEqTools = async (): Promise<void> => {
-  fireEvent.click(await screen.findByRole('button', { name: 'PEQ Console' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Pro' }));
 };
 
 beforeEach(() => {
   window.localStorage.setItem('echo-next.locale', 'en-US');
+  window.localStorage.removeItem('echo-next.eq.uiMode');
   const currentState = eqState({
     bands: bands.map((band, index) => (index === 1 ? { ...band, gainDb: 6 } : band)),
   });
@@ -162,22 +163,24 @@ afterEach(() => {
 });
 
 describe('EqPanel', () => {
-  it('renders the HiFi graphic EQ panel with response curve and status cards', async () => {
+  it('renders Simple mode with the core EQ workflow first', async () => {
     renderEqPanel();
 
     await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
-    expect(screen.getByText('Parametric EQ Workbench')).toBeTruthy();
-    expect(screen.getByText('Realtime PEQ, headroom management, and output profiles')).toBeTruthy();
-    expect(screen.getByText('Signal Path')).toBeTruthy();
-    expect(screen.getByText('Selected band console')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'EQ' })).toBeTruthy();
+    expect(screen.getByText('Sound curve, safe headroom, and advanced tuning')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Simple' }).dataset.active).toBe('true');
+    expect(screen.queryByText('Signal Path')).toBeNull();
+    expect(screen.queryByText('Selected band console')).toBeNull();
+    expect(screen.queryByLabelText('Q')).toBeNull();
     expect(screen.getAllByText('Headroom').length).toBeGreaterThan(0);
     expect(screen.getByText('Bit-perfect')).toBeTruthy();
   });
 
-  it('hides advanced EQ workbench controls until explicitly enabled', async () => {
+  it('keeps the full professional tools behind Pro mode', async () => {
     renderEqPanel();
 
-    expect(await screen.findByRole('button', { name: 'PEQ Console' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Pro' })).toBeTruthy();
     expect(screen.queryByLabelText('Unlock frequency')).toBeNull();
     expect(screen.queryByLabelText('Q')).toBeNull();
     expect(screen.queryByLabelText('EQ profile name')).toBeNull();
@@ -185,6 +188,8 @@ describe('EqPanel', () => {
 
     await showAdvancedEqTools();
 
+    expect(screen.getByRole('button', { name: 'Pro' }).dataset.active).toBe('true');
+    expect(screen.getByText('Signal Path')).toBeTruthy();
     expect(await screen.findByLabelText('Unlock frequency')).toBeTruthy();
     expect(screen.getByLabelText('Q')).toBeTruthy();
     expect(screen.getByLabelText('EQ profile name')).toBeTruthy();
@@ -248,6 +253,7 @@ describe('EqPanel', () => {
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 500 }));
 
+    await showAdvancedEqTools();
     fireEvent.click(screen.getByRole('button', { name: 'Reset selected' }));
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0 }));
   });
@@ -485,6 +491,7 @@ describe('EqPanel', () => {
 
   it('shows channel balance controls and clamps channel balance patches', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     fireEvent.change(await screen.findByLabelText('Balance'), { target: { value: '400' } });
     fireEvent.change(screen.getByLabelText('Left Gain'), { target: { value: '-50' } });
@@ -497,6 +504,7 @@ describe('EqPanel', () => {
 
   it('resets monitor tools without changing balance or gain trim', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Reset monitor tools' }));
 
@@ -513,6 +521,7 @@ describe('EqPanel', () => {
 
   it('shows channel calibration effective gain and resets trims separately', async () => {
     renderEqPanel();
+    await showAdvancedEqTools();
 
     fireEvent.click(await screen.findByLabelText('Calibration mode'));
     expect(screen.getByText('Effective L')).toBeTruthy();

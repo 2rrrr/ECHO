@@ -905,6 +905,113 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
   background: var(--echo-polish-active-bg);
 }
 
+/* Settings console pass: keep the preferences surface precise across polish/theme layers. */
+.settings-header {
+  padding-bottom: 22px;
+}
+
+.settings-header-copy {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.settings-header-context {
+  color: var(--theme-muted-text);
+}
+
+.settings-header-context-icon,
+.section-title-icon,
+.settings-nav-item.active .settings-nav-icon {
+  color: var(--theme-accent-text);
+  border-color: color-mix(in srgb, var(--theme-accent-border) 70%, transparent);
+  background: color-mix(in srgb, var(--theme-accent-bg) 76%, transparent);
+}
+
+.settings-body {
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 30px;
+}
+
+.settings-nav {
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--theme-panel-border) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-panel-bg) 54%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-panel-bg-muted) 82%, transparent),
+    0 12px 28px rgba(29, 43, 62, 0.045);
+}
+
+.settings-nav-item {
+  border-radius: 6px;
+}
+
+.settings-nav-icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 6px;
+}
+
+.settings-nav-item.active {
+  color: var(--theme-heading-text);
+  border-color: color-mix(in srgb, var(--theme-accent-border) 74%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--theme-accent-bg) 80%, transparent), transparent 82%),
+    var(--theme-list-row-bg-active);
+  box-shadow: inset 3px 0 0 var(--theme-accent-text);
+}
+
+.settings-nav-item.is-danger.active {
+  border-color: color-mix(in srgb, var(--theme-danger-border) 78%, transparent);
+  box-shadow: inset 3px 0 0 var(--theme-danger-text);
+}
+
+.settings-page .section-title {
+  margin-bottom: 12px;
+  padding-bottom: 18px;
+  color: var(--theme-muted-text);
+  border-bottom-color: color-mix(in srgb, var(--theme-panel-border) 72%, transparent);
+}
+
+.settings-page .section-title h2 {
+  color: var(--theme-heading-text);
+  font-size: 22px;
+  font-weight: 860;
+}
+
+.settings-page .setting-row {
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, auto);
+  gap: 32px;
+  min-height: 74px;
+  padding: 16px 0;
+  border-bottom-color: color-mix(in srgb, var(--theme-list-row-border) 78%, transparent);
+}
+
+.settings-page .setting-row > :not(.setting-info) {
+  justify-self: end;
+}
+
+.settings-page .setting-row:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--theme-list-row-bg-hover) 62%, transparent), transparent 84%);
+}
+
+.settings-page .setting-info p {
+  max-width: 620px;
+}
+
+.settings-page .setting-row--compact-panel {
+  grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
+  gap: 28px;
+}
+
+.settings-page .setting-row--full > :not(.setting-info),
+.settings-page .setting-row--compact-panel > :not(.setting-info) {
+  justify-self: stretch;
+}
+
 @media (max-width: 980px) {
   .nav-item {
     padding-inline: 6px;
@@ -937,5 +1044,101 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
 
   .settings-section {
     padding: 18px;
+  }
+
+  .settings-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .settings-header-context {
+    max-width: 100%;
+  }
+
+  .settings-body {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .settings-nav {
+    padding: 4px 0 8px;
+    border: 0;
+    border-radius: 0;
+    background: inherit;
+    box-shadow: none;
+  }
+
+  .settings-nav-item {
+    width: max-content;
+    min-width: 44px;
+    grid-template-columns: 26px;
+    justify-content: center;
+  }
+
+  .settings-page .setting-row,
+  .settings-page .setting-row--compact-panel {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    min-height: 0;
+    padding: 14px 0;
+  }
+
+  .settings-page .setting-row > :not(.setting-info),
+  .settings-page .setting-row--full > :not(.setting-info),
+  .settings-page .setting-row--compact-panel > :not(.setting-info) {
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .settings-search {
+    grid-column: 1 / -1;
+  }
+
+  .settings-body {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    align-self: stretch;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 4px 0 8px;
+    border: 0;
+    border-radius: 0;
+    background: inherit;
+    box-shadow: none;
+  }
+
+  .settings-nav-item {
+    width: max-content;
+    min-width: 44px;
+    min-height: 42px;
+    grid-template-columns: 26px;
+    justify-content: center;
+    padding: 8px 10px;
+  }
+
+  .settings-nav-copy {
+    display: none;
+  }
+
+  .settings-page .setting-row,
+  .settings-page .setting-row--compact-panel {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    min-height: 0;
+    padding: 14px 0;
+  }
+
+  .settings-page .setting-row > :not(.setting-info),
+  .settings-page .setting-row--full > :not(.setting-info),
+  .settings-page .setting-row--compact-panel > :not(.setting-info) {
+    justify-self: stretch;
   }
 }
