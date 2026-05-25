@@ -6,6 +6,7 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<{
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
+  text?: () => Promise<string>;
 }>;
 
 export type BandsintownEventsRequest = {
@@ -68,6 +69,16 @@ type TicketmasterEvent = {
   images?: unknown;
 };
 
+type EventernoteEventsRequest = {
+  artistId?: string | null;
+  artistName: string;
+  region?: string | null;
+  force?: boolean;
+  timeoutMs?: number;
+  fetcher?: FetchLike;
+  now?: Date;
+};
+
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -76,6 +87,10 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const normalizeFilterText = (value: string): string => value.trim().toLocaleLowerCase();
 const successTtlMs = 30 * 24 * 60 * 60 * 1000;
 const shortTtlMs = 60 * 60 * 1000;
+const fallbackTtlMs = 12 * 60 * 60 * 1000;
+const maxFallbackEvents = 12;
+const eventernoteBaseUrl = 'https://www.eventernote.com';
+let lastFallbackFetchAt = 0;
 
 const normalizeCacheText = (value: string | null | undefined): string =>
   (value ?? '')
@@ -97,6 +112,59 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 
 const cacheKeyFor = (source: ArtistConcertEvent['source'], artistId: string | null | undefined, artistName: string, region: string | null): string =>
   `${source}:${artistId?.trim() || normalizeCacheText(artistName)}:${normalizeCacheText(region)}`;
+
+const decodeHtml = (value: string): string =>
+  value
+    .replace(/<br\s*\/?>/giu, ' ')
+    .replace(/<[^>]+>/gu, ' ')
+    .replace(/&nbsp;/giu, ' ')
+    .replace(/&amp;/giu, '&')
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;/giu, "'")
+    .replace(/&lt;/giu, '<')
+    .replace(/&gt;/giu, '>')
+    .replace(/&#(\d+);/gu, (_match, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/giu, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+const eventernoteSearchUrl = (artistName: string): string => {
+  const params = new URLSearchParams({
+    keyword: artistName.trim(),
+    facet: '1',
+    limit: '30',
+    sort: 'event_date',
+    order: 'ASC',
+  });
+  return `${eventernoteBaseUrl}/events/search?${params.toString()}`;
+};
+
+const eventernoteCandidateUrls = (artistName: string): string[] => {
+  const normalized = normalizeCacheText(artistName);
+  const urls = [eventernoteSearchUrl(artistName)];
+  if (normalized === 'mygo') {
+    urls.unshift(`${eventernoteBaseUrl}/actors/MyGO%21%21%21%21%21/66346`);
+  }
+  return Array.from(new Set(urls));
+};
+
+const fallbackSourceCandidates = (artistName: string): NonNullable<ArtistConcertInfo['candidateSources']> => [
+  {
+    source: 'eventernote',
+    label: 'Eventernote',
+    url: eventernoteSearchUrl(artistName),
+  },
+  {
+    source: 'songkick',
+    label: 'Songkick',
+    url: `https://www.songkick.com/search?query=${encodeURIComponent(artistName.trim())}`,
+  },
+  {
+    source: 'eplus',
+    label: 'eplus',
+    url: `https://eplus.jp/sf/search?keyword=${encodeURIComponent(artistName.trim())}`,
+  },
+];
 
 const matchesRegion = (event: ArtistConcertEvent, region: string | null | undefined): boolean => {
   const filter = normalizeFilterText(region ?? '');
@@ -242,6 +310,68 @@ const parseTicketmasterEvent = (value: unknown): ArtistConcertEvent | null => {
   };
 };
 
+const eventernoteStartsAt = (dateText: string, block: string): string | null => {
+  const time = block.match(/開演\s*(\d{1,2}):(\d{2})/u);
+  const hour = time?.[1]?.padStart(2, '0') ?? '00';
+  const minute = time?.[2] ?? '00';
+  return /^\d{4}-\d{2}-\d{2}$/u.test(dateText) ? `${dateText}T${hour}:${minute}:00` : null;
+};
+
+const parseEventernoteEvents = (html: string, request: Pick<EventernoteEventsRequest, 'artistName' | 'region' | 'now'>): ArtistConcertEvent[] => {
+  const now = request.now ?? new Date();
+  const blocks = html.match(/<li class="clearfix[\s\S]*?(?=<li class="clearfix|\n\s*<\/ul>\s*<\/div>)/gu) ?? [];
+  const events: ArtistConcertEvent[] = [];
+  const artistNeedle = normalizeCacheText(request.artistName);
+
+  for (const block of blocks) {
+    const date = block.match(/<p class="day\d*">(\d{4}-\d{2}-\d{2})/u)?.[1] ?? null;
+    const eventLink = block.match(/<h4>\s*<a href="([^"]+)">([\s\S]*?)<\/a>\s*<\/h4>/u);
+    const venueMatch = block.match(/会場:\s*<a [^>]*>([\s\S]*?)<\/a>/u);
+    const imageMatch = block.match(/<img src="([^"]+)"[^>]*alt="([^"]*)"/u);
+    const eventId = eventLink?.[1]?.match(/\/events\/(\d+)/u)?.[1] ?? null;
+    const title = eventLink ? decodeHtml(eventLink[2]) : null;
+    const startsAt = date ? eventernoteStartsAt(date, block) : null;
+
+    if (!eventLink || !eventId || !title || !startsAt || Date.parse(startsAt) < now.getTime()) {
+      continue;
+    }
+
+    const blockText = normalizeCacheText(decodeHtml(block));
+    if (artistNeedle && !blockText.includes(artistNeedle)) {
+      continue;
+    }
+
+    const url = new URL(eventLink[1], eventernoteBaseUrl).toString();
+    const imageUrl = imageMatch?.[1] ? new URL(imageMatch[1], eventernoteBaseUrl).toString() : null;
+    const venueName = venueMatch ? decodeHtml(venueMatch[1]) || null : null;
+    const event: ArtistConcertEvent = {
+      id: `eventernote:${eventId}`,
+      source: 'eventernote',
+      sourceLabel: 'Eventernote',
+      title,
+      startsAt,
+      timezone: 'Asia/Tokyo',
+      timeTbd: false,
+      venueName,
+      city: null,
+      region: null,
+      country: 'Japan',
+      url,
+      ticketUrl: url,
+      venueUrl: null,
+      imageUrl,
+    };
+
+    if (matchesRegion(event, request.region)) {
+      events.push(event);
+    }
+  }
+
+  return events
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
+    .slice(0, maxFallbackEvents);
+};
+
 const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: number, source: ArtistConcertEvent['source']): Promise<unknown> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -257,6 +387,35 @@ const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: 
       throw new Error(`${source}_request_failed:${response.status}`);
     }
     return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const fetchTextWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: number, source: ArtistConcertEvent['source']): Promise<string> => {
+  const waitMs = Math.max(0, 1200 - (Date.now() - lastFallbackFetchAt));
+  if (waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  lastFallbackFetchAt = Date.now();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetcher(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': 'ECHO-Next/26.5.19',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`${source}_request_failed:${response.status}`);
+    }
+    if (!response.text) {
+      throw new Error(`${source}_text_unavailable`);
+    }
+    return response.text();
   } finally {
     clearTimeout(timer);
   }
@@ -312,6 +471,18 @@ export class ArtistEventsService {
     }
 
     const results = await Promise.all(tasks);
+    if (results.every((result) => result.events.length === 0)) {
+      results.push(await this.getEventernoteEvents({
+        artistId: request.artistId,
+        artistName,
+        region,
+        force: request.force,
+        timeoutMs: Math.min(request.timeoutMs ?? 7000, 4500),
+        fetcher: request.fetcher,
+        now,
+      }));
+    }
+
     const sources = Array.from(new Set(results.flatMap((result) => result.sources)));
     const deduped = new Map<string, ArtistConcertEvent>();
     for (const event of results.flatMap((result) => result.events)) {
@@ -340,7 +511,82 @@ export class ArtistEventsService {
       events,
       fetchedAt: results.find((result) => result.fetchedAt)?.fetchedAt ?? now.toISOString(),
       message: status === 'unavailable' ? results.find((result) => result.message)?.message : undefined,
+      candidateSources: results.flatMap((result) => result.candidateSources ?? []),
     };
+  }
+
+  async getEventernoteEvents(request: EventernoteEventsRequest): Promise<ArtistConcertInfo> {
+    const artistName = request.artistName.trim();
+    const region = request.region?.trim() || null;
+    const now = request.now ?? new Date();
+    const fetchedAt = now.toISOString();
+    const cacheKey = cacheKeyFor('eventernote', request.artistId, artistName, region);
+
+    if (!artistName) {
+      return {
+        status: 'not_configured',
+        region,
+        sources: [],
+        events: [],
+        fetchedAt: null,
+        message: 'Artist name is empty.',
+      };
+    }
+
+    if (request.force !== true) {
+      const cached = this.readEventCache(cacheKey, now);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    try {
+      const fetchedEvents: ArtistConcertEvent[] = [];
+      for (const url of eventernoteCandidateUrls(artistName)) {
+        const html = await fetchTextWithTimeout(
+          url,
+          request.fetcher ?? this.fetcher,
+          request.timeoutMs ?? 4500,
+          'eventernote',
+        );
+        fetchedEvents.push(...parseEventernoteEvents(html, { artistName, region, now }));
+        if (fetchedEvents.length > 0) {
+          break;
+        }
+      }
+
+      const deduped = new Map<string, ArtistConcertEvent>();
+      for (const event of fetchedEvents) {
+        deduped.set(event.id, event);
+      }
+      const events = Array.from(deduped.values())
+        .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
+        .slice(0, maxFallbackEvents);
+
+      const result: ArtistConcertInfo = {
+        status: 'ready',
+        region,
+        sources: ['eventernote'],
+        events,
+        fetchedAt,
+        message: events.length ? undefined : 'No upcoming Eventernote events matched this artist and region.',
+        candidateSources: fallbackSourceCandidates(artistName),
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    } catch (error) {
+      const result: ArtistConcertInfo = {
+        status: 'unavailable',
+        region,
+        sources: ['eventernote'],
+        events: [],
+        fetchedAt,
+        message: error instanceof Error ? error.message : String(error),
+        candidateSources: fallbackSourceCandidates(artistName),
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    }
   }
 
   async getBandsintownEvents(request: BandsintownEventsRequest): Promise<ArtistConcertInfo> {

@@ -39,6 +39,22 @@ const track = (): LibraryTrack => ({
   fieldSources: {},
 });
 
+const createWritableDatabase = (row: Record<string, unknown> | null = null): { database: EchoDatabase; run: ReturnType<typeof vi.fn> } => {
+  const run = vi.fn();
+  const database = {
+    prepare: vi.fn((sql: string) => {
+      if (sql.startsWith('SELECT *')) {
+        return { get: vi.fn(() => row) };
+      }
+      if (sql.startsWith('PRAGMA')) {
+        return { all: vi.fn(() => [{ name: 'cache_key' }, { name: 'information_json' }]) };
+      }
+      return { run };
+    }),
+  } as unknown as EchoDatabase;
+  return { database, run };
+};
+
 describe('AlbumOnlineInfoService', () => {
   it('returns fresh cache without touching network providers', async () => {
     const fetchMock = vi.fn();
@@ -164,6 +180,23 @@ describe('AlbumOnlineInfoService', () => {
       }
       if (url.pathname.includes('/w/api.php')) {
         const title = url.searchParams.get('titles') ?? '';
+        if (url.searchParams.get('prop') === 'extlinks') {
+          return {
+            ok: true,
+            json: async () => ({
+              query: {
+                pages: {
+                  1: {
+                    extlinks: [
+                      { url: title.includes('Artist') ? 'https://artist.example.test/official' : 'https://album.example.test/official' },
+                      { '*': 'mailto:ignored@example.test' },
+                    ],
+                  },
+                },
+              },
+            }),
+          };
+        }
         return {
           ok: true,
           json: async () => ({
@@ -186,9 +219,102 @@ describe('AlbumOnlineInfoService', () => {
     const result = await new AlbumOnlineInfoService(database).getAlbumOnlineInfo({ album: album(), tracks: [track()] }, { locale: 'en-US' });
 
     expect(result.information?.extract).toBe('Long album background paragraph with release context.');
+    expect(result.information?.externalLinks).toEqual([{ label: 'album.example.test / official', url: 'https://album.example.test/official' }]);
     expect(result.artistInformation?.extract).toContain('career details');
+    expect(result.artistInformation?.externalLinks).toEqual([{ label: 'artist.example.test / official', url: 'https://artist.example.test/official' }]);
     expect(result.artistInformation?.extract).toContain('\n\n');
     expect(result.artistInformation?.extract).not.toBe('Short summary.');
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects unrelated Wikipedia album pages even when the album title is a partial search hit', async () => {
+    const { database } = createWritableDatabase();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(input.toString());
+      if (url.hostname === 'musicbrainz.org') {
+        return {
+          ok: true,
+          json: async () => ({ releases: [] }),
+        };
+      }
+      if (url.pathname.includes('/w/rest.php/v1/search/page')) {
+        return {
+          ok: true,
+          json: async () => ({
+            pages: [
+              {
+                key: '洞穴奇案',
+                title: '洞穴奇案',
+              },
+            ],
+          }),
+        };
+      }
+      throw new Error(`unexpected_url:${url.toString()}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new AlbumOnlineInfoService(database).getAlbumOnlineInfo({
+      album: { ...album(), title: 'Explorers', albumArtist: 'Hinkik', year: 2015 },
+      tracks: [{ ...track(), title: 'Explorers', album: 'Explorers', albumArtist: 'Hinkik', artist: 'Hinkik', year: 2015 }],
+    });
+
+    expect(result.information).toBeNull();
+    expect(result.artistInformation).toBeNull();
+    expect(result.sources.some((source) => source.provider === 'wikipedia')).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/api/rest_v1/page/summary/'), expect.anything());
+    vi.unstubAllGlobals();
+  });
+
+  it('ignores stale cached Wikipedia information that no longer matches the album or artist', async () => {
+    const staleRow = {
+      status: 'ready',
+      credits_json: JSON.stringify([]),
+      information_json: JSON.stringify({
+        version: 2,
+        album: {
+          title: '洞穴奇案',
+          description: 'Legal philosophy',
+          extract: '洞穴奇案是著名法学家富勒提出的法理虚拟案例。',
+          url: 'https://zh.wikipedia.org/wiki/洞穴奇案',
+          language: 'zh',
+          thumbnailUrl: null,
+        },
+        artist: null,
+      }),
+      match_json: JSON.stringify(null),
+      sources_json: JSON.stringify([{ provider: 'wikipedia', label: 'zh.wikipedia.org' }]),
+      provider_errors_json: JSON.stringify([]),
+      fetched_at: now,
+      expires_at: '2999-01-01T00:00:00.000Z',
+    };
+    const { database } = createWritableDatabase(staleRow);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(input.toString());
+      if (url.hostname === 'musicbrainz.org') {
+        return {
+          ok: true,
+          json: async () => ({ releases: [] }),
+        };
+      }
+      if (url.pathname.includes('/w/rest.php/v1/search/page')) {
+        return {
+          ok: true,
+          json: async () => ({ pages: [] }),
+        };
+      }
+      throw new Error(`unexpected_url:${url.toString()}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new AlbumOnlineInfoService(database).getAlbumOnlineInfo({
+      album: { ...album(), title: 'Explorers', albumArtist: 'Hinkik', year: 2015 },
+      tracks: [{ ...track(), title: 'Explorers', album: 'Explorers', albumArtist: 'Hinkik', artist: 'Hinkik', year: 2015 }],
+    });
+
+    expect(result.fromCache).toBe(false);
+    expect(result.information).toBeNull();
+    expect(result.sources.some((source) => source.provider === 'wikipedia')).toBe(false);
     vi.unstubAllGlobals();
   });
 });

@@ -228,6 +228,35 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(status.debugEvents.some((event) => event.action === 'mdns' && event.message?.includes('EADDRINUSE'))).toBe(true);
   });
 
+  it('surfaces unsupported modern AirPlay POST attempts from native logs', async () => {
+    let logHandler: ((event: unknown) => void) | null = null;
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: new FakeAudioSession() as never,
+      getAdvertiseInterfaces: () => [
+        { name: 'Wi-Fi', address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1' },
+      ],
+      createMdnsAdvertiser: () => ({
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+      }),
+      loadRaopModule: async () => ({
+        startReceiver: vi.fn(() => 23),
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+        setLogHandler: vi.fn((handler) => {
+          logHandler = handler;
+        }),
+      }),
+    });
+
+    await service.setEnabled(true);
+    logHandler?.({ source: 'raop', level: 'info', line: 'handle_rtsp:591 unknown/unhandled method POST' });
+
+    const status = service.getStatus();
+    expect(status.state).toBe('error');
+    expect(status.error).toContain('unsupported AirPlay RTSP POST');
+  });
+
   it('maps RAOP metadata artwork and PCM events into an AirPlay playback session', async () => {
     const audio = new FakeAudioSession();
     const harness: { handler?: (event: Record<string, unknown>) => void } = {};

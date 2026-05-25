@@ -14,6 +14,26 @@ vi.mock('../../stores/PlaybackQueueProvider', () => ({
   usePlaybackQueue: () => queueMock,
 }));
 
+vi.mock('../../i18n/I18nProvider', () => {
+  const strings: Record<string, string> = {
+    'albumDetail.action.back': 'Albums',
+    'albumDetail.aria.openArtist': 'Open artist {artist}',
+    'albumDetail.online.match': 'MusicBrainz match',
+    'albumDetail.information.artistProfile': 'Artist profile',
+    'albumDetail.information.externalLinks': 'External links',
+    'albumDetail.related.heading': 'My Library',
+    'albumDetail.related.thisAlbum': 'This album',
+    'albumDetail.tab.information': 'Information',
+  };
+
+  return {
+    useI18n: () => ({
+      t: (key: string, options?: Record<string, string | number>) =>
+        Object.entries(options ?? {}).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), strings[key] ?? key),
+    }),
+  };
+});
+
 vi.mock('./AlbumTrackList', async () => {
   const React = await import('react');
 
@@ -101,6 +121,7 @@ const onlineInfo = (): AlbumOnlineInfo => ({
     url: 'https://example.test/album',
     language: 'en',
     thumbnailUrl: null,
+    externalLinks: [{ label: 'example.test / album official', url: 'https://example.test/album-official' }],
   },
   artistInformation: {
     title: 'Echo Unit',
@@ -109,6 +130,7 @@ const onlineInfo = (): AlbumOnlineInfo => ({
     url: 'https://example.test/artist',
     language: 'en',
     thumbnailUrl: null,
+    externalLinks: [{ label: 'example.test / artist official', url: 'https://example.test/artist-official' }],
   },
   fetchedAt: '2026-05-21T00:00:00.000Z',
   expiresAt: '2026-06-21T00:00:00.000Z',
@@ -116,7 +138,23 @@ const onlineInfo = (): AlbumOnlineInfo => ({
   errors: [],
 });
 
-const installLibrary = (): { getAlbumOnlineInfo: ReturnType<typeof vi.fn>; getArtists: ReturnType<typeof vi.fn> } => {
+const relatedAlbum = (): LibraryAlbum => ({
+  ...album(),
+  id: 'album-2',
+  albumKey: 'echo/unit/sister',
+  title: 'Sister Album',
+  year: 2025,
+  trackCount: 8,
+  duration: 2200,
+  coverId: 'cover-2',
+  coverThumb: 'echo-cover://album/cover-2',
+});
+
+const installLibrary = (): {
+  getAlbumOnlineInfo: ReturnType<typeof vi.fn>;
+  getArtists: ReturnType<typeof vi.fn>;
+  getArtistAlbums: ReturnType<typeof vi.fn>;
+} => {
   const getAlbumOnlineInfo = vi.fn().mockResolvedValue(onlineInfo());
   const getArtists = vi.fn().mockResolvedValue({
     items: [artist()],
@@ -125,15 +163,26 @@ const installLibrary = (): { getAlbumOnlineInfo: ReturnType<typeof vi.fn>; getAr
     total: 1,
     hasMore: false,
   });
+  const getArtistAlbums = vi.fn().mockResolvedValue({
+    items: [album(), relatedAlbum()],
+    page: 1,
+    pageSize: 8,
+    total: 2,
+    hasMore: false,
+  });
   window.echo = {
+    app: {
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
+    },
     library: {
       getAlbum: vi.fn().mockResolvedValue({ coverLarge: null }),
       getAlbumOnlineInfo,
       getArtists,
+      getArtistAlbums,
       getLikedAlbumIds: vi.fn().mockResolvedValue({}),
     },
   } as unknown as Window['echo'];
-  return { getAlbumOnlineInfo, getArtists };
+  return { getAlbumOnlineInfo, getArtists, getArtistAlbums };
 };
 
 afterEach(() => {
@@ -178,6 +227,17 @@ describe('AlbumDetailView', () => {
     expect(screen.getByText('Echo Unit artist overview.')).toBeTruthy();
   });
 
+  it('opens information links through the system browser bridge', async () => {
+    installLibrary();
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Information' }));
+    fireEvent.click(await screen.findByRole('link', { name: /album official/i }));
+
+    await waitFor(() => expect(window.echo?.app?.openExternalUrl).toHaveBeenCalledWith('https://example.test/album-official'));
+  });
+
   it('opens the album artist detail from the hero artist name', async () => {
     const { getArtists } = installLibrary();
     const navigate = vi.fn();
@@ -192,5 +252,17 @@ describe('AlbumDetailView', () => {
     expect((navigate.mock.calls[0]?.[0] as CustomEvent).detail.artist.id).toBe('artist-1');
 
     window.removeEventListener('app:navigate:artist-detail', navigate);
+  });
+
+  it('shows the album artist library shelf under the track list', async () => {
+    const { getArtists, getArtistAlbums } = installLibrary();
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    expect(await screen.findByText('My Library')).toBeTruthy();
+    expect(screen.getByText('Sister Album')).toBeTruthy();
+    expect(screen.getByText('This album')).toBeTruthy();
+    expect(getArtists).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Echo Unit', sort: 'default', sourceProvider: 'local' });
+    expect(getArtistAlbums).toHaveBeenCalledWith('artist-1', { page: 1, pageSize: 8, sort: 'recent' });
   });
 });

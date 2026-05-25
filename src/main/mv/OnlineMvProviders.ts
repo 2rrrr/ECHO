@@ -318,9 +318,31 @@ const labelWithFrameRate = (label: string, fps: number | null): string => {
   return new RegExp(`\\b${suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(label) ? label : `${label} ${suffix}`;
 };
 
-const bilibiliStreamVariantId = (streamQn: number, fps: number | null, source: 'dash-video' | 'durl' = 'dash-video'): string => {
+const bilibiliCodecVariantSuffix = (codec: string | null): string => {
+  const normalized = codec?.toLowerCase().trim() ?? '';
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.startsWith('av01')) {
+    return '-av1';
+  }
+  if (normalized.startsWith('avc1')) {
+    return '-avc';
+  }
+  if (normalized.startsWith('hev1') || normalized.startsWith('hvc1')) {
+    return '-hevc';
+  }
+  if (normalized.startsWith('dvhe') || normalized.startsWith('dvh1')) {
+    return '-dolby';
+  }
+
+  return `-${normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 16)}`;
+};
+
+const bilibiliStreamVariantId = (streamQn: number, fps: number | null, source: 'dash-video' | 'durl' = 'dash-video', codec: string | null = null): string => {
   const highFrameRate = fps && fps >= 100 ? `-${frameRateLabel(fps).toLowerCase()}` : '';
-  return `bilibili-${source === 'dash-video' ? 'dash-' : ''}qn-${streamQn}${highFrameRate}`;
+  const codecSuffix = source === 'dash-video' ? bilibiliCodecVariantSuffix(codec) : '';
+  return `bilibili-${source === 'dash-video' ? 'dash-' : ''}qn-${streamQn}${highFrameRate}${codecSuffix}`;
 };
 
 const qualityFromHeight = (
@@ -713,7 +735,8 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       const streamQuality = bilibiliQualityMap[streamQn] ?? inferredQuality;
       const streamUrl = firstUrl(stream.baseUrl, stream.base_url, stream.url, stream.backupUrl, stream.backup_url);
       const variantFps = source === 'dash-video' ? fpsFromDashStream(stream, streamQuality.label) : streamQn === 116 ? 60 : null;
-      const streamId = bilibiliStreamVariantId(streamQn, variantFps, source);
+      const codec = text(stream.codecs);
+      const streamId = bilibiliStreamVariantId(streamQn, variantFps, source, codec);
 
       if (!streamUrl || variants.some((variant) => variant.id === streamId || variant.url === streamUrl)) {
         return;
@@ -726,8 +749,8 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       }
 
       const label = labelWithFrameRate(streamQuality.label, variantFps);
-      const codec = text(stream.codecs);
-      const browserPlayable = source === 'durl' && isBrowserPlayableBilibiliCodec(codec);
+      const browserPlayable = isBrowserPlayableBilibiliCodec(codec);
+      const mutedVideoOnly = source === 'dash-video' && browserPlayable;
 
       variants.push({
         ...makeQualityVariant(streamId, label, streamQuality.tier, {
@@ -737,8 +760,8 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
           codec,
           container: 'mp4',
           mimeType: 'video/mp4',
-          protocol: source === 'dash-video' ? 'dash' : 'direct',
-          playableInApp: browserPlayable,
+          protocol: mutedVideoOnly || source === 'durl' ? 'direct' : 'dash',
+          playableInApp: mutedVideoOnly || (source === 'durl' && browserPlayable),
           requiresAccount: streamQn >= 112 && !this.credentials(this.id).cookie,
           expiresAt,
         }),
@@ -758,6 +781,7 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
           qualityRank: bilibiliQualityRank(streamQn),
           availableQn,
           qualityLimited: streamQn < requestedQn,
+          mutedVideoOnly,
           cid,
         },
       });

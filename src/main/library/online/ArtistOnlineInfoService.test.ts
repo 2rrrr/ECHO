@@ -39,6 +39,21 @@ describe('ArtistOnlineInfoService', () => {
           }),
         };
       }
+      if (url.includes('/w/api.php')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            query: {
+              pages: {
+                1: {
+                  extract: 'Echo Unit is a fictional test artist.\n\nThe group formed as a test fixture and built a richer biography for the artist detail page.',
+                },
+              },
+            },
+          }),
+        };
+      }
       if (url.includes('/ws/2/artist/?query=')) {
         return {
           ok: true,
@@ -82,7 +97,7 @@ describe('ArtistOnlineInfoService', () => {
     ]);
     expect(result.relatedArtists?.[0]?.name).toBe('Echo Sister');
     expect(cached.fromCache).toBe(true);
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(5);
     database.close();
   });
 
@@ -112,6 +127,21 @@ describe('ArtistOnlineInfoService', () => {
             description: '韓国の音楽家',
             extract: 'Aiobahn は韓国の電子音楽家、DJ、音楽プロデューサー。',
             content_urls: { desktop: { page: 'https://ja.wikipedia.org/wiki/Aiobahn' } },
+          }),
+        };
+      }
+      if (url.includes('ja.wikipedia.org/w/api.php')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            query: {
+              pages: {
+                1: {
+                  extract: 'Aiobahn は韓国の電子音楽家、DJ、音楽プロデューサー。',
+                },
+              },
+            },
           }),
         };
       }

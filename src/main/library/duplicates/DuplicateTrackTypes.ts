@@ -1,5 +1,6 @@
 import type {
   DuplicateTrackGroup,
+  DuplicateTrackCleanupPreview,
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
   DuplicateTrackMode,
@@ -7,6 +8,7 @@ import type {
 
 export type {
   DuplicateTrackGroup,
+  DuplicateTrackCleanupPreview,
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
   DuplicateTrackMode,

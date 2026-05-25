@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ChangeEvent, PointerEvent } from 'react';
-import { Lock, Pause, Play, RotateCcw, SkipBack, SkipForward, Unlock, X } from 'lucide-react';
+import { Pause, Play, RotateCcw, SkipBack, SkipForward, X } from 'lucide-react';
 import type { AudioPlaybackState, AudioStatus } from '../../shared/types/audio';
 import type { MiniPlayerState } from '../../shared/types/miniPlayer';
 import type { PlaybackStatus } from '../../shared/types/playback';
@@ -36,6 +36,7 @@ const defaultMiniPlayerState: MiniPlayerState = {
   settings: {
     miniPlayerEnabled: true,
     miniPlayerLocked: false,
+    miniPlayerAutoHideMainWindow: false,
     miniPlayerBounds: null,
   },
 };
@@ -53,7 +54,7 @@ export const MiniPlayerApp = (): JSX.Element => {
   const setQueueCurrentTrackId = queue.setCurrentTrackId;
   const syncQueuePlaybackState = queue.syncPlaybackState;
   const sharedPlaybackStatus = useSharedPlaybackStatus();
-  const [miniPlayerState, setMiniPlayerState] = useState<MiniPlayerState>(defaultMiniPlayerState);
+  const [, setMiniPlayerState] = useState<MiniPlayerState>(defaultMiniPlayerState);
   const [forwardedAudioStatus, setForwardedAudioStatus] = useState<ForwardedAudioStatus | null>(null);
   const [realtimePositionSeconds, setRealtimePositionSeconds] = useState(0);
   const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(null);
@@ -336,10 +337,6 @@ export const MiniPlayerApp = (): JSX.Element => {
     void commitSeek(Number(event.currentTarget.value));
   };
 
-  const handleLockToggle = useCallback((): void => {
-    void window.echo?.miniPlayer?.setLocked?.(!miniPlayerState.locked).then(setMiniPlayerState).catch(() => undefined);
-  }, [miniPlayerState.locked]);
-
   const handleResetBounds = useCallback((): void => {
     void window.echo?.miniPlayer?.resetBounds?.().then(setMiniPlayerState).catch(() => undefined);
   }, []);
@@ -352,7 +349,6 @@ export const MiniPlayerApp = (): JSX.Element => {
     <main
       className="mini-player-app"
       data-has-artwork={Boolean(artworkUrl)}
-      data-locked={miniPlayerState.locked}
       data-playback-state={visualState}
       style={style}
     >
@@ -403,16 +399,16 @@ export const MiniPlayerApp = (): JSX.Element => {
                 <SkipForward size={15} />
               </button>
             </div>
+            <button
+              aria-label="关闭迷你播放器"
+              className="mini-player-icon-button mini-player-close-button"
+              title="关闭"
+              type="button"
+              onClick={() => void window.echo?.miniPlayer?.hide?.()}
+            >
+              <X size={12} />
+            </button>
             <div className="mini-player-actions">
-              <button
-                aria-label={miniPlayerState.locked ? '解除鼠标穿透' : '锁定并开启鼠标穿透'}
-                className="mini-player-icon-button"
-                title={miniPlayerState.locked ? '解除鼠标穿透' : '锁定并开启鼠标穿透'}
-                type="button"
-                onClick={handleLockToggle}
-              >
-                {miniPlayerState.locked ? <Unlock size={13} /> : <Lock size={13} />}
-              </button>
               <button
                 aria-label="重置位置"
                 className="mini-player-icon-button"
@@ -421,15 +417,6 @@ export const MiniPlayerApp = (): JSX.Element => {
                 onClick={handleResetBounds}
               >
                 <RotateCcw size={13} />
-              </button>
-              <button
-                aria-label="关闭迷你播放器"
-                className="mini-player-icon-button"
-                title="关闭"
-                type="button"
-                onClick={() => void window.echo?.miniPlayer?.hide?.()}
-              >
-                <X size={13} />
               </button>
             </div>
           </div>

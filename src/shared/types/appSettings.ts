@@ -275,6 +275,7 @@ export type AppSettings = {
   desktopLyricsBounds?: DesktopLyricsBounds | null;
   miniPlayerEnabled?: boolean;
   miniPlayerLocked?: boolean;
+  miniPlayerAutoHideMainWindow?: boolean;
   miniPlayerBounds?: DesktopLyricsBounds | null;
   mvEnabled?: boolean;
   mvEnabledProviders: NetworkMvProviderId[];

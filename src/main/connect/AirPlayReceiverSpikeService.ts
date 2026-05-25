@@ -254,8 +254,8 @@ const scoreAdvertiseInterface = (item: AirPlayAdvertiseInterface): number => {
   return score;
 };
 
-const getAdvertiseInterfaces = (): AirPlayAdvertiseInterface[] =>
-  Object.entries(networkInterfaces())
+const getAdvertiseInterfaces = (): AirPlayAdvertiseInterface[] => {
+  const candidates = Object.entries(networkInterfaces())
     .flatMap(([name, items]) => (items ?? []).map((item) => ({ name, item })))
     .filter(({ item }) => item.family === 'IPv4' && !item.internal)
     .map(({ name, item }) => ({
@@ -263,11 +263,14 @@ const getAdvertiseInterfaces = (): AirPlayAdvertiseInterface[] =>
       address: item.address,
       mac: normalizeMac(item.mac) ?? '02:45:43:48:4F:00',
     }))
-    .filter((item) => !isBenchmarkIpv4(item.address) && !isApipaIpv4(item.address))
+    .filter((item) => !isBenchmarkIpv4(item.address) && !isApipaIpv4(item.address));
+  const realLanCandidates = candidates.filter((item) => !isLikelyVirtualAirPlayInterface(item.name));
+  return (realLanCandidates.length > 0 ? realLanCandidates : candidates)
     .sort((left, right) => {
       const scoreDelta = scoreAdvertiseInterface(left) - scoreAdvertiseInterface(right);
       return scoreDelta || left.name.localeCompare(right.name) || left.address.localeCompare(right.address);
     });
+};
 
 const findAvailableTcpPort = async (host: string | null, basePort: number, portRange: number): Promise<number> => {
   for (let offset = 0; offset < portRange; offset += 1) {
@@ -789,7 +792,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.setStatus({ enabled: false, state: 'starting', error: null });
     try {
       this.raopModule ??= await this.loadRaopModule();
-      this.raopModule.setLogHandler?.((event) => this.addDebugEvent('log', this.formatNativeLog(event)), 'info', 'info', 'warn');
+      this.raopModule.setLogHandler?.((event) => this.handleNativeLog(event), 'info', 'info', 'warn');
       const advertiseInterfaces = this.getAdvertiseInterfaces();
       const advertiseInterface = advertiseInterfaces[0] ?? null;
       const advertisedMac = advertiseInterface?.mac ?? '02:45:43:48:4F:00';
@@ -1388,6 +1391,17 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       return [entry.source, entry.level, entry.line].map((value) => trimText(value)).filter(Boolean).join(' ');
     }
     return String(event ?? '');
+  }
+
+  private handleNativeLog(event: unknown): void {
+    const message = this.formatNativeLog(event);
+    this.addDebugEvent('log', message);
+    if (/unknown\/unhandled method POST|RTSP\/1\.0 501 Not Implemented/iu.test(message)) {
+      this.setStatus({
+        state: this.status.enabled ? 'error' : this.status.state,
+        error: 'AirPlay connection failed: iPhone requested an unsupported AirPlay RTSP POST flow.',
+      });
+    }
   }
 }
 

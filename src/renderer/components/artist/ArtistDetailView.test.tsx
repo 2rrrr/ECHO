@@ -140,6 +140,15 @@ const installLibrary = (
     library: {
       getArtist,
       getArtistInsights,
+      getArtistTracks: vi.fn().mockImplementation(() => (mockIsLoading
+        ? new Promise(() => undefined)
+        : Promise.resolve({
+            items: mockTracks,
+            page: 1,
+            pageSize: 50,
+            total: mockTotal,
+            hasMore: false,
+          }))),
     },
   } as unknown as Window['echo'];
 };
@@ -216,6 +225,38 @@ describe('ArtistDetailView', () => {
     await screen.findByText('Echo Unit');
     const image = document.querySelector('.artist-hero-backdrop') as HTMLImageElement | null;
     expect(image?.getAttribute('src')).toBe('echo-cover://original/cover%201');
+  });
+
+  it('does not use the online biography thumbnail as the panoramic hero fallback', async () => {
+    installLibrary(
+      vi.fn().mockResolvedValue(artist({
+        coverId: 'cover 1',
+        coverThumb: 'echo-cover://album/cover%201',
+      })),
+      undefined,
+      vi.fn().mockResolvedValue(artistInsights({
+        onlineInfo: {
+          status: 'ready',
+          bio: {
+            title: 'Echo Unit',
+            description: null,
+            extract: 'Echo Unit is a band.',
+            url: 'https://example.test/wiki/Echo_Unit',
+            language: 'en',
+            thumbnailUrl: 'https://img.example/echo-unit-band.jpg',
+          },
+          imageCredits: [],
+          externalLinks: [],
+          relatedArtists: [],
+          sourceLabels: ['Wikipedia'],
+          fetchedAt: '2026-05-25T00:00:00.000Z',
+        },
+      })),
+    );
+
+    renderDetail(artist());
+
+    await waitFor(() => expect(document.querySelector('.artist-hero-backdrop')?.getAttribute('src')).toBe('echo-cover://original/cover%201'));
   });
 
   it('falls back to the letter mark when the detail hero image fails', async () => {

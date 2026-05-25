@@ -6,6 +6,8 @@ import { app, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
 import { isScannableAudioExtension, SUPPORTED_AUDIO_DIALOG_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
+  DuplicateTrackCleanupFailure,
+  DuplicateTrackCleanupResult,
   DuplicateTrackMode,
   DuplicateTrackIndexSummary,
   EditableAlbumTags,
@@ -164,7 +166,7 @@ const isLibraryScanRunning = (): boolean => {
 
 const assertNoRunningLibraryScan = (): void => {
   if (isLibraryScanRunning()) {
-    throw new Error('曲库扫描仍在运行，已拒绝恢复、重建或删除数据库。请等待扫描结束后再试。');
+    throw new Error('曲库扫描仍在运行，已拒绝恢复、重建、删除或清理重复歌曲。请等待扫描结束后再试。');
   }
 };
 
@@ -639,6 +641,23 @@ const normalizeTrackIds = (value: unknown): string[] => {
   }
 
   return value.map((item) => requireText(item, 'trackId'));
+};
+
+const normalizeDuplicateTrackCleanupRequest = (value: unknown): { trackIds: string[]; mode: DuplicateTrackMode } => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('duplicate cleanup request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  const trackIds = Array.from(new Set(normalizeTrackIds(input.trackIds)));
+  if (trackIds.length === 0) {
+    throw new Error('trackIds must include at least one duplicate track');
+  }
+
+  return {
+    trackIds,
+    mode: normalizeDuplicateMode(input.mode),
+  };
 };
 
 const normalizeStreamingPlaylistTrack = (value: unknown) => {
@@ -1562,7 +1581,7 @@ export const registerLibraryIpc = (): void => {
     return writeLibraryHealthReportMarkdown(createLibraryHealthReportForRenderer(), result.filePath);
   });
   ipcMain.handle(IpcChannels.LibraryRefreshDuplicateTracks, (_event, mode: unknown) =>
-    getLibraryService().refreshDuplicateTracks(normalizeDuplicateMode(mode)),
+    getLibraryService().refreshDuplicateTracksAsync(normalizeDuplicateMode(mode)),
   );
   ipcMain.handle(IpcChannels.LibraryGetDuplicateTrackVersions, (_event, trackId: unknown) =>
     getLibraryService().getDuplicateTrackVersions(requireText(trackId, 'trackId')),
@@ -1588,6 +1607,65 @@ export const registerLibraryIpc = (): void => {
       }
       throw error;
     }
+  });
+  ipcMain.handle(IpcChannels.LibraryPreviewDuplicateTrackCleanup, (_event, mode: unknown) => {
+    assertNoRunningLibraryScan();
+    return getLibraryService().previewDuplicateTrackCleanup(normalizeDuplicateMode(mode));
+  });
+  ipcMain.handle(IpcChannels.LibraryApplyDuplicateTrackCleanup, async (_event, request: unknown): Promise<DuplicateTrackCleanupResult> => {
+    assertNoRunningLibraryScan();
+    const { trackIds, mode } = normalizeDuplicateTrackCleanupRequest(request);
+    const service = getLibraryService();
+    const preview = service.getDuplicateTrackCleanupPreview(mode);
+    const candidates = new Map(
+      preview.groups.flatMap((group) => group.remove.map((member) => [member.track.id, member] as const)),
+    );
+    const invalidIds = trackIds.filter((trackId) => !candidates.has(trackId));
+
+    if (invalidIds.length > 0) {
+      throw new Error(`重复歌曲清理请求已过期或包含保留曲目，请重新扫描后再清理：${invalidIds.slice(0, 5).join(', ')}`);
+    }
+
+    const removedTrackIds: string[] = [];
+    const failedTracks: DuplicateTrackCleanupFailure[] = [];
+    let trashedTracks = 0;
+    let missingFiles = 0;
+    let totalBytesRequested = 0;
+
+    for (const trackId of trackIds) {
+      const member = candidates.get(trackId)!;
+      totalBytesRequested += member.sizeBytes ?? 0;
+
+      try {
+        if (existsSync(member.track.path)) {
+          await shell.trashItem(member.track.path);
+          trashedTracks += 1;
+        } else {
+          missingFiles += 1;
+        }
+        removedTrackIds.push(trackId);
+      } catch (error) {
+        failedTracks.push({
+          trackId,
+          title: member.track.title,
+          path: member.track.path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const removedFromLibrary = service.deleteTracks(removedTrackIds);
+    const updatedSummary = await service.refreshDuplicateTracksAsync(mode);
+
+    return {
+      requestedTrackIds: trackIds.length,
+      trashedTracks,
+      missingFiles,
+      removedFromLibrary,
+      failedTracks,
+      totalBytesRequested,
+      updatedSummary,
+    };
   });
   ipcMain.handle(IpcChannels.LibraryGetPlaylists, () => getLibraryService().getPlaylists());
   ipcMain.handle(IpcChannels.LibraryCreatePlaylist, (_event, request: unknown) =>

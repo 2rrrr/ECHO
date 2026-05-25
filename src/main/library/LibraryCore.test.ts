@@ -964,6 +964,7 @@ describe('Library Core', () => {
     const representative = visible.items.find((track) => track.title === 'Duplicate Song');
     const uniqueTrack = before.items.find((track) => track.title === 'Unique Song');
     const versions = representative ? harness.service.getDuplicateTrackVersions(representative.id) : [];
+    const cleanupPreview = await harness.service.previewDuplicateTrackCleanup('strict');
 
     expect(summary).toMatchObject({
       mode: 'strict',
@@ -988,6 +989,11 @@ describe('Library Core', () => {
     expect(versions[0]).toMatchObject({ rank: 1, hidden: false });
     expect(versions[0].track.album).toBe('Hi-Res Album');
     expect(versions[1]).toMatchObject({ rank: 2, hidden: true });
+    expect(cleanupPreview.groups).toHaveLength(1);
+    expect(cleanupPreview.groups[0].keep.track.album).toBe('Hi-Res Album');
+    expect(cleanupPreview.groups[0].remove).toHaveLength(1);
+    expect(cleanupPreview.groups[0].remove[0].track.album).toBe('MP3 Album');
+    expect(cleanupPreview.removeTrackIds).toEqual([versions[1].track.id]);
     expect(
       harness.service.getDuplicateHiddenCounts([versions[0].track.id, versions[1].track.id, uniqueTrack?.id ?? 'missing-track'], 'strict'),
     ).toEqual({

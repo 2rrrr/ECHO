@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import { Heart, Play } from 'lucide-react';
 import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
 import { useLikedTrackIds } from '../../hooks/useLikedMedia';
+import { useI18n } from '../../i18n/I18nProvider';
 
 type AlbumTrackListProps = {
   albumId: string;
@@ -58,6 +59,7 @@ export const AlbumTrackList = ({
   onToggleTrackLiked,
   summary,
 }: AlbumTrackListProps): JSX.Element => {
+  const { t } = useI18n();
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -88,7 +90,7 @@ export const AlbumTrackList = ({
           setPage(1);
           setTotal(0);
           setHasMore(false);
-          setError('Desktop bridge unavailable. Open ECHO Next in Electron to read album tracks.');
+          setError(t('albumDetail.tracks.error.desktopBridgeRead'));
           return;
         }
 
@@ -116,7 +118,7 @@ export const AlbumTrackList = ({
         }
       }
     },
-    [albumId],
+    [albumId, t],
   );
 
   useEffect(() => {
@@ -152,23 +154,23 @@ export const AlbumTrackList = ({
   );
 
   return (
-    <section className="album-track-section" aria-label="Album tracks">
+    <section className="album-track-section" aria-label={t('albumDetail.tracks.aria')}>
       <div className="album-track-toolbar">
-        <div className="album-track-summary" aria-label="Track summary">
-          <span>{summary?.totalLabel ?? (tracks.length === total ? `${total} tracks` : `${tracks.length} of ${total} tracks`)}</span>
-          <span>{summary?.duration ?? 'Unknown length'}</span>
-          <span>{summary?.signal ?? 'Reading signal'}</span>
+        <div className="album-track-summary" aria-label={t('albumDetail.tracks.summaryAria')}>
+          <span>{summary?.totalLabel ?? (tracks.length === total ? t('albumDetail.count.tracks', { count: total }) : t('albumDetail.count.loadedTracks', { loaded: tracks.length, total }))}</span>
+          <span>{summary?.duration ?? t('albumDetail.status.unknownLength')}</span>
+          <span>{summary?.signal ?? t('albumDetail.status.readingSignal')}</span>
         </div>
-        <span>{tracks.length === total ? `${total} tracks` : `${tracks.length} of ${total} tracks`}</span>
+        <span>{tracks.length === total ? t('albumDetail.count.tracks', { count: total }) : t('albumDetail.count.loadedTracks', { loaded: tracks.length, total })}</span>
       </div>
 
       <div className="album-track-list" role="list">
         {tracks.length > 0 ? (
           <div className="album-track-header" aria-hidden="true">
             <span>#</span>
-            <span>Title</span>
-            <span>Signal</span>
-            <span>Time</span>
+            <span>{t('albumDetail.tracks.column.title')}</span>
+            <span>{t('albumDetail.tracks.column.signal')}</span>
+            <span>{t('albumDetail.tracks.column.time')}</span>
           </div>
         ) : null}
         {tracks.map((track, index) => {
@@ -194,7 +196,7 @@ export const AlbumTrackList = ({
                 <strong>{track.title}</strong>
                 <small>{track.artist}</small>
               </span>
-              <span className="album-track-tags" aria-label="Track format">
+              <span className="album-track-tags" aria-label={t('albumDetail.tracks.formatAria')}>
                 {tags.map((tag) => (
                   <em key={`${track.id}-${tag}`}>{tag}</em>
                 ))}
@@ -205,9 +207,9 @@ export const AlbumTrackList = ({
                   className={`album-track-like ${likedTrackIds[track.id] ? 'is-liked' : ''}`}
                   role="button"
                   tabIndex={-1}
-                  aria-label={`${likedTrackIds[track.id] ? 'Unlike' : 'Like'} ${track.title}`}
+                  aria-label={likedTrackIds[track.id] ? t('albumDetail.tracks.action.unlike', { title: track.title }) : t('albumDetail.tracks.action.like', { title: track.title })}
                   aria-pressed={likedTrackIds[track.id] === true}
-                  title={likedTrackIds[track.id] ? 'Unlike' : 'Like'}
+                  title={likedTrackIds[track.id] ? t('albumDetail.tracks.action.unlikeTitle') : t('albumDetail.tracks.action.likeTitle')}
                   onClick={(event) => {
                     event.stopPropagation();
                     void onToggleTrackLiked?.(track);
@@ -223,12 +225,12 @@ export const AlbumTrackList = ({
 
       {hasMore ? (
         <button className="album-load-more" type="button" disabled={isLoading} onClick={handleLoadMore}>
-          {isLoading ? 'Loading...' : 'Load more'}
+          {isLoading ? t('albumDetail.tracks.loading') : t('albumDetail.tracks.loadMore')}
         </button>
       ) : null}
 
       {error ? <p className="album-detail-error">{error}</p> : null}
-      {!isLoading && tracks.length === 0 && !error ? <p className="album-detail-empty">No tracks found for this album.</p> : null}
+      {!isLoading && tracks.length === 0 && !error ? <p className="album-detail-empty">{t('albumDetail.tracks.empty')}</p> : null}
     </section>
   );
 };

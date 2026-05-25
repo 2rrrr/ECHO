@@ -96,6 +96,7 @@ import type {
   FinishPlaybackHistoryRequest,
   CreatePlaylistRequest,
   UpdatePlaylistRequest,
+  DuplicateTrackCleanupPreview,
   DuplicateTrackGroup,
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
@@ -344,6 +345,18 @@ export class LibraryService {
 
   refreshDuplicateTracks(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
     return this.store.refreshDuplicateTracks(mode);
+  }
+
+  refreshDuplicateTracksAsync(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackIndexSummary> {
+    return this.store.refreshDuplicateTracksAsync(mode);
+  }
+
+  previewDuplicateTrackCleanup(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackCleanupPreview> {
+    return this.refreshDuplicateTracksAsync(mode).then(() => this.store.getDuplicateTrackCleanupPreview(mode));
+  }
+
+  getDuplicateTrackCleanupPreview(mode: DuplicateTrackMode = 'strict'): DuplicateTrackCleanupPreview {
+    return this.store.getDuplicateTrackCleanupPreview(mode);
   }
 
   getDuplicateTrackGroup(trackId: string): DuplicateTrackGroup | null {
@@ -1670,6 +1683,20 @@ export class LibraryService {
       this.store.deleteTrackAndCompactAlbums(trackId);
     });
     this.scheduleGroupingRefresh();
+  }
+
+  deleteTracks(trackIds: string[]): number {
+    if (trackIds.length === 0) {
+      return 0;
+    }
+
+    return this.store.transaction(() => {
+      const changed = this.store.deleteTracks(Array.from(new Set(trackIds)));
+      if (changed > 0) {
+        this.scheduleGroupingRefresh();
+      }
+      return changed;
+    });
   }
 
   deleteAlbumTracks(albumId: string): number {

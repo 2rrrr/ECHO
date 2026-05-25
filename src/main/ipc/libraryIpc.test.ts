@@ -389,6 +389,14 @@ const installLibraryService = () => {
       hiddenTracks: 0,
       updatedAt: '2026-05-20T00:00:00.000Z',
     })),
+    refreshDuplicateTracksAsync: vi.fn((mode = 'strict') => Promise.resolve({
+      mode,
+      totalTracksScanned: 0,
+      duplicateGroups: 0,
+      duplicateMembers: 0,
+      hiddenTracks: 0,
+      updatedAt: '2026-05-20T00:00:00.000Z',
+    })),
     getDuplicateHiddenCounts: vi.fn(() => ({ 'track-1': 1, 'track-2': 0 })),
     getDuplicateIndexSummary: vi.fn((mode = 'strict') => ({
       mode,
@@ -397,6 +405,36 @@ const installLibraryService = () => {
       duplicateMembers: 0,
       hiddenTracks: 0,
       updatedAt: '2026-05-20T00:00:00.000Z',
+    })),
+    previewDuplicateTrackCleanup: vi.fn((mode = 'strict') => ({
+      summary: {
+        mode,
+        totalTracksScanned: 0,
+        duplicateGroups: 0,
+        duplicateMembers: 0,
+        hiddenTracks: 0,
+        updatedAt: '2026-05-20T00:00:00.000Z',
+      },
+      groups: [] as unknown[],
+      removeTrackIds: [] as string[],
+      totalTracksToRemove: 0,
+      totalBytesToRemove: 0,
+      generatedAt: '2026-05-20T00:00:00.000Z',
+    })),
+    getDuplicateTrackCleanupPreview: vi.fn((mode = 'strict') => ({
+      summary: {
+        mode,
+        totalTracksScanned: 0,
+        duplicateGroups: 0,
+        duplicateMembers: 0,
+        hiddenTracks: 0,
+        updatedAt: '2026-05-20T00:00:00.000Z',
+      },
+      groups: [] as unknown[],
+      removeTrackIds: [] as string[],
+      totalTracksToRemove: 0,
+      totalBytesToRemove: 0,
+      generatedAt: '2026-05-20T00:00:00.000Z',
     })),
     getAlbums: vi.fn(),
     getAlbum: vi.fn(),
@@ -523,6 +561,7 @@ const installLibraryService = () => {
     searchNetworkTagCandidates: vi.fn(async () => []),
     recordTrackPlayback: vi.fn(),
     deleteTrack: vi.fn(),
+    deleteTracks: vi.fn((trackIds: string[]) => trackIds.length),
     resolveLyricsBackgroundCover: vi.fn(async () => ({
       coverUrl: 'echo-image://remote/cover',
       provider: 'netease-cloud-music',
@@ -1080,7 +1119,7 @@ describe('library IPC', () => {
       duplicateMode: 'balanced',
     });
 
-    expect(service.refreshDuplicateTracks).toHaveBeenCalledWith('balanced');
+    expect(service.refreshDuplicateTracksAsync).toHaveBeenCalledWith('balanced');
     expect(service.getDuplicateHiddenCounts).toHaveBeenCalledWith(['track-1'], 'aggressive');
     expect(service.getDuplicateIndexSummary).toHaveBeenCalledWith('strict');
     expect(service.getTracks).toHaveBeenCalledWith({
@@ -1102,6 +1141,161 @@ describe('library IPC', () => {
     const result = await handlers[IpcChannels.LibraryGetDuplicateHiddenCounts]!(null, ['track-1', 'track-2'], 'strict');
 
     expect(result).toEqual({ 'track-1': 0, 'track-2': 0 });
+  });
+
+  it('previews duplicate cleanup only when scans are idle', () => {
+    const service = installLibraryService();
+    service.hasRunningJobs.mockReturnValue(true);
+
+    expect(() => handlers[IpcChannels.LibraryPreviewDuplicateTrackCleanup]!(null, 'strict')).toThrow(/扫描仍在运行/u);
+    expect(service.previewDuplicateTrackCleanup).not.toHaveBeenCalled();
+  });
+
+  it('moves lower-ranked duplicate files to trash before removing them from the library', async () => {
+    const service = installLibraryService();
+    const root = makeTempRoot();
+    const lowQualityPath = join(root, 'song-low.mp3');
+    writeFileSync(lowQualityPath, 'audio', 'utf8');
+    const keepTrack = {
+      id: 'track-keep',
+      path: join(root, 'song.flac'),
+      title: 'Song',
+      artist: 'Artist',
+      album: 'Album',
+      albumArtist: 'Artist',
+      trackNo: null,
+      discNo: null,
+      year: null,
+      genre: null,
+      duration: 180,
+      codec: 'FLAC',
+      sampleRate: 96000,
+      bitDepth: 24,
+      bitrate: 1800000,
+      coverId: null,
+      coverThumb: null,
+      metadataStatus: 'ok',
+      embeddedMetadataStatus: 'present',
+      embeddedCoverStatus: 'missing',
+      networkMetadataStatus: 'none',
+      fieldSources: {},
+    };
+    const removeTrack = {
+      ...keepTrack,
+      id: 'track-low',
+      path: lowQualityPath,
+      codec: 'MP3',
+      sampleRate: 44100,
+      bitDepth: null,
+      bitrate: 192000,
+    };
+
+    service.getDuplicateTrackCleanupPreview.mockReturnValue({
+      summary: {
+        mode: 'strict',
+        totalTracksScanned: 2,
+        duplicateGroups: 1,
+        duplicateMembers: 2,
+        hiddenTracks: 1,
+        updatedAt: '2026-05-20T00:00:00.000Z',
+      },
+      groups: [
+        {
+          id: 'group-1',
+          duplicateKey: 'song\u0000artist',
+          confidence: 1,
+          trackCount: 2,
+          keep: { track: keepTrack, qualityScore: 13000, rank: 1, sizeBytes: 10, reasons: [] },
+          remove: [{ track: removeTrack, qualityScore: 2500, rank: 2, sizeBytes: 5, reasons: [] }],
+        },
+      ],
+      removeTrackIds: ['track-low'],
+      totalTracksToRemove: 1,
+      totalBytesToRemove: 5,
+      generatedAt: '2026-05-20T00:00:00.000Z',
+    });
+    trashItemMock.mockResolvedValue(undefined);
+
+    const result = await handlers[IpcChannels.LibraryApplyDuplicateTrackCleanup]!(null, {
+      mode: 'strict',
+      trackIds: ['track-low'],
+    });
+
+    expect(trashItemMock).toHaveBeenCalledWith(lowQualityPath);
+    expect(service.deleteTracks).toHaveBeenCalledWith(['track-low']);
+    expect(service.refreshDuplicateTracksAsync).toHaveBeenCalledWith('strict');
+    expect(result).toMatchObject({
+      requestedTrackIds: 1,
+      trashedTracks: 1,
+      missingFiles: 0,
+      removedFromLibrary: 1,
+      failedTracks: [],
+      totalBytesRequested: 5,
+    });
+  });
+
+  it('rejects duplicate cleanup when the request includes the kept track', async () => {
+    const service = installLibraryService();
+    service.getDuplicateTrackCleanupPreview.mockReturnValue({
+      summary: {
+        mode: 'strict',
+        totalTracksScanned: 2,
+        duplicateGroups: 1,
+        duplicateMembers: 2,
+        hiddenTracks: 1,
+        updatedAt: '2026-05-20T00:00:00.000Z',
+      },
+      groups: [
+        {
+          id: 'group-1',
+          duplicateKey: 'song\u0000artist',
+          confidence: 1,
+          trackCount: 2,
+          keep: {
+            track: {
+              id: 'track-keep',
+              path: 'D:\\Music\\song.flac',
+              title: 'Song',
+              artist: 'Artist',
+              album: 'Album',
+              albumArtist: 'Artist',
+              trackNo: null,
+              discNo: null,
+              year: null,
+              genre: null,
+              duration: 180,
+              codec: 'FLAC',
+              sampleRate: 96000,
+              bitDepth: 24,
+              bitrate: 1800000,
+              coverId: null,
+              coverThumb: null,
+              metadataStatus: 'ok',
+              embeddedMetadataStatus: 'present',
+              embeddedCoverStatus: 'missing',
+              networkMetadataStatus: 'none',
+              fieldSources: {},
+            },
+            qualityScore: 13000,
+            rank: 1,
+            sizeBytes: 10,
+            reasons: [],
+          },
+          remove: [],
+        },
+      ],
+      removeTrackIds: [],
+      totalTracksToRemove: 0,
+      totalBytesToRemove: 0,
+      generatedAt: '2026-05-20T00:00:00.000Z',
+    });
+
+    await expect(handlers[IpcChannels.LibraryApplyDuplicateTrackCleanup]!(null, {
+      mode: 'strict',
+      trackIds: ['track-keep'],
+    })).rejects.toThrow(/重新扫描后再清理/u);
+    expect(trashItemMock).not.toHaveBeenCalled();
+    expect(service.deleteTracks).not.toHaveBeenCalled();
   });
 
   it('accepts file modified sorting for songs and albums', async () => {

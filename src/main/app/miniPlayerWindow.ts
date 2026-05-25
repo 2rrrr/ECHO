@@ -4,6 +4,8 @@ import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { MiniPlayerBounds, MiniPlayerState } from '../../shared/types/miniPlayer';
 import { getAppSettings, setAppSettings } from './appSettings';
 import { createMainWindowWebPreferences } from './createMainWindow';
+import { ensureTray } from './tray';
+import { getMainWindow } from './windowManager';
 import { recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 
 const mainOutputDir = import.meta.dirname;
@@ -36,16 +38,24 @@ const migratePreviousDefaultBounds = (bounds: MiniPlayerBounds): MiniPlayerBound
     (size) => Math.abs(bounds.width - size.width) <= 1 && Math.abs(bounds.height - size.height) <= 1,
   );
 
-  if (!matchesPreviousDefault) {
-    return bounds;
+  if (matchesPreviousDefault) {
+    return {
+      x: Math.round(bounds.x + bounds.width - defaultMiniPlayerSize.width),
+      y: bounds.y,
+      width: defaultMiniPlayerSize.width,
+      height: defaultMiniPlayerSize.height,
+    };
   }
 
-  return {
-    x: Math.round(bounds.x + bounds.width - defaultMiniPlayerSize.width),
-    y: bounds.y,
-    width: defaultMiniPlayerSize.width,
-    height: defaultMiniPlayerSize.height,
-  };
+  if (bounds.width > defaultMiniPlayerSize.width || bounds.height !== defaultMiniPlayerSize.height) {
+    return {
+      ...bounds,
+      width: Math.min(bounds.width, defaultMiniPlayerSize.width),
+      height: defaultMiniPlayerSize.height,
+    };
+  }
+
+  return bounds;
 };
 
 const boundsEqual = (a: MiniPlayerBounds, b: MiniPlayerBounds): boolean =>
@@ -55,7 +65,8 @@ const toMiniPlayerSettings = (): MiniPlayerState['settings'] => {
   const settings = getAppSettings();
   return {
     miniPlayerEnabled: settings.miniPlayerEnabled,
-    miniPlayerLocked: settings.miniPlayerLocked,
+    miniPlayerLocked: false,
+    miniPlayerAutoHideMainWindow: settings.miniPlayerAutoHideMainWindow,
     miniPlayerBounds: settings.miniPlayerBounds,
   };
 };
@@ -74,7 +85,7 @@ export const getMiniPlayerState = (): MiniPlayerState => {
 
   return {
     visible,
-    locked: settings.miniPlayerLocked === true,
+    locked: false,
     bounds: getWindowBounds(miniPlayerWindow) ?? settings.miniPlayerBounds ?? null,
     settings: toMiniPlayerSettings(),
   };
@@ -146,8 +157,21 @@ const applyMiniPlayerAlwaysOnTop = (window: BrowserWindow): void => {
 };
 
 const applyMiniPlayerLockState = (window: BrowserWindow): void => {
-  const locked = getAppSettings().miniPlayerLocked === true;
-  window.setIgnoreMouseEvents(locked, { forward: true });
+  window.setIgnoreMouseEvents(false);
+};
+
+const hideMainWindowForMiniPlayer = (): void => {
+  if (getAppSettings().miniPlayerAutoHideMainWindow !== true) {
+    return;
+  }
+
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  ensureTray();
+  mainWindow.hide();
 };
 
 const rememberMiniPlayerBounds = (window: BrowserWindow): void => {
@@ -268,6 +292,7 @@ export const showMiniPlayerWindow = (): MiniPlayerState => {
     window.showInactive();
   }
   applyMiniPlayerAlwaysOnTop(window);
+  hideMainWindowForMiniPlayer();
   emitMiniPlayerStateChanged();
   return getMiniPlayerState();
 };
@@ -296,8 +321,8 @@ export const closeMiniPlayerWindow = (): void => {
   miniPlayerWindow.destroy();
 };
 
-export const setMiniPlayerLocked = (locked: boolean): MiniPlayerState => {
-  setAppSettings({ miniPlayerLocked: locked });
+export const setMiniPlayerLocked = (_locked: boolean): MiniPlayerState => {
+  setAppSettings({ miniPlayerLocked: false });
   if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
     applyMiniPlayerLockState(miniPlayerWindow);
     applyMiniPlayerAlwaysOnTop(miniPlayerWindow);

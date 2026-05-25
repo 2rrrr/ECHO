@@ -716,18 +716,21 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({})).toMatchObject({
       miniPlayerEnabled: false,
       miniPlayerLocked: false,
+      miniPlayerAutoHideMainWindow: false,
       miniPlayerBounds: null,
     });
     expect(
       normalizeSettings({
         miniPlayerEnabled: true,
         miniPlayerLocked: true,
+        miniPlayerAutoHideMainWindow: true,
         miniPlayerBounds: { x: 12.4, y: 20.6, width: 1200, height: 40 },
       }),
     ).toMatchObject({
       miniPlayerEnabled: true,
-      miniPlayerLocked: true,
-      miniPlayerBounds: { x: 12, y: 21, width: 800, height: 84 },
+      miniPlayerLocked: false,
+      miniPlayerAutoHideMainWindow: true,
+      miniPlayerBounds: { x: 12, y: 21, width: 388, height: 74 },
     });
   });
 

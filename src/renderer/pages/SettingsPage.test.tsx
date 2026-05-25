@@ -156,6 +156,8 @@ const validateGlobalShortcutMock = vi.fn();
 const kickoffArtistImageBackfillMock = vi.fn();
 const getArtistImageJobStatusMock = vi.fn();
 const clearArtistOnlineInfoCacheMock = vi.fn();
+const previewDuplicateTrackCleanupMock = vi.fn();
+const applyDuplicateTrackCleanupMock = vi.fn();
 const startReplayGainAnalysisMock = vi.fn();
 const getReplayGainAnalysisStatusMock = vi.fn();
 const openPluginDirectoryMock = vi.fn();
@@ -364,6 +366,8 @@ vi.mock('../utils/echoBridge', () => ({
       hiddenTracks: 0,
       updatedAt: '',
     }),
+    previewDuplicateTrackCleanup: previewDuplicateTrackCleanupMock,
+    applyDuplicateTrackCleanup: applyDuplicateTrackCleanupMock,
     refreshAlbumGrouping: vi.fn().mockResolvedValue({ songCount: 0, albumCount: 0, artistCount: 0, folderCount: 0, totalDuration: 0, lastScanAt: null }),
     startReplayGainAnalysis: startReplayGainAnalysisMock,
     getReplayGainAnalysisStatus: getReplayGainAnalysisStatusMock,
@@ -545,6 +549,37 @@ beforeEach(() => {
     },
   });
   clearArtistOnlineInfoCacheMock.mockResolvedValue({ removedRows: 0 });
+  previewDuplicateTrackCleanupMock.mockResolvedValue({
+    summary: {
+      mode: 'strict',
+      totalTracksScanned: 0,
+      duplicateGroups: 0,
+      duplicateMembers: 0,
+      hiddenTracks: 0,
+      updatedAt: '',
+    },
+    groups: [],
+    removeTrackIds: [],
+    totalTracksToRemove: 0,
+    totalBytesToRemove: 0,
+    generatedAt: '2026-05-20T00:00:00.000Z',
+  });
+  applyDuplicateTrackCleanupMock.mockResolvedValue({
+    requestedTrackIds: 0,
+    trashedTracks: 0,
+    missingFiles: 0,
+    removedFromLibrary: 0,
+    failedTracks: [],
+    totalBytesRequested: 0,
+    updatedSummary: {
+      mode: 'strict',
+      totalTracksScanned: 0,
+      duplicateGroups: 0,
+      duplicateMembers: 0,
+      hiddenTracks: 0,
+      updatedAt: '',
+    },
+  });
   startReplayGainAnalysisMock.mockResolvedValue({
     id: 'replay-gain-job',
     status: 'completed',
@@ -841,6 +876,129 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: /恢复最近健康快照/ })).toBeTruthy();
   });
 
+  it('scans duplicate cleanup candidates before applying the cleanup', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    previewDuplicateTrackCleanupMock.mockResolvedValue({
+      summary: {
+        mode: 'strict',
+        totalTracksScanned: 2,
+        duplicateGroups: 1,
+        duplicateMembers: 2,
+        hiddenTracks: 1,
+        updatedAt: '2026-05-20T00:00:00.000Z',
+      },
+      groups: [
+        {
+          id: 'group-1',
+          duplicateKey: 'song\u0000artist',
+          confidence: 1,
+          trackCount: 2,
+          keep: {
+            track: {
+              id: 'track-keep',
+              path: 'D:\\Music\\Song.flac',
+              title: 'Song',
+              artist: 'Artist',
+              album: 'Album',
+              albumArtist: 'Artist',
+              trackNo: null,
+              discNo: null,
+              year: null,
+              genre: null,
+              duration: 180,
+              codec: 'FLAC',
+              sampleRate: 96000,
+              bitDepth: 24,
+              bitrate: 1800000,
+              coverId: null,
+              coverThumb: null,
+              metadataStatus: 'ok',
+              embeddedMetadataStatus: 'present',
+              embeddedCoverStatus: 'missing',
+              networkMetadataStatus: 'none',
+              fieldSources: {},
+            },
+            qualityScore: 13000,
+            rank: 1,
+            sizeBytes: 100,
+            reasons: [],
+          },
+          remove: [
+            {
+              track: {
+                id: 'track-low',
+                path: 'D:\\Music\\Song.mp3',
+                title: 'Song',
+                artist: 'Artist',
+                album: 'Album',
+                albumArtist: 'Artist',
+                trackNo: null,
+                discNo: null,
+                year: null,
+                genre: null,
+                duration: 180,
+                codec: 'MP3',
+                sampleRate: 44100,
+                bitDepth: null,
+                bitrate: 192000,
+                coverId: null,
+                coverThumb: null,
+                metadataStatus: 'ok',
+                embeddedMetadataStatus: 'present',
+                embeddedCoverStatus: 'missing',
+                networkMetadataStatus: 'none',
+                fieldSources: {},
+              },
+              qualityScore: 2500,
+              rank: 2,
+              sizeBytes: 50,
+              reasons: [],
+            },
+          ],
+        },
+      ],
+      removeTrackIds: ['track-low'],
+      totalTracksToRemove: 1,
+      totalBytesToRemove: 50,
+      generatedAt: '2026-05-20T00:00:00.000Z',
+    });
+    applyDuplicateTrackCleanupMock.mockResolvedValue({
+      requestedTrackIds: 1,
+      trashedTracks: 1,
+      missingFiles: 0,
+      removedFromLibrary: 1,
+      failedTracks: [],
+      totalBytesRequested: 50,
+      updatedSummary: {
+        mode: 'strict',
+        totalTracksScanned: 1,
+        duplicateGroups: 0,
+        duplicateMembers: 0,
+        hiddenTracks: 0,
+        updatedAt: '2026-05-20T00:00:01.000Z',
+      },
+    });
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.danger\\.label');
+    expect(applyDuplicateTrackCleanupMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /扫描重复歌曲/ }));
+
+    await screen.findByText(/发现 1 组重复歌曲/);
+    expect(screen.getByText(/保留：FLAC/)).toBeTruthy();
+    expect(screen.getByText(/清理：Song - Artist/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('危险操作确认词'), { target: { value: '清理重复歌曲' } });
+    fireEvent.click(screen.getByRole('button', { name: /清理扫描结果/ }));
+
+    await waitFor(() => expect(applyDuplicateTrackCleanupMock).toHaveBeenCalledWith({ mode: 'strict', trackIds: ['track-low'] }));
+    expect(screen.getByText(/已移入回收站 1 首/)).toBeTruthy();
+  });
+
   it('shows recovery steps for corrupt status and ignores wrong restore confirmation word', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
@@ -855,18 +1013,17 @@ describe('SettingsPage', () => {
       },
       recommendedAction: 'restore-snapshot',
     });
-    vi.spyOn(window, 'prompt').mockReturnValue('取消');
-
     render(<SettingsPage />);
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.danger\\.label');
     await screen.findByText('疑似损坏');
 
+    fireEvent.change(screen.getByLabelText('危险操作确认词'), { target: { value: '取消' } });
     fireEvent.click(screen.getByRole('button', { name: /恢复最近健康快照/ }));
 
     expect(restoreDatabaseSnapshotMock).not.toHaveBeenCalled();
-    expect(screen.getByText('确认词不匹配，已取消。')).toBeTruthy();
+    expect(screen.getByText(/需要先在确认词输入框输入“恢复曲库”/)).toBeTruthy();
   });
 
   it('shows disaster recovery when no healthy snapshot can be restored', async () => {
@@ -927,12 +1084,11 @@ describe('SettingsPage', () => {
       canScrubQuarantinedDatabase: true,
       recommendedAction: 'scrub-quarantined-database',
     }).mockResolvedValueOnce(healthyDatabaseProtectionStatus);
-    vi.spyOn(window, 'prompt').mockReturnValue('修复隔离曲库');
-
     render(<SettingsPage />);
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.danger\\.label');
+    fireEvent.change(await screen.findByLabelText('危险操作确认词'), { target: { value: '修复隔离曲库' } });
     fireEvent.click(await screen.findByRole('button', { name: /修复隔离库副本/ }));
 
     await waitFor(() => expect(scrubQuarantinedDatabaseMock).toHaveBeenCalledTimes(1));
@@ -955,16 +1111,15 @@ describe('SettingsPage', () => {
       recommendedAction: 'rebuild-empty-database',
       unrecoverableReason: '当前数据库不可用，且没有可恢复的健康快照。',
     });
-    vi.spyOn(window, 'prompt').mockReturnValue('取消');
-
     render(<SettingsPage />);
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.danger\\.label');
+    fireEvent.change(await screen.findByLabelText('危险操作确认词'), { target: { value: '取消' } });
     fireEvent.click(await screen.findByRole('button', { name: /归档坏库并重建空库/ }));
 
     expect(repairDatabaseMock).not.toHaveBeenCalled();
-    expect(screen.getByText('确认词不匹配，已取消。')).toBeTruthy();
+    expect(screen.getByText(/需要先在确认词输入框输入“重建空库”/)).toBeTruthy();
   });
 
   it('rebuilds an unrecoverable database after the exact confirmation word', async () => {
@@ -988,12 +1143,11 @@ describe('SettingsPage', () => {
       latestHealthySnapshot: null,
       canRestoreSnapshot: false,
     });
-    vi.spyOn(window, 'prompt').mockReturnValue('重建空库');
-
     render(<SettingsPage />);
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.danger\\.label');
+    fireEvent.change(await screen.findByLabelText('危险操作确认词'), { target: { value: '重建空库' } });
     fireEvent.click(await screen.findByRole('button', { name: /归档坏库并重建空库/ }));
 
     await waitFor(() => expect(repairDatabaseMock).toHaveBeenCalledTimes(1));

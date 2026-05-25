@@ -410,6 +410,7 @@ export const defaultSettings: AppSettings = {
   desktopLyricsBounds: null,
   miniPlayerEnabled: false,
   miniPlayerLocked: false,
+  miniPlayerAutoHideMainWindow: false,
   miniPlayerBounds: null,
   mvEnabled: true,
   mvEnabledProviders: ['bilibili', 'youtube'],
@@ -894,8 +895,8 @@ const normalizeMiniPlayerBounds = (value: unknown): DesktopLyricsBounds | null =
   return {
     x: Math.round(clamp(x, -32000, 32000)),
     y: Math.round(clamp(y, -32000, 32000)),
-    width: Math.round(clamp(width, 280, 800)),
-    height: Math.round(clamp(height, 84, 260)),
+    width: Math.round(clamp(width, 320, 388)),
+    height: 74,
   };
 };
 
@@ -1414,7 +1415,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled !== false,
     desktopLyricsBounds: normalizeDesktopLyricsBounds(settings.desktopLyricsBounds),
     miniPlayerEnabled: settings.miniPlayerEnabled === true,
-    miniPlayerLocked: settings.miniPlayerLocked === true,
+    miniPlayerLocked: false,
+    miniPlayerAutoHideMainWindow: settings.miniPlayerAutoHideMainWindow === true,
     miniPlayerBounds: normalizeMiniPlayerBounds(settings.miniPlayerBounds),
     mvEnabled: settings.mvEnabled !== false,
     mvEnabledProviders: normalizeMvProviderList(settings.mvEnabledProviders, defaultSettings.mvEnabledProviders),

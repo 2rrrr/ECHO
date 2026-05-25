@@ -523,7 +523,7 @@ export type ArtistInsightEdge = {
 
 export type ArtistConcertEvent = {
   id: string;
-  source: 'bandsintown' | 'ticketmaster' | 'seatgeek';
+  source: 'bandsintown' | 'ticketmaster' | 'seatgeek' | 'songkick' | 'eplus' | 'eventernote';
   sourceLabel?: string;
   title: string;
   startsAt: string;
@@ -542,10 +542,15 @@ export type ArtistConcertEvent = {
 export type ArtistConcertInfo = {
   status: 'not_configured' | 'loading' | 'ready' | 'unavailable';
   region: string | null;
-  sources: Array<'bandsintown' | 'ticketmaster' | 'seatgeek'>;
+  sources: Array<ArtistConcertEvent['source']>;
   events: ArtistConcertEvent[];
   fetchedAt: string | null;
   message?: string;
+  candidateSources?: Array<{
+    source: ArtistConcertEvent['source'];
+    label: string;
+    url: string;
+  }>;
 };
 
 export type ArtistOnlineInfoExternalLink = {
@@ -938,6 +943,54 @@ export type DuplicateTrackIndexSummary = {
   updatedAt: string;
 };
 
+export type DuplicateTrackCleanupMember = {
+  track: LibraryTrack;
+  qualityScore: number;
+  rank: number;
+  sizeBytes: number | null;
+  reasons: string[];
+};
+
+export type DuplicateTrackCleanupGroup = {
+  id: string;
+  duplicateKey: string;
+  confidence: number;
+  trackCount: number;
+  keep: DuplicateTrackCleanupMember;
+  remove: DuplicateTrackCleanupMember[];
+};
+
+export type DuplicateTrackCleanupPreview = {
+  summary: DuplicateTrackIndexSummary;
+  groups: DuplicateTrackCleanupGroup[];
+  removeTrackIds: string[];
+  totalTracksToRemove: number;
+  totalBytesToRemove: number;
+  generatedAt: string;
+};
+
+export type DuplicateTrackCleanupApplyRequest = {
+  trackIds: string[];
+  mode?: DuplicateTrackMode;
+};
+
+export type DuplicateTrackCleanupFailure = {
+  trackId: string;
+  title: string | null;
+  path: string | null;
+  error: string;
+};
+
+export type DuplicateTrackCleanupResult = {
+  requestedTrackIds: number;
+  trashedTracks: number;
+  missingFiles: number;
+  removedFromLibrary: number;
+  failedTracks: DuplicateTrackCleanupFailure[];
+  totalBytesRequested: number;
+  updatedSummary: DuplicateTrackIndexSummary;
+};
+
 export type EditableTrackTags = {
   title: string;
   artist: string;
@@ -1136,6 +1189,10 @@ export type AlbumInformationSummary = {
   url: string | null;
   language: string;
   thumbnailUrl: string | null;
+  externalLinks?: Array<{
+    label: string;
+    url: string;
+  }>;
 };
 
 export type AlbumOnlineInfo = {

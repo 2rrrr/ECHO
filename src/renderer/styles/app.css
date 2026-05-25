@@ -1787,6 +1787,37 @@
   padding-left: 18px;
 }
 
+.settings-danger-confirm-field {
+  display: grid;
+  max-width: 520px;
+  gap: 6px;
+}
+
+.settings-danger-confirm-field span {
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.settings-danger-confirm-field input {
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-panel-border-strong);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--theme-field-bg);
+  box-shadow: inset 0 1px 0 var(--theme-chip-bg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-danger-confirm-field input:focus {
+  border-color: var(--theme-accent-border);
+  box-shadow: 0 0 0 3px var(--theme-accent-soft-bg);
+}
+
 @media (max-width: 760px) {
   .settings-database-grid {
     grid-template-columns: 1fr;
@@ -2650,6 +2681,21 @@
   border-radius: inherit;
   background: linear-gradient(90deg, #4d79a3, #4f9a8f);
   transition: width 220ms ease;
+}
+
+.settings-update-progress-track[data-indeterminate="true"] span {
+  width: 34%;
+  animation: settings-indeterminate-progress 1.15s ease-in-out infinite;
+}
+
+@keyframes settings-indeterminate-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(320%);
+  }
 }
 
 .settings-update-notes em {
@@ -4852,6 +4898,14 @@
 
 .audio-drawer-scroll::-webkit-scrollbar {
   display: none;
+}
+
+.audio-drawer-scroll > .audio-professional-status--drawer {
+  order: 100;
+}
+
+.audio-drawer-scroll > .audio-professional-status-actions {
+  order: 101;
 }
 
 .audio-drawer-root[data-open="true"] .audio-drawer {

@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
 import type { EchoDatabase } from '../../database/createDatabase';
 import type {
+  DuplicateTrackCleanupMember,
+  DuplicateTrackCleanupPreview,
   DuplicateTrackGroup,
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
@@ -28,7 +31,19 @@ type DuplicateTrackCandidate = TrackLikeForDuplicate & {
   fieldSources: Record<string, string>;
 };
 
+type DuplicateTrackCleanupGroupBuilder = {
+  id: string;
+  duplicateKey: string;
+  confidence: number;
+  trackCount: number;
+  keep: DuplicateTrackCleanupMember | null;
+  remove: DuplicateTrackCleanupMember[];
+};
+
 const nowIso = (): string => new Date().toISOString();
+const DUPLICATE_SCAN_TRACK_YIELD_INTERVAL = 250;
+const DUPLICATE_SCAN_BUCKET_YIELD_INTERVAL = 50;
+const DUPLICATE_SCAN_GROUP_YIELD_INTERVAL = 50;
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
 const numberOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value));
 
@@ -84,6 +99,25 @@ export class DuplicateTrackService {
     const tracks = this.loadActiveTracks();
     const clusters = this.buildStrictClusters(tracks);
 
+    return this.persistDuplicateTrackIndex(normalizedMode, updatedAt, tracks.length, clusters);
+  }
+
+  async rebuildDuplicateTrackIndexAsync(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackIndexSummary> {
+    const normalizedMode = normalizeMode(mode);
+    const updatedAt = nowIso();
+    const tracks = this.loadActiveTracks();
+    await yieldToMainLoop();
+    const clusters = await this.buildStrictClustersAsync(tracks);
+
+    return this.persistDuplicateTrackIndex(normalizedMode, updatedAt, tracks.length, clusters);
+  }
+
+  private persistDuplicateTrackIndex(
+    normalizedMode: DuplicateTrackMode,
+    updatedAt: string,
+    totalTracksScanned: number,
+    clusters: DuplicateTrackCandidate[][],
+  ): DuplicateTrackIndexSummary {
     return this.database.transaction(() => {
       this.database.prepare('DELETE FROM duplicate_track_members WHERE group_id IN (SELECT id FROM duplicate_track_groups WHERE mode = ?)').run(normalizedMode);
       this.database.prepare('DELETE FROM duplicate_track_groups WHERE mode = ?').run(normalizedMode);
@@ -159,7 +193,7 @@ export class DuplicateTrackService {
 
       return {
         mode: normalizedMode,
-        totalTracksScanned: tracks.length,
+        totalTracksScanned,
         duplicateGroups: clusters.length,
         duplicateMembers,
         hiddenTracks,
@@ -244,6 +278,148 @@ export class DuplicateTrackService {
     };
   }
 
+  getCleanupPreview(mode: DuplicateTrackMode = 'strict'): DuplicateTrackCleanupPreview {
+    const normalizedMode = normalizeMode(mode);
+    const rows = this.database
+      .prepare<[DuplicateTrackMode], DbRow>(
+        `SELECT
+          duplicate_track_groups.id AS group_id,
+          duplicate_track_groups.duplicate_key,
+          duplicate_track_groups.track_count,
+          duplicate_track_groups.confidence,
+          duplicate_track_members.quality_score,
+          duplicate_track_members.rank,
+          duplicate_track_members.hidden,
+          duplicate_track_members.reasons_json AS member_reasons_json,
+          tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
+          tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
+          tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+          tracks.cover_id, tracks.size_bytes, tracks.metadata_status, tracks.embedded_metadata_status,
+          tracks.embedded_cover_status, tracks.network_metadata_status, tracks.field_sources_json
+        FROM duplicate_track_groups
+        INNER JOIN duplicate_track_members ON duplicate_track_members.group_id = duplicate_track_groups.id
+        INNER JOIN tracks ON tracks.id = duplicate_track_members.track_id AND tracks.missing = 0
+        WHERE duplicate_track_groups.mode = ?
+        ORDER BY duplicate_track_groups.updated_at DESC, duplicate_track_groups.id ASC, duplicate_track_members.rank ASC`,
+      )
+      .all(normalizedMode);
+
+    const builders = new Map<string, DuplicateTrackCleanupGroupBuilder>();
+
+    for (const row of rows) {
+      const groupId = String(row.group_id);
+      const builder = builders.get(groupId) ?? {
+        id: groupId,
+        duplicateKey: String(row.duplicate_key),
+        confidence: Number(row.confidence ?? 0),
+        trackCount: Number(row.track_count ?? 0),
+        keep: null,
+        remove: [],
+      };
+      builders.set(groupId, builder);
+
+      const member: DuplicateTrackCleanupMember = {
+        track: this.mapTrack(row),
+        qualityScore: Number(row.quality_score ?? 0),
+        rank: Number(row.rank ?? 0),
+        sizeBytes: numberOrNull(row.size_bytes),
+        reasons: parseStringArray(row.member_reasons_json),
+      };
+
+      if (Number(row.hidden ?? 0) === 1) {
+        builder.remove.push(member);
+      } else if (!builder.keep || member.rank < builder.keep.rank) {
+        builder.keep = member;
+      }
+    }
+
+    const groups = Array.from(builders.values())
+      .filter((group): group is DuplicateTrackCleanupGroupBuilder & { keep: DuplicateTrackCleanupMember } =>
+        Boolean(group.keep && group.remove.length > 0),
+      )
+      .map((group) => ({
+        id: group.id,
+        duplicateKey: group.duplicateKey,
+        confidence: group.confidence,
+        trackCount: group.trackCount,
+        keep: group.keep,
+        remove: group.remove,
+      }));
+    const removeTrackIds = groups.flatMap((group) => group.remove.map((member) => member.track.id));
+    const totalBytesToRemove = groups.reduce(
+      (total, group) => total + group.remove.reduce((groupTotal, member) => groupTotal + (member.sizeBytes ?? 0), 0),
+      0,
+    );
+
+    return {
+      summary: this.getDuplicateIndexSummary(normalizedMode),
+      groups,
+      removeTrackIds,
+      totalTracksToRemove: removeTrackIds.length,
+      totalBytesToRemove,
+      generatedAt: nowIso(),
+    };
+  }
+
+  async scanCleanupPreview(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackCleanupPreview> {
+    const normalizedMode = normalizeMode(mode);
+    const updatedAt = nowIso();
+    const tracks = this.loadActiveTracks();
+    await yieldToMainLoop();
+    const clusters = await this.buildStrictClustersAsync(tracks);
+    const groups: DuplicateTrackCleanupPreview['groups'] = [];
+    let duplicateMembers = 0;
+    let hiddenTracks = 0;
+
+    for (let index = 0; index < clusters.length; index += 1) {
+      const cluster = clusters[index]!;
+      const median = medianDuration(cluster);
+      const duplicateKey = `${normalizedMode}\u0000${createStrictDuplicateClusterKey(cluster[0]!, median)}`;
+      const ranked = this.rankClusterByQuality(cluster, median);
+      duplicateMembers += ranked.length;
+      hiddenTracks += Math.max(0, ranked.length - 1);
+
+      groups.push({
+        id: duplicateKey,
+        duplicateKey,
+        confidence: 1,
+        trackCount: ranked.length,
+        keep: this.mapCandidateCleanupMember(ranked[0]!.track, ranked[0]!.qualityScore, 1, ['representative_highest_quality']),
+        remove: ranked
+          .slice(1)
+          .map((entry, removeIndex) =>
+            this.mapCandidateCleanupMember(entry.track, entry.qualityScore, removeIndex + 2, ['hidden_lower_quality_duplicate']),
+          ),
+      });
+
+      if (index % DUPLICATE_SCAN_GROUP_YIELD_INTERVAL === DUPLICATE_SCAN_GROUP_YIELD_INTERVAL - 1) {
+        await yieldToMainLoop();
+      }
+    }
+
+    const removeTrackIds = groups.flatMap((group) => group.remove.map((member) => member.track.id));
+    const totalBytesToRemove = groups.reduce(
+      (total, group) => total + group.remove.reduce((groupTotal, member) => groupTotal + (member.sizeBytes ?? 0), 0),
+      0,
+    );
+
+    return {
+      summary: {
+        mode: normalizedMode,
+        totalTracksScanned: tracks.length,
+        duplicateGroups: groups.length,
+        duplicateMembers,
+        hiddenTracks,
+        updatedAt,
+      },
+      groups,
+      removeTrackIds,
+      totalTracksToRemove: removeTrackIds.length,
+      totalBytesToRemove,
+      generatedAt: updatedAt,
+    };
+  }
+
   private loadActiveTracks(): DuplicateTrackCandidate[] {
     return this.database
       .prepare<[], DbRow>(
@@ -291,7 +467,12 @@ export class DuplicateTrackService {
         continue;
       }
 
-      buckets.set(bucketKey, [...(buckets.get(bucketKey) ?? []), track]);
+      const bucket = buckets.get(bucketKey);
+      if (bucket) {
+        bucket.push(track);
+      } else {
+        buckets.set(bucketKey, [track]);
+      }
     }
 
     const clusters: DuplicateTrackCandidate[][] = [];
@@ -323,6 +504,131 @@ export class DuplicateTrackService {
     }
 
     return clusters;
+  }
+
+  private async buildStrictClustersAsync(tracks: DuplicateTrackCandidate[]): Promise<DuplicateTrackCandidate[][]> {
+    const buckets = new Map<string, DuplicateTrackCandidate[]>();
+
+    for (let index = 0; index < tracks.length; index += 1) {
+      const track = tracks[index]!;
+      const bucketKey = createStrictDuplicateBucketKey(track);
+
+      if (bucketKey) {
+        const bucket = buckets.get(bucketKey);
+        if (bucket) {
+          bucket.push(track);
+        } else {
+          buckets.set(bucketKey, [track]);
+        }
+      }
+
+      if (index % DUPLICATE_SCAN_TRACK_YIELD_INTERVAL === DUPLICATE_SCAN_TRACK_YIELD_INTERVAL - 1) {
+        await yieldToMainLoop();
+      }
+    }
+
+    const clusters: DuplicateTrackCandidate[][] = [];
+    let bucketIndex = 0;
+
+    for (const bucket of buckets.values()) {
+      const sorted = [...bucket].sort((a, b) => a.duration - b.duration);
+      let current: DuplicateTrackCandidate[] = [];
+
+      for (const track of sorted) {
+        const previous = current[current.length - 1];
+        const canJoinByNeighbor = previous ? Math.abs(track.duration - previous.duration) <= 2 : true;
+        const canJoinCluster = current.every((candidate) => canStrictMergeTracks(candidate, track).duplicate);
+
+        if (current.length === 0 || (canJoinByNeighbor && canJoinCluster)) {
+          current.push(track);
+          continue;
+        }
+
+        if (current.length >= 2) {
+          clusters.push(current);
+        }
+
+        current = [track];
+      }
+
+      if (current.length >= 2) {
+        clusters.push(current);
+      }
+
+      bucketIndex += 1;
+      if (bucketIndex % DUPLICATE_SCAN_BUCKET_YIELD_INTERVAL === 0) {
+        await yieldToMainLoop();
+      }
+    }
+
+    return clusters;
+  }
+
+  private rankClusterByQuality(cluster: DuplicateTrackCandidate[], median: number): Array<{
+    track: DuplicateTrackCandidate;
+    qualityScore: number;
+  }> {
+    return [...cluster]
+      .map((track) => ({
+        track,
+        qualityScore: scoreTrackQuality(track),
+      }))
+      .sort((a, b) => {
+        const qualityDelta = b.qualityScore - a.qualityScore;
+        if (qualityDelta !== 0) {
+          return qualityDelta;
+        }
+
+        const durationDelta = Math.abs(a.track.duration - median) - Math.abs(b.track.duration - median);
+        if (durationDelta !== 0) {
+          return durationDelta;
+        }
+
+        const sizeDelta = (b.track.sizeBytes ?? 0) - (a.track.sizeBytes ?? 0);
+        if (sizeDelta !== 0) {
+          return sizeDelta;
+        }
+
+        return (a.track.path ?? '').localeCompare(b.track.path ?? '');
+      });
+  }
+
+  private mapCandidateCleanupMember(
+    track: DuplicateTrackCandidate,
+    qualityScore: number,
+    rank: number,
+    reasons: string[],
+  ): DuplicateTrackCleanupMember {
+    return {
+      track: {
+        id: track.id,
+        path: track.path ?? '',
+        title: track.title,
+        artist: track.artist,
+        album: track.album ?? '',
+        albumArtist: track.albumArtist ?? '',
+        trackNo: track.trackNo,
+        discNo: track.discNo,
+        year: track.year,
+        genre: track.genre,
+        duration: track.duration,
+        codec: track.codec ?? null,
+        sampleRate: track.sampleRate ?? null,
+        bitDepth: track.bitDepth ?? null,
+        bitrate: track.bitrate ?? null,
+        coverId: track.coverId ?? null,
+        coverThumb: this.toCoverUrl(track.coverId, 'thumb'),
+        metadataStatus: track.metadataStatus ?? 'ok',
+        embeddedMetadataStatus: track.embeddedMetadataStatus,
+        embeddedCoverStatus: track.embeddedCoverStatus,
+        networkMetadataStatus: track.networkMetadataStatus,
+        fieldSources: track.fieldSources,
+      },
+      qualityScore,
+      rank,
+      sizeBytes: track.sizeBytes ?? null,
+      reasons,
+    };
   }
 
   private mapGroup(row: DbRow): DuplicateTrackGroup {

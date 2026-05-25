@@ -17,7 +17,6 @@ import {
   Info,
   Keyboard,
   Link2,
-  Lock,
   MessageSquare,
   Palette,
   Pause,
@@ -87,6 +86,7 @@ import type {
   ArtistImageCacheSummary,
   ArtistImageJobStatus,
   BpmAnalysisJobStatus,
+  DuplicateTrackCleanupPreview,
   DuplicateTrackIndexSummary,
   LibraryDatabaseProtectionStatus,
   ReplayGainAnalysisJobStatus,
@@ -903,7 +903,7 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     'library health',
   ],
   about: ['about', 'version', 'update', 'diagnostics', 'crash', 'repository', 'safe mode', 'startup', '关于', '版本', '更新', '诊断', '崩溃', '仓库', '慢启动'],
-  danger: ['danger', 'reset', 'clear cache', 'delete cache', 'restore defaults', 'rebuild database', 'repair database', 'delete database', 'database recovery', 'database snapshot', 'database health', '危险', '重置', '清空缓存', '恢复默认', '重建数据库', '修复数据库', '删除数据库', '数据库恢复', '曲库恢复', '健康快照'],
+  danger: ['danger', 'reset', 'clear cache', 'delete cache', 'restore defaults', 'rebuild database', 'repair database', 'delete database', 'database recovery', 'database snapshot', 'database health', 'duplicate cleanup', 'duplicate songs', '危险', '重置', '清空缓存', '恢复默认', '重建数据库', '修复数据库', '删除数据库', '数据库恢复', '曲库恢复', '健康快照', '重复歌曲', '清理重复', '重复清理'],
 };
 
 const normalizeSettingsSearchText = (value: string): string => value.trim().toLocaleLowerCase();
@@ -2911,6 +2911,31 @@ const formatUpdateBytes = (bytes: number | null | undefined): string => {
   return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 };
 
+type DuplicateCleanupMember = DuplicateTrackCleanupPreview['groups'][number]['keep'];
+
+const formatDuplicateCleanupTrackQuality = (member: DuplicateCleanupMember): string => {
+  const { track } = member;
+  const parts: string[] = [];
+
+  if (track.codec) {
+    parts.push(track.codec.toUpperCase());
+  }
+  if (track.bitDepth && track.sampleRate) {
+    parts.push(`${track.bitDepth}bit / ${formatRate(track.sampleRate)}`);
+  } else if (track.sampleRate) {
+    parts.push(formatRate(track.sampleRate));
+  }
+  if (track.bitrate && track.bitrate > 0) {
+    parts.push(`${Math.round(track.bitrate / 1000)} kbps`);
+  }
+  if (member.sizeBytes && member.sizeBytes > 0) {
+    parts.push(formatUpdateBytes(member.sizeBytes));
+  }
+  parts.push(`评分 ${member.qualityScore}`);
+
+  return parts.join(' · ');
+};
+
 const formatCacheBytes = (bytes: number | null | undefined): string => {
   if (!Number.isFinite(bytes) || bytes === null || bytes === undefined || bytes <= 0) {
     return '0 B';
@@ -3375,6 +3400,9 @@ export const SettingsPage = (): JSX.Element => {
   const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
   const [duplicateBusyAction, setDuplicateBusyAction] = useState<'toggle' | 'analyze' | null>(null);
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
+  const [duplicateCleanupPreview, setDuplicateCleanupPreview] = useState<DuplicateTrackCleanupPreview | null>(null);
+  const [duplicateCleanupBusyAction, setDuplicateCleanupBusyAction] = useState<'scan' | 'clean' | null>(null);
+  const [duplicateCleanupMessage, setDuplicateCleanupMessage] = useState<string | null>(null);
   const [bpmAnalysisJob, setBpmAnalysisJob] = useState<BpmAnalysisJobStatus | null>(null);
   const [bpmAnalysisBusy, setBpmAnalysisBusy] = useState(false);
   const [bpmAnalysisMessage, setBpmAnalysisMessage] = useState<string | null>(null);
@@ -3403,6 +3431,7 @@ export const SettingsPage = (): JSX.Element => {
   const [databaseProtectionError, setDatabaseProtectionError] = useState<string | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
   const [dangerMessage, setDangerMessage] = useState<string | null>(null);
+  const [dangerConfirmWord, setDangerConfirmWord] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [networkProxyDraft, setNetworkProxyDraft] = useState({
     mode: 'off' as NetworkProxyMode,
@@ -3634,7 +3663,7 @@ export const SettingsPage = (): JSX.Element => {
         targetId: 'settings-row-mini-player',
         title: '迷你播放器',
         description: '独立透明置顶小窗，适合游戏时看封面、歌名和进度。',
-        terms: ['迷你播放器', 'mini player', 'overlay', 'always on top', '置顶', '游戏', '鼠标穿透', '进度条', '封面'],
+        terms: ['迷你播放器', 'mini player', 'overlay', 'always on top', '置顶', '游戏', '进度条', '封面', '隐藏主界面', '托盘'],
       },
       {
         id: 'row-gapless-playback',
@@ -5394,24 +5423,6 @@ export const SettingsPage = (): JSX.Element => {
     [applyMiniPlayerState, patchAppSettings],
   );
 
-  const handleMiniPlayerLockedChange = useCallback(
-    async (locked: boolean): Promise<void> => {
-      const miniPlayer = window.echo?.miniPlayer;
-
-      if (!miniPlayer) {
-        patchAppSettings({ miniPlayerLocked: locked });
-        return;
-      }
-
-      try {
-        applyMiniPlayerState(await miniPlayer.setLocked(locked));
-      } catch (miniPlayerError) {
-        setError(miniPlayerError instanceof Error ? miniPlayerError.message : String(miniPlayerError));
-      }
-    },
-    [applyMiniPlayerState, patchAppSettings],
-  );
-
   const handleMiniPlayerResetBounds = useCallback(async (): Promise<void> => {
     const miniPlayer = window.echo?.miniPlayer;
 
@@ -6856,6 +6867,85 @@ export const SettingsPage = (): JSX.Element => {
     }
   };
 
+  const handleScanDuplicateTrackCleanup = async (): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library?.previewDuplicateTrackCleanup) {
+      setError('桌面桥接不可用，无法扫描重复歌曲清理清单。');
+      return;
+    }
+
+    try {
+      setDuplicateCleanupBusyAction('scan');
+      setDuplicateCleanupMessage(null);
+      setDuplicateCleanupPreview(null);
+      setDangerMessage(null);
+      setError(null);
+      setDuplicateCleanupMessage('正在分批扫描重复歌曲，播放会继续保持响应；完成后会列出可清理清单。');
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 50);
+      });
+      const preview = await library.previewDuplicateTrackCleanup('strict');
+      setDuplicateCleanupPreview(preview);
+      setDuplicateSummary(preview.summary);
+      setDuplicateCleanupMessage(
+        preview.totalTracksToRemove > 0
+          ? `发现 ${preview.groups.length} 组重复歌曲，建议移入回收站 ${preview.totalTracksToRemove} 首低评分版本。`
+          : '没有发现需要清理的重复歌曲。',
+      );
+      window.dispatchEvent(new Event('library:changed'));
+    } catch (cleanupError) {
+      setDuplicateCleanupPreview(null);
+      setDuplicateCleanupMessage(null);
+      setError(cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
+    } finally {
+      setDuplicateCleanupBusyAction(null);
+    }
+  };
+
+  const handleApplyDuplicateTrackCleanup = async (): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library?.applyDuplicateTrackCleanup) {
+      setError('桌面桥接不可用，无法清理重复歌曲。');
+      return;
+    }
+    if (!duplicateCleanupPreview || duplicateCleanupPreview.removeTrackIds.length === 0) {
+      setDuplicateCleanupMessage('请先扫描并确认有待清理的重复歌曲。');
+      return;
+    }
+    if (
+      !requireDangerConfirmWord(
+        '清理重复歌曲',
+        `将把扫描结果中的 ${duplicateCleanupPreview.totalTracksToRemove} 首低评分重复版本移入系统回收站，并从曲库索引移除；每组会保留评分最高的一首。`,
+      )
+    ) {
+      setDuplicateCleanupMessage('已取消清理。需要输入确认词“清理重复歌曲”后才会执行。');
+      return;
+    }
+
+    try {
+      setDuplicateCleanupBusyAction('clean');
+      setDuplicateCleanupMessage(null);
+      setError(null);
+      const result = await library.applyDuplicateTrackCleanup({
+        mode: 'strict',
+        trackIds: duplicateCleanupPreview.removeTrackIds,
+      });
+      setDuplicateSummary(result.updatedSummary);
+      setDuplicateCleanupPreview(null);
+      setDuplicateCleanupMessage(
+        `已移入回收站 ${result.trashedTracks} 首，从曲库移除 ${result.removedFromLibrary} 首；找不到源文件 ${result.missingFiles} 首，失败 ${result.failedTracks.length} 首。`,
+      );
+      window.dispatchEvent(new Event('library:changed'));
+    } catch (cleanupError) {
+      setDuplicateCleanupMessage(null);
+      setError(cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
+    } finally {
+      setDuplicateCleanupBusyAction(null);
+    }
+  };
+
   const pollBpmAnalysisJob = async (jobId: string): Promise<void> => {
     const library = getLibraryBridge();
     if (!library) {
@@ -6996,19 +7086,12 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const requireDangerConfirmWord = (word: string, message: string): boolean => {
-    let input: string | null = null;
-    try {
-      input = window.prompt(`${message}\n\n请输入「${word}」继续。`);
-    } catch {
-      setDangerMessage('确认窗口无法打开，已取消。');
-      return false;
-    }
-
-    if (input?.trim() === word) {
+    if (dangerConfirmWord.trim() === word) {
+      setDangerConfirmWord('');
       return true;
     }
 
-    setDangerMessage('确认词不匹配，已取消。');
+    setDangerMessage(`${message} 需要先在确认词输入框输入“${word}”。`);
     return false;
   };
 
@@ -8329,7 +8412,7 @@ export const SettingsPage = (): JSX.Element => {
                 id="settings-row-mini-player"
                 highlighted={highlightedSettingId === 'settings-row-mini-player'}
                 title="迷你播放器"
-                description="独立透明置顶小窗，只显示封面、歌名和进度；锁定后鼠标穿透，适合窗口化或无边框全屏游戏。"
+                description="独立透明置顶小窗，只显示封面、歌名和进度；窗口会收紧到播放器本体，避免透明空白挡住其他软件。"
               >
                 <div className="settings-chip-row">
                   <StatusText tone={appSettings?.miniPlayerEnabled ? 'good' : 'muted'}>
@@ -8348,20 +8431,19 @@ export const SettingsPage = (): JSX.Element => {
                     className="settings-action-button"
                     type="button"
                     disabled={!appSettings || !window.echo?.miniPlayer}
-                    onClick={() => void handleMiniPlayerLockedChange(!(appSettings?.miniPlayerLocked ?? false))}
-                  >
-                    <Lock size={15} />
-                    {appSettings?.miniPlayerLocked ? '解锁点击' : '锁定穿透'}
-                  </button>
-                  <button
-                    className="settings-action-button"
-                    type="button"
-                    disabled={!appSettings || !window.echo?.miniPlayer}
                     onClick={() => void handleMiniPlayerResetBounds()}
                   >
                     <RotateCcw size={15} />
                     重置位置
                   </button>
+                </div>
+                <div className="settings-chip-row">
+                  <span className="settings-inline-note">打开迷你播放器时隐藏主界面到右下角托盘</span>
+                  <ToggleButton
+                    active={appSettings?.miniPlayerAutoHideMainWindow ?? false}
+                    disabled={!appSettings}
+                    onClick={() => patchAppSettings({ miniPlayerAutoHideMainWindow: !(appSettings?.miniPlayerAutoHideMainWindow ?? false) })}
+                  />
                 </div>
               </SettingRow>
               <SettingRow
@@ -10835,6 +10917,17 @@ export const SettingsPage = (): JSX.Element => {
                     {diagnosticsBusy ? '导出中...' : '导出诊断'}
                   </button>
                 </div>
+                <label className="settings-danger-confirm-field" htmlFor="settings-danger-confirm-word">
+                  <span>危险操作确认词</span>
+                  <input
+                    id="settings-danger-confirm-word"
+                    type="text"
+                    value={dangerConfirmWord}
+                    placeholder="先输入按钮提示的确认词，再执行危险操作"
+                    autoComplete="off"
+                    onChange={(event) => setDangerConfirmWord(event.target.value)}
+                  />
+                </label>
                 {databasePrimaryActionUnavailableReason ? <p className="settings-inline-note">{databasePrimaryActionUnavailableReason}</p> : null}
                 {databaseProtectionError ? <p className="settings-inline-error" role="alert">{databaseProtectionError}</p> : null}
                 {databaseProtectionMessage ? <p className="settings-inline-note" role="status">{databaseProtectionMessage}</p> : null}
@@ -10850,6 +10943,91 @@ export const SettingsPage = (): JSX.Element => {
                   </div>
                 ) : null}
               </div>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                title="扫描重复歌曲并清理"
+                description="先扫描并列出重复组；清理时优先把低音质、低评分副本移入系统回收站，每组保留评分最高的一首。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--duplicates">
+                  <div className="settings-status-grid">
+                    <span>
+                      <em>扫描结果</em>
+                      <strong>
+                        {duplicateCleanupBusyAction === 'scan'
+                          ? '扫描中...'
+                          : duplicateCleanupPreview
+                          ? `${duplicateCleanupPreview.groups.length} 组 / ${duplicateCleanupPreview.totalTracksToRemove} 首待清理`
+                          : '尚未扫描'}
+                      </strong>
+                    </span>
+                    <span>
+                      <em>预计释放</em>
+                      <strong>{duplicateCleanupPreview ? formatUpdateBytes(duplicateCleanupPreview.totalBytesToRemove) : 'n/a'}</strong>
+                    </span>
+                    <span>
+                      <em>扫描时间</em>
+                      <strong>{duplicateCleanupPreview?.generatedAt ? new Date(duplicateCleanupPreview.generatedAt).toLocaleString() : '尚未扫描'}</strong>
+                    </span>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={duplicateCleanupBusyAction !== null || dangerBusy}
+                      onClick={() => void handleScanDuplicateTrackCleanup()}
+                    >
+                      <RotateCw className={duplicateCleanupBusyAction === 'scan' ? 'spinning-icon' : undefined} size={15} />
+                      {duplicateCleanupBusyAction === 'scan' ? '扫描中...' : '扫描重复歌曲'}
+                    </button>
+                    <button
+                      className="settings-danger-button"
+                      type="button"
+                      disabled={
+                        duplicateCleanupBusyAction !== null ||
+                        dangerBusy ||
+                        !duplicateCleanupPreview ||
+                        duplicateCleanupPreview.removeTrackIds.length === 0
+                      }
+                      onClick={() => void handleApplyDuplicateTrackCleanup()}
+                    >
+                      <Trash2 size={15} />
+                      {duplicateCleanupBusyAction === 'clean' ? '清理中...' : '清理扫描结果'}
+                    </button>
+                  </div>
+                  {duplicateCleanupBusyAction === 'scan' ? (
+                    <div className="settings-update-progress settings-duplicate-cleanup-progress" role="status" aria-live="polite">
+                      <div className="settings-update-progress-label">
+                        <strong>正在扫描重复歌曲</strong>
+                        <span>分批处理，避免挤占播放</span>
+                      </div>
+                      <div className="settings-update-progress-track" data-indeterminate="true" role="progressbar" aria-label="重复歌曲扫描中">
+                        <span />
+                      </div>
+                    </div>
+                  ) : null}
+                  {duplicateCleanupPreview?.groups.length ? (
+                    <div className="settings-library-quality-list">
+                      {duplicateCleanupPreview.groups.map((group) => (
+                        <div className="settings-library-quality-row" key={group.id}>
+                          <div>
+                            <strong>{group.keep.track.title} - {group.keep.track.artist}</strong>
+                            <small title={group.keep.track.path}>保留：{formatDuplicateCleanupTrackQuality(group.keep)} · {group.keep.track.path}</small>
+                            {group.remove.map((member) => (
+                              <small title={member.track.path} key={member.track.id}>
+                                清理：{member.track.title} - {member.track.artist} · {formatDuplicateCleanupTrackQuality(member)} · {member.track.path}
+                              </small>
+                            ))}
+                          </div>
+                          <div className="settings-library-quality-actions">
+                            <em>清理 {group.remove.length} 首</em>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {duplicateCleanupMessage ? <p className="settings-inline-note">{duplicateCleanupMessage}</p> : null}
+                </div>
+              </SettingRow>
               <SettingRow title={t('settings.danger.clearCache.title')} description={t('settings.danger.clearCache.description')}>
                 <button className="settings-danger-button" type="button" disabled={dangerBusy} onClick={() => void handleClearLibraryCache()}>
                   {dangerBusy ? '处理中...' : '清空曲库缓存'}

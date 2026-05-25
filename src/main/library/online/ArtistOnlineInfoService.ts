@@ -182,6 +182,49 @@ const fetchJson = async (url: string, fetcher: FetchLike, headers: Record<string
   }
 };
 
+const pageExtractFromQuery = (value: unknown): string | null => {
+  const pages = asRecord(asRecord(asRecord(value).query).pages);
+  for (const page of Object.values(pages).map(asRecord)) {
+    if (page.missing) {
+      continue;
+    }
+    const extract = text(page.extract);
+    if (extract) {
+      return extract;
+    }
+  }
+  return null;
+};
+
+const normalizeExtract = (value: string, maxLength: number): string => {
+  const normalized = value
+    .replace(/\r\n?/gu, '\n')
+    .replace(/[ \t]+\n/gu, '\n')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3).trim()}...` : normalized;
+};
+
+const wikipediaExtractJson = (
+  language: string,
+  title: string,
+  fetcher: FetchLike,
+  headers: Record<string, string>,
+  maxChars: number,
+): Promise<unknown> =>
+  wikipediaLimiter.run(() => {
+    const params = new URLSearchParams({
+      action: 'query',
+      prop: 'extracts',
+      explaintext: '1',
+      exchars: String(maxChars),
+      redirects: '1',
+      titles: title,
+      format: 'json',
+    });
+    return fetchJson(`https://${language}.wikipedia.org/w/api.php?${params.toString()}`, fetcher, headers);
+  });
+
 const defaultHeaders = {
   'Api-User-Agent': 'ECHO-Next/26.5.20 (https://github.com/moekotori/echo)',
   'User-Agent': 'ECHO-Next/26.5.20 (https://github.com/moekotori/echo)',
@@ -361,22 +404,29 @@ export class ArtistOnlineInfoService {
           continue;
         }
 
-        const data = asRecord(await wikipediaLimiter.run(() =>
+        const summaryPayload = await wikipediaLimiter.run(() =>
           fetchJson(
             `https://${language}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(best.key)}`,
             this.fetcher,
             defaultHeaders,
           ),
-        ));
+        );
+        const data = asRecord(summaryPayload);
         const extract = text(data.extract);
         const title = text(data.title);
         if (!extract || !title) {
           continue;
         }
+        let richExtract = extract;
+        try {
+          richExtract = pageExtractFromQuery(await wikipediaExtractJson(language, best.key, this.fetcher, defaultHeaders, 2800)) ?? extract;
+        } catch {
+          richExtract = extract;
+        }
         return {
           title,
           description: text(data.description),
-          extract: extract.length > 900 ? `${extract.slice(0, 897).trim()}...` : extract,
+          extract: normalizeExtract(richExtract, 2400),
           url: text(asRecord(asRecord(data.content_urls).desktop).page),
           language,
           thumbnailUrl: text(asRecord(data.thumbnail).source),

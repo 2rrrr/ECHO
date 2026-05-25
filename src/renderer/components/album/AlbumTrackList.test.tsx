@@ -4,6 +4,35 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { AlbumTrackList } from './AlbumTrackList';
 import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
 
+vi.mock('../../i18n/I18nProvider', () => {
+  const strings: Record<string, string> = {
+    'albumDetail.count.loadedTracks': '{loaded} of {total} tracks',
+    'albumDetail.count.tracks': '{count} tracks',
+    'albumDetail.status.readingSignal': 'Reading signal',
+    'albumDetail.status.unknownLength': 'Unknown length',
+    'albumDetail.tracks.action.like': 'Like {title}',
+    'albumDetail.tracks.action.likeTitle': 'Like',
+    'albumDetail.tracks.action.unlike': 'Unlike {title}',
+    'albumDetail.tracks.action.unlikeTitle': 'Unlike',
+    'albumDetail.tracks.aria': 'Album tracks',
+    'albumDetail.tracks.column.signal': 'Signal',
+    'albumDetail.tracks.column.time': 'Time',
+    'albumDetail.tracks.column.title': 'Title',
+    'albumDetail.tracks.empty': 'No tracks found for this album.',
+    'albumDetail.tracks.formatAria': 'Track format',
+    'albumDetail.tracks.loadMore': 'Load more',
+    'albumDetail.tracks.loading': 'Loading...',
+    'albumDetail.tracks.summaryAria': 'Track summary',
+  };
+
+  return {
+    useI18n: () => ({
+      t: (key: string, options?: Record<string, string | number>) =>
+        Object.entries(options ?? {}).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), strings[key] ?? key),
+    }),
+  };
+});
+
 const track = (id: string, overrides: Partial<LibraryTrack> = {}): LibraryTrack => ({
   id,
   path: `D:\\Music\\${id}.flac`,

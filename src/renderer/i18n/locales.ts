@@ -7,6 +7,113 @@ export const localeOptions: Array<{ locale: Locale; label: string }> = [
   { locale: 'en-US', label: 'English' },
 ];
 
+type AlbumDetailTranslationKey =
+  | 'albumDetail.action.back'
+  | 'albumDetail.action.likeAlbum'
+  | 'albumDetail.action.more'
+  | 'albumDetail.action.openSource'
+  | 'albumDetail.action.playNow'
+  | 'albumDetail.action.readingAlbum'
+  | 'albumDetail.action.refresh'
+  | 'albumDetail.action.unlikeAlbum'
+  | 'albumDetail.aria.details'
+  | 'albumDetail.aria.info'
+  | 'albumDetail.aria.metadata'
+  | 'albumDetail.aria.openArtist'
+  | 'albumDetail.aria.sections'
+  | 'albumDetail.aria.trackConsole'
+  | 'albumDetail.artist.notFound'
+  | 'albumDetail.count.albums'
+  | 'albumDetail.count.loadedAlbums'
+  | 'albumDetail.count.loadedTracks'
+  | 'albumDetail.count.tracks'
+  | 'albumDetail.credit.role.arrangement'
+  | 'albumDetail.credit.role.composer'
+  | 'albumDetail.credit.role.engineering'
+  | 'albumDetail.credit.role.label'
+  | 'albumDetail.credit.role.lyrics'
+  | 'albumDetail.credit.role.other'
+  | 'albumDetail.credit.role.performer'
+  | 'albumDetail.credit.role.production'
+  | 'albumDetail.credit.role.vocal'
+  | 'albumDetail.credit.source.album'
+  | 'albumDetail.credit.source.label'
+  | 'albumDetail.credit.source.recording'
+  | 'albumDetail.credit.source.work'
+  | 'albumDetail.credit.summary.arrangement'
+  | 'albumDetail.credit.summary.composer'
+  | 'albumDetail.credit.summary.engineering'
+  | 'albumDetail.credit.summary.label'
+  | 'albumDetail.credit.summary.lyrics'
+  | 'albumDetail.credit.summary.other'
+  | 'albumDetail.credit.summary.performer'
+  | 'albumDetail.credit.summary.production'
+  | 'albumDetail.credit.summary.vocal'
+  | 'albumDetail.credits.count'
+  | 'albumDetail.credits.entries'
+  | 'albumDetail.credits.heading'
+  | 'albumDetail.credits.overviewAria'
+  | 'albumDetail.credits.trackPrefix'
+  | 'albumDetail.duration.hours'
+  | 'albumDetail.duration.minutes'
+  | 'albumDetail.fact.format'
+  | 'albumDetail.fact.genre'
+  | 'albumDetail.fact.library'
+  | 'albumDetail.fact.released'
+  | 'albumDetail.information.albumProfile'
+  | 'albumDetail.information.artistProfile'
+  | 'albumDetail.information.atGlance'
+  | 'albumDetail.information.externalLinks'
+  | 'albumDetail.information.overviewAria'
+  | 'albumDetail.label.album'
+  | 'albumDetail.online.emptyDescription'
+  | 'albumDetail.online.emptyTitle'
+  | 'albumDetail.online.match'
+  | 'albumDetail.online.noSource'
+  | 'albumDetail.online.possibleMatch'
+  | 'albumDetail.online.reading'
+  | 'albumDetail.online.sources'
+  | 'albumDetail.online.unavailable'
+  | 'albumDetail.related.aria'
+  | 'albumDetail.related.heading'
+  | 'albumDetail.related.loading'
+  | 'albumDetail.related.thisAlbum'
+  | 'albumDetail.status.libraryReady'
+  | 'albumDetail.status.readingSignal'
+  | 'albumDetail.status.unknownGenre'
+  | 'albumDetail.status.unknownLength'
+  | 'albumDetail.status.unknownYear'
+  | 'albumDetail.tab.credits'
+  | 'albumDetail.tab.information'
+  | 'albumDetail.tab.tracks'
+  | 'albumDetail.texture.discs'
+  | 'albumDetail.tracks.action.like'
+  | 'albumDetail.tracks.action.likeTitle'
+  | 'albumDetail.tracks.action.unlike'
+  | 'albumDetail.tracks.action.unlikeTitle'
+  | 'albumDetail.tracks.aria'
+  | 'albumDetail.tracks.column.signal'
+  | 'albumDetail.tracks.column.time'
+  | 'albumDetail.tracks.column.title'
+  | 'albumDetail.tracks.confirm.delete'
+  | 'albumDetail.tracks.empty'
+  | 'albumDetail.tracks.error.actionUnavailable'
+  | 'albumDetail.tracks.error.desktopBridgeActions'
+  | 'albumDetail.tracks.error.desktopBridgeEdit'
+  | 'albumDetail.tracks.error.desktopBridgeRead'
+  | 'albumDetail.tracks.error.noCoverSaved'
+  | 'albumDetail.tracks.error.noCoverToCopy'
+  | 'albumDetail.tracks.error.remoteFileAction'
+  | 'albumDetail.tracks.formatAria'
+  | 'albumDetail.tracks.loadMore'
+  | 'albumDetail.tracks.loading'
+  | 'albumDetail.tracks.status.addedToPlaylist'
+  | 'albumDetail.tracks.status.albumNotFound'
+  | 'albumDetail.tracks.status.notInQueue'
+  | 'albumDetail.tracks.status.reloadedTags'
+  | 'albumDetail.tracks.status.removedFromQueue'
+  | 'albumDetail.tracks.summaryAria';
+
 type ArtistDetailTranslationKey =
   | 'artistDetail.action.addToQueue'
   | 'artistDetail.action.back'
@@ -113,6 +220,7 @@ type ArtistDetailTranslationKey =
   | 'artistDetail.tracks.unknownAlbum';
 
 export type TranslationKey =
+  | AlbumDetailTranslationKey
   | ArtistDetailTranslationKey
   | 'app.navigation.main'
   | 'app.navigation.utility'
@@ -1329,6 +1437,111 @@ const zhCN: TranslationMap = {
   'app.window.minimize': '最小化',
   'app.window.maximize': '最大化',
   'app.window.close': '关闭',
+  'albumDetail.action.back': '专辑',
+  'albumDetail.action.likeAlbum': '喜欢专辑',
+  'albumDetail.action.more': '更多专辑操作',
+  'albumDetail.action.openSource': '打开来源',
+  'albumDetail.action.playNow': '立即播放',
+  'albumDetail.action.readingAlbum': '正在读取专辑',
+  'albumDetail.action.refresh': '刷新',
+  'albumDetail.action.unlikeAlbum': '取消喜欢专辑',
+  'albumDetail.aria.details': '{album} 专辑详情',
+  'albumDetail.aria.info': '专辑信息',
+  'albumDetail.aria.metadata': '专辑元数据',
+  'albumDetail.aria.openArtist': '打开艺术家 {artist}',
+  'albumDetail.aria.sections': '专辑分区',
+  'albumDetail.aria.trackConsole': '{album} 曲目控制台',
+  'albumDetail.artist.notFound': '没有找到艺术家：{artist}',
+  'albumDetail.count.albums': '{count} 张专辑',
+  'albumDetail.count.loadedAlbums': '{loaded}/{total} 张专辑',
+  'albumDetail.count.loadedTracks': '{loaded}/{total} 首歌',
+  'albumDetail.count.tracks': '{count} 首歌',
+  'albumDetail.credit.role.arrangement': '编曲',
+  'albumDetail.credit.role.composer': '作曲',
+  'albumDetail.credit.role.engineering': '录音与工程',
+  'albumDetail.credit.role.label': '发行与厂牌',
+  'albumDetail.credit.role.lyrics': '作词',
+  'albumDetail.credit.role.other': '其他贡献',
+  'albumDetail.credit.role.performer': '演奏',
+  'albumDetail.credit.role.production': '制作',
+  'albumDetail.credit.role.vocal': '演唱与声部',
+  'albumDetail.credit.source.album': '专辑贡献',
+  'albumDetail.credit.source.label': '厂牌',
+  'albumDetail.credit.source.recording': '曲目贡献',
+  'albumDetail.credit.source.work': '作品贡献',
+  'albumDetail.credit.summary.arrangement': '编曲、配器和改编相关贡献。',
+  'albumDetail.credit.summary.composer': '来自发行、录音或作品关系的音乐创作信息。',
+  'albumDetail.credit.summary.engineering': '录音、混音、母带和声音工程信息。',
+  'albumDetail.credit.summary.label': '与发行相关的厂牌和目录信息。',
+  'albumDetail.credit.summary.lyrics': '歌词、文字、脚本和相关写作贡献。',
+  'albumDetail.credit.summary.other': '在线元数据匹配到的其他贡献。',
+  'albumDetail.credit.summary.performer': '发行或单曲录音中的演奏与表演贡献。',
+  'albumDetail.credit.summary.production': '制作人和制作侧贡献。',
+  'albumDetail.credit.summary.vocal': '主唱、客座声音和演唱相关贡献。',
+  'albumDetail.credits.count': '{count} 位贡献者 / 组织',
+  'albumDetail.credits.entries': '{count} 条',
+  'albumDetail.credits.heading': '专辑贡献',
+  'albumDetail.credits.overviewAria': '贡献概览',
+  'albumDetail.credits.trackPrefix': '曲目：{title}',
+  'albumDetail.duration.hours': '{hours} 小时 {minutes} 分钟',
+  'albumDetail.duration.minutes': '{minutes} 分钟',
+  'albumDetail.fact.format': '格式',
+  'albumDetail.fact.genre': '流派',
+  'albumDetail.fact.library': '曲库',
+  'albumDetail.fact.released': '发行',
+  'albumDetail.information.albumProfile': '专辑资料',
+  'albumDetail.information.artistProfile': '艺术家资料',
+  'albumDetail.information.atGlance': '概览',
+  'albumDetail.information.externalLinks': '外部链接',
+  'albumDetail.information.overviewAria': '专辑与艺术家概览',
+  'albumDetail.label.album': '专辑',
+  'albumDetail.online.emptyDescription': 'MusicBrainz 和 Wikipedia 没有返回足够可靠的专辑匹配数据。',
+  'albumDetail.online.emptyTitle': '没有找到可靠的在线信息',
+  'albumDetail.online.match': 'MusicBrainz 匹配',
+  'albumDetail.online.noSource': '没有匹配来源',
+  'albumDetail.online.possibleMatch': '可能的 MusicBrainz 匹配',
+  'albumDetail.online.reading': '正在读取在线专辑信息...',
+  'albumDetail.online.sources': '在线来源',
+  'albumDetail.online.unavailable': '在线信息不可用',
+  'albumDetail.related.aria': '{artist} 在曲库中的专辑',
+  'albumDetail.related.heading': '我的曲库',
+  'albumDetail.related.loading': '正在加载专辑',
+  'albumDetail.related.thisAlbum': '当前专辑',
+  'albumDetail.status.libraryReady': '{value} 就绪',
+  'albumDetail.status.readingSignal': '正在读取信号',
+  'albumDetail.status.unknownGenre': '未知流派',
+  'albumDetail.status.unknownLength': '未知时长',
+  'albumDetail.status.unknownYear': '未知年份',
+  'albumDetail.tab.credits': '贡献',
+  'albumDetail.tab.information': '信息',
+  'albumDetail.tab.tracks': '曲目',
+  'albumDetail.texture.discs': '{count} 张碟',
+  'albumDetail.tracks.action.like': '喜欢 {title}',
+  'albumDetail.tracks.action.likeTitle': '喜欢',
+  'albumDetail.tracks.action.unlike': '取消喜欢 {title}',
+  'albumDetail.tracks.action.unlikeTitle': '取消喜欢',
+  'albumDetail.tracks.aria': '专辑曲目',
+  'albumDetail.tracks.column.signal': '信号',
+  'albumDetail.tracks.column.time': '时长',
+  'albumDetail.tracks.column.title': '标题',
+  'albumDetail.tracks.confirm.delete': '删除音乐文件？\n{title}',
+  'albumDetail.tracks.empty': '这张专辑没有曲目。',
+  'albumDetail.tracks.error.actionUnavailable': '这个曲目操作暂不可用。',
+  'albumDetail.tracks.error.desktopBridgeActions': '桌面桥接不可用。请在 ECHO Next 桌面版中使用文件操作。',
+  'albumDetail.tracks.error.desktopBridgeEdit': '桌面桥接不可用。请在 ECHO Next 桌面版中编辑内嵌标签。',
+  'albumDetail.tracks.error.desktopBridgeRead': '桌面桥接不可用。请在 ECHO Next 桌面版中读取专辑曲目。',
+  'albumDetail.tracks.error.noCoverSaved': '没有保存任何封面。',
+  'albumDetail.tracks.error.noCoverToCopy': '这首歌没有可复制的封面。',
+  'albumDetail.tracks.error.remoteFileAction': '远程曲目暂不支持本地文件操作。',
+  'albumDetail.tracks.formatAria': '曲目格式',
+  'albumDetail.tracks.loadMore': '加载更多',
+  'albumDetail.tracks.loading': '加载中...',
+  'albumDetail.tracks.status.addedToPlaylist': '已加入歌单：{playlist}',
+  'albumDetail.tracks.status.albumNotFound': '已经在查看这张专辑：{title}',
+  'albumDetail.tracks.status.notInQueue': '队列中没有这首歌：{title}',
+  'albumDetail.tracks.status.reloadedTags': '已从内嵌标签重新加载：{title}',
+  'albumDetail.tracks.status.removedFromQueue': '已从队列移除：{title}',
+  'albumDetail.tracks.summaryAria': '曲目摘要',
   'audioDrawer.action.close': '关闭音频设置',
   'audioDrawer.action.copiedDiagnostics': '已复制播放诊断信息',
   'audioDrawer.action.copyDiagnostics': '复制播放诊断信息',
@@ -1582,6 +1795,8 @@ const zhCN: TranslationMap = {
   'artistDetail.albums.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面版中读取艺术家专辑。',
   'artistDetail.albums.heading': '{artist} 的专辑',
   'artistDetail.albums.loadedCount': '已载入 {loaded}/{total} 张专辑',
+  'artistDetail.aroundWeb.aria': '艺术家官网和社交媒体',
+  'artistDetail.aroundWeb.heading': 'Around the web',
   'artistDetail.aria.details': '{artist} 艺术家详情',
   'artistDetail.aria.events': '艺术家演出',
   'artistDetail.aria.facts': '艺术家资料',
@@ -2632,6 +2847,110 @@ const zhCN: TranslationMap = {
 const zhTW: TranslationMap = {
   ...zhCN,
   'library.action.refresh': '重新整理',
+  'albumDetail.action.back': '專輯',
+  'albumDetail.action.likeAlbum': '喜歡專輯',
+  'albumDetail.action.more': '更多專輯操作',
+  'albumDetail.action.openSource': '開啟來源',
+  'albumDetail.action.playNow': '立即播放',
+  'albumDetail.action.readingAlbum': '正在讀取專輯',
+  'albumDetail.action.refresh': '重新整理',
+  'albumDetail.action.unlikeAlbum': '取消喜歡專輯',
+  'albumDetail.aria.details': '{album} 專輯詳情',
+  'albumDetail.aria.info': '專輯資訊',
+  'albumDetail.aria.metadata': '專輯中繼資料',
+  'albumDetail.aria.openArtist': '開啟藝術家 {artist}',
+  'albumDetail.aria.sections': '專輯分區',
+  'albumDetail.aria.trackConsole': '{album} 曲目控制台',
+  'albumDetail.artist.notFound': '找不到藝術家：{artist}',
+  'albumDetail.count.albums': '{count} 張專輯',
+  'albumDetail.count.loadedAlbums': '{loaded}/{total} 張專輯',
+  'albumDetail.count.loadedTracks': '{loaded}/{total} 首歌',
+  'albumDetail.count.tracks': '{count} 首歌',
+  'albumDetail.credit.role.arrangement': '編曲',
+  'albumDetail.credit.role.engineering': '錄音與工程',
+  'albumDetail.credit.role.label': '發行與廠牌',
+  'albumDetail.credit.role.lyrics': '作詞',
+  'albumDetail.credit.role.other': '其他貢獻',
+  'albumDetail.credit.role.performer': '演奏',
+  'albumDetail.credit.role.production': '製作',
+  'albumDetail.credit.role.vocal': '演唱與聲部',
+  'albumDetail.credit.source.album': '專輯貢獻',
+  'albumDetail.credit.source.label': '廠牌',
+  'albumDetail.credit.source.recording': '曲目貢獻',
+  'albumDetail.credit.source.work': '作品貢獻',
+  'albumDetail.credit.summary.arrangement': '編曲、配器和改編相關貢獻。',
+  'albumDetail.credit.summary.composer': '來自發行、錄音或作品關係的音樂創作資訊。',
+  'albumDetail.credit.summary.engineering': '錄音、混音、母帶和聲音工程資訊。',
+  'albumDetail.credit.summary.label': '與發行相關的廠牌和目錄資訊。',
+  'albumDetail.credit.summary.lyrics': '歌詞、文字、腳本和相關寫作貢獻。',
+  'albumDetail.credit.summary.other': '線上中繼資料匹配到的其他貢獻。',
+  'albumDetail.credit.summary.performer': '發行或單曲錄音中的演奏與表演貢獻。',
+  'albumDetail.credit.summary.production': '製作人和製作側貢獻。',
+  'albumDetail.credit.summary.vocal': '主唱、客座聲音和演唱相關貢獻。',
+  'albumDetail.credits.count': '{count} 位貢獻者 / 組織',
+  'albumDetail.credits.entries': '{count} 條',
+  'albumDetail.credits.heading': '專輯貢獻',
+  'albumDetail.credits.overviewAria': '貢獻概覽',
+  'albumDetail.credits.trackPrefix': '曲目：{title}',
+  'albumDetail.duration.hours': '{hours} 小時 {minutes} 分鐘',
+  'albumDetail.duration.minutes': '{minutes} 分鐘',
+  'albumDetail.fact.format': '格式',
+  'albumDetail.fact.genre': '曲風',
+  'albumDetail.fact.library': '曲庫',
+  'albumDetail.fact.released': '發行',
+  'albumDetail.information.albumProfile': '專輯資料',
+  'albumDetail.information.artistProfile': '藝術家資料',
+  'albumDetail.information.atGlance': '概覽',
+  'albumDetail.information.externalLinks': '外部連結',
+  'albumDetail.information.overviewAria': '專輯與藝術家概覽',
+  'albumDetail.label.album': '專輯',
+  'albumDetail.online.emptyDescription': 'MusicBrainz 和 Wikipedia 沒有回傳足夠可靠的專輯匹配資料。',
+  'albumDetail.online.emptyTitle': '沒有找到可靠的線上資訊',
+  'albumDetail.online.match': 'MusicBrainz 匹配',
+  'albumDetail.online.noSource': '沒有匹配來源',
+  'albumDetail.online.possibleMatch': '可能的 MusicBrainz 匹配',
+  'albumDetail.online.reading': '正在讀取線上專輯資訊...',
+  'albumDetail.online.sources': '線上來源',
+  'albumDetail.online.unavailable': '線上資訊不可用',
+  'albumDetail.related.aria': '{artist} 在曲庫中的專輯',
+  'albumDetail.related.heading': '我的曲庫',
+  'albumDetail.related.loading': '正在載入專輯',
+  'albumDetail.related.thisAlbum': '目前專輯',
+  'albumDetail.status.libraryReady': '{value} 就緒',
+  'albumDetail.status.readingSignal': '正在讀取訊號',
+  'albumDetail.status.unknownGenre': '未知曲風',
+  'albumDetail.status.unknownLength': '未知時長',
+  'albumDetail.status.unknownYear': '未知年份',
+  'albumDetail.tab.credits': '貢獻',
+  'albumDetail.tab.information': '資訊',
+  'albumDetail.tab.tracks': '曲目',
+  'albumDetail.texture.discs': '{count} 張碟',
+  'albumDetail.tracks.action.like': '喜歡 {title}',
+  'albumDetail.tracks.action.likeTitle': '喜歡',
+  'albumDetail.tracks.action.unlike': '取消喜歡 {title}',
+  'albumDetail.tracks.action.unlikeTitle': '取消喜歡',
+  'albumDetail.tracks.aria': '專輯曲目',
+  'albumDetail.tracks.column.signal': '訊號',
+  'albumDetail.tracks.column.time': '時長',
+  'albumDetail.tracks.column.title': '標題',
+  'albumDetail.tracks.confirm.delete': '刪除音樂檔案？\n{title}',
+  'albumDetail.tracks.empty': '這張專輯沒有曲目。',
+  'albumDetail.tracks.error.actionUnavailable': '這個曲目操作暫不可用。',
+  'albumDetail.tracks.error.desktopBridgeActions': '桌面橋接不可用。請在 ECHO Next 桌面版中使用檔案操作。',
+  'albumDetail.tracks.error.desktopBridgeEdit': '桌面橋接不可用。請在 ECHO Next 桌面版中編輯內嵌標籤。',
+  'albumDetail.tracks.error.desktopBridgeRead': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取專輯曲目。',
+  'albumDetail.tracks.error.noCoverSaved': '沒有儲存任何封面。',
+  'albumDetail.tracks.error.noCoverToCopy': '這首歌沒有可複製的封面。',
+  'albumDetail.tracks.error.remoteFileAction': '遠端曲目暫不支援本機檔案操作。',
+  'albumDetail.tracks.formatAria': '曲目格式',
+  'albumDetail.tracks.loadMore': '載入更多',
+  'albumDetail.tracks.loading': '載入中...',
+  'albumDetail.tracks.status.addedToPlaylist': '已加入歌單：{playlist}',
+  'albumDetail.tracks.status.albumNotFound': '已經在查看這張專輯：{title}',
+  'albumDetail.tracks.status.notInQueue': '佇列中沒有這首歌：{title}',
+  'albumDetail.tracks.status.reloadedTags': '已從內嵌標籤重新載入：{title}',
+  'albumDetail.tracks.status.removedFromQueue': '已從佇列移除：{title}',
+  'albumDetail.tracks.summaryAria': '曲目摘要',
   'library.albums.card.tracks': '{count} 首歌',
   'library.albums.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取專輯。',
   'library.albums.listAria': '專輯列表',
@@ -2667,6 +2986,8 @@ const zhTW: TranslationMap = {
   'artistDetail.albums.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取藝術家專輯。',
   'artistDetail.albums.heading': '{artist} 的專輯',
   'artistDetail.albums.loadedCount': '已載入 {loaded}/{total} 張專輯',
+  'artistDetail.aroundWeb.aria': '藝術家官網和社群媒體',
+  'artistDetail.aroundWeb.heading': 'Around the web',
   'artistDetail.aria.details': '{artist} 藝術家詳情',
   'artistDetail.aria.events': '藝術家演出',
   'artistDetail.aria.facts': '藝術家資料',
@@ -3672,6 +3993,8 @@ const jaJP: TranslationMap = {
   'artistDetail.albums.error.desktopBridge': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアーティストのアルバムを読み込んでください。',
   'artistDetail.albums.heading': '{artist} のアルバム',
   'artistDetail.albums.loadedCount': '{loaded}/{total} アルバムを読み込み済み',
+  'artistDetail.aroundWeb.aria': 'アーティストの公式サイトとソーシャルメディア',
+  'artistDetail.aroundWeb.heading': 'Around the web',
   'artistDetail.aria.details': '{artist} のアーティスト詳細',
   'artistDetail.aria.events': 'アーティストのイベント',
   'artistDetail.aria.facts': 'アーティスト情報',
@@ -3781,6 +4104,111 @@ const jaJP: TranslationMap = {
   'app.window.minimize': '最小化',
   'app.window.maximize': '最大化',
   'app.window.close': '閉じる',
+  'albumDetail.action.back': 'アルバム',
+  'albumDetail.action.likeAlbum': 'アルバムをお気に入りに追加',
+  'albumDetail.action.more': 'その他のアルバム操作',
+  'albumDetail.action.openSource': 'ソースを開く',
+  'albumDetail.action.playNow': '今すぐ再生',
+  'albumDetail.action.readingAlbum': 'アルバムを読み込み中',
+  'albumDetail.action.refresh': '更新',
+  'albumDetail.action.unlikeAlbum': 'アルバムのお気に入りを解除',
+  'albumDetail.aria.details': '{album} のアルバム詳細',
+  'albumDetail.aria.info': 'アルバム情報',
+  'albumDetail.aria.metadata': 'アルバムメタデータ',
+  'albumDetail.aria.openArtist': 'アーティスト {artist} を開く',
+  'albumDetail.aria.sections': 'アルバムセクション',
+  'albumDetail.aria.trackConsole': '{album} のトラックコンソール',
+  'albumDetail.artist.notFound': 'アーティストが見つかりません: {artist}',
+  'albumDetail.count.albums': '{count} 枚のアルバム',
+  'albumDetail.count.loadedAlbums': '{loaded}/{total} 枚のアルバム',
+  'albumDetail.count.loadedTracks': '{loaded}/{total} 曲',
+  'albumDetail.count.tracks': '{count} 曲',
+  'albumDetail.credit.role.arrangement': '編曲',
+  'albumDetail.credit.role.composer': '作曲',
+  'albumDetail.credit.role.engineering': '録音とエンジニアリング',
+  'albumDetail.credit.role.label': 'リリースとレーベル',
+  'albumDetail.credit.role.lyrics': '作詞',
+  'albumDetail.credit.role.other': 'その他のクレジット',
+  'albumDetail.credit.role.performer': '演奏',
+  'albumDetail.credit.role.production': '制作',
+  'albumDetail.credit.role.vocal': 'ボーカルと声',
+  'albumDetail.credit.source.album': 'アルバムクレジット',
+  'albumDetail.credit.source.label': 'レーベル',
+  'albumDetail.credit.source.recording': 'トラッククレジット',
+  'albumDetail.credit.source.work': '作品クレジット',
+  'albumDetail.credit.summary.arrangement': '編曲、オーケストレーション、アダプテーションのクレジット。',
+  'albumDetail.credit.summary.composer': 'リリース、録音、作品関係から取得した作曲クレジット。',
+  'albumDetail.credit.summary.engineering': '録音、ミックス、マスタリング、音響エンジニアリングの情報。',
+  'albumDetail.credit.summary.label': 'リリースに紐づくレーベルとカタログ情報。',
+  'albumDetail.credit.summary.lyrics': '歌詞、言葉、台本などのライティングクレジット。',
+  'albumDetail.credit.summary.other': 'オンラインメタデータで見つかった追加クレジット。',
+  'albumDetail.credit.summary.performer': 'リリースや各録音に紐づく演奏クレジット。',
+  'albumDetail.credit.summary.production': 'プロデューサーなど制作側のクレジット。',
+  'albumDetail.credit.summary.vocal': 'メインボーカル、客演ボイス、ボーカル関連クレジット。',
+  'albumDetail.credits.count': '{count} 件の人物 / 組織',
+  'albumDetail.credits.entries': '{count} 件',
+  'albumDetail.credits.heading': 'アルバムクレジット',
+  'albumDetail.credits.overviewAria': 'クレジット概要',
+  'albumDetail.credits.trackPrefix': 'トラック: {title}',
+  'albumDetail.duration.hours': '{hours} 時間 {minutes} 分',
+  'albumDetail.duration.minutes': '{minutes} 分',
+  'albumDetail.fact.format': 'フォーマット',
+  'albumDetail.fact.genre': 'ジャンル',
+  'albumDetail.fact.library': 'ライブラリ',
+  'albumDetail.fact.released': 'リリース',
+  'albumDetail.information.albumProfile': 'アルバムプロフィール',
+  'albumDetail.information.artistProfile': 'アーティストプロフィール',
+  'albumDetail.information.atGlance': '概要',
+  'albumDetail.information.externalLinks': '外部リンク',
+  'albumDetail.information.overviewAria': 'アルバムとアーティストの概要',
+  'albumDetail.label.album': 'アルバム',
+  'albumDetail.online.emptyDescription': 'MusicBrainz と Wikipedia から十分に信頼できるアルバム一致情報が返りませんでした。',
+  'albumDetail.online.emptyTitle': '信頼できるオンライン情報がありません',
+  'albumDetail.online.match': 'MusicBrainz 一致',
+  'albumDetail.online.noSource': '一致したソースはありません',
+  'albumDetail.online.possibleMatch': 'MusicBrainz の候補一致',
+  'albumDetail.online.reading': 'オンラインのアルバム情報を読み込み中...',
+  'albumDetail.online.sources': 'オンラインソース',
+  'albumDetail.online.unavailable': 'オンライン情報を利用できません',
+  'albumDetail.related.aria': '{artist} のライブラリアルバム',
+  'albumDetail.related.heading': 'マイライブラリ',
+  'albumDetail.related.loading': 'アルバムを読み込み中',
+  'albumDetail.related.thisAlbum': 'このアルバム',
+  'albumDetail.status.libraryReady': '{value} 準備完了',
+  'albumDetail.status.readingSignal': '信号を読み込み中',
+  'albumDetail.status.unknownGenre': '不明なジャンル',
+  'albumDetail.status.unknownLength': '長さ不明',
+  'albumDetail.status.unknownYear': '年不明',
+  'albumDetail.tab.credits': 'クレジット',
+  'albumDetail.tab.information': '情報',
+  'albumDetail.tab.tracks': 'トラック',
+  'albumDetail.texture.discs': '{count} 枚組',
+  'albumDetail.tracks.action.like': '{title} をお気に入りに追加',
+  'albumDetail.tracks.action.likeTitle': 'お気に入りに追加',
+  'albumDetail.tracks.action.unlike': '{title} のお気に入りを解除',
+  'albumDetail.tracks.action.unlikeTitle': 'お気に入りを解除',
+  'albumDetail.tracks.aria': 'アルバムトラック',
+  'albumDetail.tracks.column.signal': '信号',
+  'albumDetail.tracks.column.time': '時間',
+  'albumDetail.tracks.column.title': 'タイトル',
+  'albumDetail.tracks.confirm.delete': '音楽ファイルを削除しますか？\n{title}',
+  'albumDetail.tracks.empty': 'このアルバムにトラックはありません。',
+  'albumDetail.tracks.error.actionUnavailable': 'このトラック操作はまだ利用できません。',
+  'albumDetail.tracks.error.desktopBridgeActions': 'デスクトップブリッジを利用できません。ファイル操作は ECHO Next デスクトップ版で実行してください。',
+  'albumDetail.tracks.error.desktopBridgeEdit': 'デスクトップブリッジを利用できません。埋め込みタグの編集は ECHO Next デスクトップ版で実行してください。',
+  'albumDetail.tracks.error.desktopBridgeRead': 'デスクトップブリッジを利用できません。アルバムトラックは ECHO Next デスクトップ版で読み込んでください。',
+  'albumDetail.tracks.error.noCoverSaved': '保存できるカバーアートがありません。',
+  'albumDetail.tracks.error.noCoverToCopy': 'このトラックにはコピーできるカバーアートがありません。',
+  'albumDetail.tracks.error.remoteFileAction': 'リモートトラックはまだローカルファイル操作に対応していません。',
+  'albumDetail.tracks.formatAria': 'トラック形式',
+  'albumDetail.tracks.loadMore': 'さらに読み込む',
+  'albumDetail.tracks.loading': '読み込み中...',
+  'albumDetail.tracks.status.addedToPlaylist': 'プレイリストに追加しました: {playlist}',
+  'albumDetail.tracks.status.albumNotFound': 'このアルバムを表示中です: {title}',
+  'albumDetail.tracks.status.notInQueue': 'このトラックはキューにありません: {title}',
+  'albumDetail.tracks.status.reloadedTags': '埋め込みタグから再読み込みしました: {title}',
+  'albumDetail.tracks.status.removedFromQueue': 'キューから削除しました: {title}',
+  'albumDetail.tracks.summaryAria': 'トラック概要',
   'audioDrawer.action.close': '音声設定を閉じる',
   'audioDrawer.action.copiedDiagnostics': '再生診断情報をコピーしました',
   'audioDrawer.action.copyDiagnostics': '再生診断情報をコピー',
@@ -4757,6 +5185,8 @@ const enUS: TranslationMap = {
   'artistDetail.albums.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next in Electron to read artist albums.',
   'artistDetail.albums.heading': 'Albums by {artist}',
   'artistDetail.albums.loadedCount': '{loaded} of {total} albums',
+  'artistDetail.aroundWeb.aria': 'Artist official and social links',
+  'artistDetail.aroundWeb.heading': 'Around the web',
   'artistDetail.aria.details': '{artist} artist details',
   'artistDetail.aria.events': 'Artist events',
   'artistDetail.aria.facts': 'Artist facts',
@@ -4866,6 +5296,111 @@ const enUS: TranslationMap = {
   'app.window.minimize': 'Minimize',
   'app.window.maximize': 'Maximize',
   'app.window.close': 'Close',
+  'albumDetail.action.back': 'Albums',
+  'albumDetail.action.likeAlbum': 'Like album',
+  'albumDetail.action.more': 'More album actions',
+  'albumDetail.action.openSource': 'Open source',
+  'albumDetail.action.playNow': 'Play Now',
+  'albumDetail.action.readingAlbum': 'Reading album',
+  'albumDetail.action.refresh': 'Refresh',
+  'albumDetail.action.unlikeAlbum': 'Unlike album',
+  'albumDetail.aria.details': '{album} album details',
+  'albumDetail.aria.info': 'Album info',
+  'albumDetail.aria.metadata': 'Album metadata',
+  'albumDetail.aria.openArtist': 'Open artist {artist}',
+  'albumDetail.aria.sections': 'Album sections',
+  'albumDetail.aria.trackConsole': '{album} track console',
+  'albumDetail.artist.notFound': 'Artist not found: {artist}',
+  'albumDetail.count.albums': '{count} albums',
+  'albumDetail.count.loadedAlbums': '{loaded} of {total} albums',
+  'albumDetail.count.loadedTracks': '{loaded} of {total} tracks',
+  'albumDetail.count.tracks': '{count} tracks',
+  'albumDetail.credit.role.arrangement': 'Arrangement',
+  'albumDetail.credit.role.composer': 'Composition',
+  'albumDetail.credit.role.engineering': 'Engineering',
+  'albumDetail.credit.role.label': 'Release & label',
+  'albumDetail.credit.role.lyrics': 'Lyrics & words',
+  'albumDetail.credit.role.other': 'Other credits',
+  'albumDetail.credit.role.performer': 'Performance',
+  'albumDetail.credit.role.production': 'Production',
+  'albumDetail.credit.role.vocal': 'Vocal & voices',
+  'albumDetail.credit.source.album': 'album credit',
+  'albumDetail.credit.source.label': 'label',
+  'albumDetail.credit.source.recording': 'track credit',
+  'albumDetail.credit.source.work': 'work credit',
+  'albumDetail.credit.summary.arrangement': 'Arrangement, orchestration, and adaptation credits.',
+  'albumDetail.credit.summary.composer': 'Music-writing credits from release, recording, or work relationships.',
+  'albumDetail.credit.summary.engineering': 'Recording, mix, mastering, and sound engineering credits.',
+  'albumDetail.credit.summary.label': 'Label and catalog information tied to the release.',
+  'albumDetail.credit.summary.lyrics': 'Lyric, words, libretto, and related writing credits.',
+  'albumDetail.credit.summary.other': 'Additional credits found in the online metadata match.',
+  'albumDetail.credit.summary.performer': 'Instrumental and performance credits attached to the release or individual recordings.',
+  'albumDetail.credit.summary.production': 'Producer and production-side credits.',
+  'albumDetail.credit.summary.vocal': 'Lead vocals, featured voices, and credited vocal roles.',
+  'albumDetail.credits.count': '{count} credited people and organizations',
+  'albumDetail.credits.entries': '{count} entries',
+  'albumDetail.credits.heading': 'Album credits',
+  'albumDetail.credits.overviewAria': 'Credit overview',
+  'albumDetail.credits.trackPrefix': 'Track: {title}',
+  'albumDetail.duration.hours': '{hours} hr {minutes} min',
+  'albumDetail.duration.minutes': '{minutes} min',
+  'albumDetail.fact.format': 'Format',
+  'albumDetail.fact.genre': 'Genre',
+  'albumDetail.fact.library': 'Library',
+  'albumDetail.fact.released': 'Released',
+  'albumDetail.information.albumProfile': 'Album profile',
+  'albumDetail.information.artistProfile': 'Artist profile',
+  'albumDetail.information.atGlance': 'At a glance',
+  'albumDetail.information.externalLinks': 'External links',
+  'albumDetail.information.overviewAria': 'Album and artist overview',
+  'albumDetail.label.album': 'Album',
+  'albumDetail.online.emptyDescription': 'MusicBrainz and Wikipedia did not return enough matching data for this album.',
+  'albumDetail.online.emptyTitle': 'No reliable online info found',
+  'albumDetail.online.match': 'MusicBrainz match',
+  'albumDetail.online.noSource': 'No source matched',
+  'albumDetail.online.possibleMatch': 'Possible MusicBrainz match',
+  'albumDetail.online.reading': 'Reading online album info...',
+  'albumDetail.online.sources': 'Online sources',
+  'albumDetail.online.unavailable': 'Online info unavailable',
+  'albumDetail.related.aria': '{artist} albums in your library',
+  'albumDetail.related.heading': 'My Library',
+  'albumDetail.related.loading': 'Loading albums',
+  'albumDetail.related.thisAlbum': 'This album',
+  'albumDetail.status.libraryReady': '{value} ready',
+  'albumDetail.status.readingSignal': 'Reading signal',
+  'albumDetail.status.unknownGenre': 'Unknown genre',
+  'albumDetail.status.unknownLength': 'Unknown length',
+  'albumDetail.status.unknownYear': 'Unknown year',
+  'albumDetail.tab.credits': 'Credits',
+  'albumDetail.tab.information': 'Information',
+  'albumDetail.tab.tracks': 'Tracks',
+  'albumDetail.texture.discs': '{count} discs',
+  'albumDetail.tracks.action.like': 'Like {title}',
+  'albumDetail.tracks.action.likeTitle': 'Like',
+  'albumDetail.tracks.action.unlike': 'Unlike {title}',
+  'albumDetail.tracks.action.unlikeTitle': 'Unlike',
+  'albumDetail.tracks.aria': 'Album tracks',
+  'albumDetail.tracks.column.signal': 'Signal',
+  'albumDetail.tracks.column.time': 'Time',
+  'albumDetail.tracks.column.title': 'Title',
+  'albumDetail.tracks.confirm.delete': 'Delete the music file?\n{title}',
+  'albumDetail.tracks.empty': 'No tracks found for this album.',
+  'albumDetail.tracks.error.actionUnavailable': 'This track action is not available yet.',
+  'albumDetail.tracks.error.desktopBridgeActions': 'Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.',
+  'albumDetail.tracks.error.desktopBridgeEdit': 'Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.',
+  'albumDetail.tracks.error.desktopBridgeRead': 'Desktop bridge unavailable. Open ECHO Next in Electron to read album tracks.',
+  'albumDetail.tracks.error.noCoverSaved': 'No cover art was saved for this track.',
+  'albumDetail.tracks.error.noCoverToCopy': 'This track does not have cover art to copy.',
+  'albumDetail.tracks.error.remoteFileAction': 'Remote tracks do not support local file actions yet.',
+  'albumDetail.tracks.formatAria': 'Track format',
+  'albumDetail.tracks.loadMore': 'Load more',
+  'albumDetail.tracks.loading': 'Loading...',
+  'albumDetail.tracks.status.addedToPlaylist': 'Added to playlist: {playlist}',
+  'albumDetail.tracks.status.albumNotFound': 'Already viewing this album: {title}',
+  'albumDetail.tracks.status.notInQueue': 'This track is not in the queue: {title}',
+  'albumDetail.tracks.status.reloadedTags': 'Reloaded embedded tags: {title}',
+  'albumDetail.tracks.status.removedFromQueue': 'Removed from queue: {title}',
+  'albumDetail.tracks.summaryAria': 'Track summary',
   'audioDrawer.action.close': 'Close audio settings',
   'audioDrawer.action.copiedDiagnostics': 'Playback diagnostics copied',
   'audioDrawer.action.copyDiagnostics': 'Copy Playback Diagnostics',

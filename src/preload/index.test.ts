@@ -744,6 +744,7 @@ describe('preload SMTC API', () => {
       settings: {
         miniPlayerEnabled: true,
         miniPlayerLocked: true,
+        miniPlayerAutoHideMainWindow: false,
         miniPlayerBounds: null,
       },
     };
@@ -779,11 +780,15 @@ describe('preload SMTC API', () => {
     await exposedApi!.library.getDuplicateTrackVersions('track-1');
     await exposedApi!.library.getDuplicateHiddenCounts(['track-1'], 'strict');
     await exposedApi!.library.getDuplicateIndexSummary('strict');
+    await exposedApi!.library.previewDuplicateTrackCleanup('strict');
+    await exposedApi!.library.applyDuplicateTrackCleanup({ mode: 'strict', trackIds: ['track-2'] });
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryRefreshDuplicateTracks, 'strict');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateTrackVersions, 'track-1');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateHiddenCounts, ['track-1'], 'strict');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateIndexSummary, 'strict');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryPreviewDuplicateTrackCleanup, 'strict');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryApplyDuplicateTrackCleanup, { mode: 'strict', trackIds: ['track-2'] });
   });
 
   it('exposes database recovery discard action through IPC', async () => {

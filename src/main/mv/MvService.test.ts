@@ -283,11 +283,35 @@ describe('MvService', () => {
       timestamp,
       timestamp,
     );
+    insertStream.run(
+      'stream-muted-dash',
+      'video-stale-cache',
+      'bilibili',
+      'bilibili-dash-qn-80-muted',
+      '1080p',
+      '1080p',
+      1920,
+      1080,
+      null,
+      'avc1',
+      'mp4',
+      'video/mp4',
+      'direct',
+      'https://upos.example/video-muted.m4s?e=1',
+      '{}',
+      1,
+      0,
+      null,
+      JSON.stringify({ provider: 'bilibili', resolver: 'bilibili-dash-video-v4', source: 'dash-video', mutedVideoOnly: true }),
+      timestamp,
+      timestamp,
+    );
 
     new MvService(database, { getTrack: (trackId) => (trackId === track.id ? track : null) });
 
     expect(database.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM track_videos').get()?.count).toBe(1);
-    expect(database.prepare<[], { variant_id: string }>('SELECT variant_id FROM track_video_streams').all()).toEqual([
+    expect(database.prepare<[], { variant_id: string }>('SELECT variant_id FROM track_video_streams ORDER BY variant_id').all()).toEqual([
+      { variant_id: 'bilibili-dash-qn-80-muted' },
       { variant_id: 'bilibili-qn-64' },
     ]);
     expect(warnSpy).toHaveBeenCalledWith(
@@ -986,6 +1010,108 @@ describe('MvService', () => {
     expect(resolved.variants.map((variant) => variant.id)).toEqual(['bilibili-qn-64']);
   });
 
+  it('refreshes old codec-collapsed Bilibili DASH cache even when a 720p fallback is playable', async () => {
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => []),
+      resolve: vi.fn(async () => [
+        makeResolvedVariant({
+          id: 'bilibili-dash-qn-127-av1',
+          label: '8K',
+          qualityTier: '4320p',
+          width: 7680,
+          height: 4320,
+          codec: 'av01.0.01M.10.0.110.01.01.01.0',
+          url: 'https://cdn.example/fresh-8k-av1.m4s',
+          rawProviderJson: {
+            provider: 'bilibili',
+            resolver: 'bilibili-dash-video-v4',
+            source: 'dash-video',
+            requestedQn: 127,
+            qn: 127,
+            qualityRank: 8,
+            mutedVideoOnly: true,
+          },
+        }),
+        makeResolvedVariant({
+          id: 'bilibili-qn-64',
+          label: '720p',
+          qualityTier: '720p',
+          width: 1280,
+          height: 720,
+          url: 'https://cdn.example/fresh-720.mp4',
+          rawProviderJson: { provider: 'bilibili', resolver: 'bilibili-progressive-mp4-v1', source: 'durl', qn: 64, qualityRank: 1 },
+        }),
+      ]),
+    };
+    const { database, service, track } = createHarness([provider]);
+    const video = service.bindUrl(track.id, 'https://www.bilibili.com/video/BV1Gm41127gL');
+    const timestamp = new Date().toISOString();
+    const insertStream = database.prepare(
+      `INSERT INTO track_video_streams (
+        id, video_id, provider, variant_id, label, quality_tier, width, height, fps, codec, container,
+        mime_type, protocol, url, headers_json, playable_in_app, requires_account, expires_at, raw_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertStream.run(
+      'stream-old-8k-hevc',
+      video.id,
+      'bilibili',
+      'bilibili-dash-qn-127',
+      '8K',
+      '4320p',
+      7680,
+      4320,
+      null,
+      'hev1.1.6.L180.90',
+      'mp4',
+      'video/mp4',
+      'dash',
+      'https://cdn.example/old-8k-hevc.m4s',
+      '{}',
+      0,
+      0,
+      new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      JSON.stringify({ provider: 'bilibili', resolver: 'bilibili-dash-video-v4', source: 'dash-video', requestedQn: 127, qn: 127, qualityRank: 8 }),
+      timestamp,
+      timestamp,
+    );
+    insertStream.run(
+      'stream-old-720',
+      video.id,
+      'bilibili',
+      'bilibili-qn-64',
+      '720p',
+      '720p',
+      1280,
+      720,
+      null,
+      'avc1.640028',
+      'mp4',
+      'video/mp4',
+      'direct',
+      'https://cdn.example/old-720.mp4',
+      '{}',
+      1,
+      0,
+      new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      JSON.stringify({ provider: 'bilibili', resolver: 'bilibili-progressive-mp4-v1', source: 'durl', requestedQn: 127, qn: 64, qualityRank: 1 }),
+      timestamp,
+      timestamp,
+    );
+
+    const resolved = await service.resolveStreams(video.id);
+
+    expect(provider.resolve).toHaveBeenCalled();
+    expect(resolved.video).toMatchObject({
+      playableInApp: true,
+      qualityLabel: '8K',
+      width: 7680,
+      height: 4320,
+      mediaUrl: `echo-mv://stream/${encodeURIComponent(video.id)}/bilibili-dash-qn-127-av1`,
+    });
+  });
+
   it('refreshes external-only stream cache when selecting a Bilibili search candidate', async () => {
     appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
     const candidate: MvMatchCandidate = {
@@ -1672,6 +1798,123 @@ describe('MvService', () => {
     expect(resolved.video.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-116`);
     expect(resolved.video.qualityLabel).toBe('1080p 60fps');
     expect(resolved.video.height).toBe(888);
+  });
+
+  it('can select muted Bilibili DASH video-only streams above lower progressive MP4 fallbacks', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1echo8k',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song 8K MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1echo8k',
+      providerUrl: 'https://www.bilibili.com/video/BV1echo8k',
+      thumbnailUrl: null,
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.9,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi.fn(async () => [
+        makeResolvedVariant({
+          id: 'bilibili-dash-qn-127-av1',
+          label: '8K 60fps',
+          qualityTier: '4320p',
+          width: 7680,
+          height: 4320,
+          fps: 60,
+          codec: 'av01.0.01M.10.0.110.01.01.01.0',
+          protocol: 'direct',
+          playableInApp: true,
+          url: 'https://cdn.example/echo-8k-video-only.m4s',
+          rawProviderJson: {
+            provider: 'bilibili',
+            resolver: 'bilibili-dash-video-v4',
+            source: 'dash-video',
+            qn: 127,
+            qualityRank: 8,
+            mutedVideoOnly: true,
+          },
+        }),
+        makeResolvedVariant({
+          id: 'bilibili-qn-64',
+          label: '720p',
+          qualityTier: '720p',
+          width: 1280,
+          height: 720,
+          url: 'https://cdn.example/echo-720.mp4',
+          rawProviderJson: { provider: 'bilibili', resolver: 'bilibili-progressive-mp4-v1', source: 'durl', qn: 64, qualityRank: 1 },
+        }),
+      ]),
+    };
+    const { service, track } = createHarness([provider]);
+
+    const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
+    const resolved = await service.resolveStreams(selected.id);
+
+    expect(resolved.video.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-dash-qn-127-av1`);
+    expect(resolved.video.qualityLabel).toBe('8K 60fps');
+    await expect(service.getStreamVariantForProtocol(selected.id, 'bilibili-dash-qn-127-av1')).resolves.toMatchObject({
+      url: 'https://cdn.example/echo-8k-video-only.m4s',
+      mimeType: 'video/mp4',
+    });
+  });
+
+  it('prefers progressive MP4 when a muted DASH video-only stream has the same Bilibili quality rank', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1echo1080',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song 1080p MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1echo1080',
+      providerUrl: 'https://www.bilibili.com/video/BV1echo1080',
+      thumbnailUrl: null,
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.9,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi.fn(async () => [
+        makeResolvedVariant({
+          id: 'bilibili-dash-qn-80-avc',
+          url: 'https://cdn.example/echo-1080-video-only.m4s',
+          rawProviderJson: {
+            provider: 'bilibili',
+            resolver: 'bilibili-dash-video-v4',
+            source: 'dash-video',
+            qn: 80,
+            qualityRank: 3,
+            mutedVideoOnly: true,
+          },
+        }),
+        makeResolvedVariant({
+          id: 'bilibili-qn-80',
+          url: 'https://cdn.example/echo-1080.mp4',
+          rawProviderJson: { provider: 'bilibili', resolver: 'bilibili-progressive-mp4-v1', source: 'durl', qn: 80, qualityRank: 3 },
+        }),
+      ]),
+    };
+    const { service, track } = createHarness([provider]);
+
+    const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
+    const resolved = await service.resolveStreams(selected.id);
+
+    expect(resolved.video.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-80`);
   });
 
   it('skips non-playable Bilibili HEVC variants and falls back to a playable AVC stream', async () => {

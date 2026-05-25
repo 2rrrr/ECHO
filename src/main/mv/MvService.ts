@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
-import { basename, extname, join, resolve } from 'node:path';
+import { basename, extname, resolve } from 'node:path';
 import electron, { shell } from 'electron';
 import type { EchoDatabase } from '../database/createDatabase';
 import { getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
@@ -267,13 +267,19 @@ const recordFromJson = (value: string | null): Record<string, unknown> | null =>
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
 };
 
+const isTrustedBilibiliMutedVideoOnly = (raw: Record<string, unknown> | null): boolean =>
+  raw?.provider === 'bilibili' &&
+  raw.source === 'dash-video' &&
+  raw.resolver === 'bilibili-dash-video-v4' &&
+  raw.mutedVideoOnly === true;
+
 const isStaleBilibiliDashDirectStream = (variant: TrackVideoStreamRow): boolean => {
   if (variant.provider !== 'bilibili' || variant.protocol !== 'direct') {
     return false;
   }
 
   const raw = recordFromJson(variant.raw_json);
-  return raw?.source === 'dash-video' || raw?.resolver === 'bilibili-dash-video-v4';
+  return !isTrustedBilibiliMutedVideoOnly(raw) && (raw?.source === 'dash-video' || raw?.resolver === 'bilibili-dash-video-v4');
 };
 
 const bilibiliQnFromRaw = (variant: TrackVideoStreamRow): number | null => {
@@ -293,6 +299,18 @@ const bilibiliRankFromRaw = (variant: TrackVideoStreamRow): number => {
   return qn ? bilibiliQualityRank(qn) : 0;
 };
 
+const isBilibiliMutedVideoOnlyStream = (variant: TrackVideoStreamRow): boolean =>
+  isTrustedBilibiliMutedVideoOnly(recordFromJson(variant.raw_json));
+
+const isLegacyCodecCollapsedBilibiliDashVariant = (variant: TrackVideoStreamRow): boolean => {
+  if (variant.provider !== 'bilibili' || !/^bilibili-dash-qn-\d+(?:-\d+fps)?$/u.test(variant.variant_id)) {
+    return false;
+  }
+
+  const raw = recordFromJson(variant.raw_json);
+  return raw?.source === 'dash-video' && raw.resolver === 'bilibili-dash-video-v4';
+};
+
 const recordFromUnknown = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
@@ -302,7 +320,7 @@ const isStaleBilibiliDashDirectResolvedVariant = (variant: ResolvedMvStreamVaria
   }
 
   const raw = recordFromUnknown(variant.rawProviderJson);
-  return raw?.provider === 'bilibili' && (raw.source === 'dash-video' || raw.resolver === 'bilibili-dash-video-v4');
+  return raw?.provider === 'bilibili' && !isTrustedBilibiliMutedVideoOnly(raw) && (raw.source === 'dash-video' || raw.resolver === 'bilibili-dash-video-v4');
 };
 
 const bilibiliQnFromResolved = (variant: ResolvedMvStreamVariant): number | null => {
@@ -321,6 +339,9 @@ const bilibiliRankFromResolved = (variant: ResolvedMvStreamVariant): number => {
   const qn = bilibiliQnFromResolved(variant);
   return qn ? bilibiliQualityRank(qn) : 0;
 };
+
+const isBilibiliMutedVideoOnlyResolved = (variant: ResolvedMvStreamVariant): boolean =>
+  isTrustedBilibiliMutedVideoOnly(recordFromUnknown(variant.rawProviderJson));
 
 const mediaUrlForLocal = (row: TrackVideoRow): string | null => {
   if (row.provider !== 'local' || !row.file_path || !isBrowserPlayableVideo(row.file_path) || !existsSync(row.file_path)) {
@@ -1546,6 +1567,7 @@ export class MvService {
                protocol = 'external'
                OR (
                  protocol = 'direct'
+                 AND raw_json NOT LIKE '%"mutedVideoOnly":true%'
                  AND (
                    variant_id LIKE 'bilibili-dash-qn-%'
                    OR url LIKE '%.m4s%'
@@ -1797,6 +1819,11 @@ export class MvService {
             if (rankDelta !== 0) {
               return rankDelta;
             }
+
+            const mutedVideoOnlyDelta = Number(isBilibiliMutedVideoOnlyStream(left)) - Number(isBilibiliMutedVideoOnlyStream(right));
+            if (mutedVideoOnlyDelta !== 0) {
+              return mutedVideoOnlyDelta;
+            }
           }
 
           const heightDelta = (right.height ?? 0) - (left.height ?? 0);
@@ -1842,6 +1869,11 @@ export class MvService {
             const rankDelta = bilibiliRankFromResolved(right) - bilibiliRankFromResolved(left);
             if (rankDelta !== 0) {
               return rankDelta;
+            }
+
+            const mutedVideoOnlyDelta = Number(isBilibiliMutedVideoOnlyResolved(left)) - Number(isBilibiliMutedVideoOnlyResolved(right));
+            if (mutedVideoOnlyDelta !== 0) {
+              return mutedVideoOnlyDelta;
             }
           }
 
@@ -1954,6 +1986,10 @@ export class MvService {
   private shouldRefreshResolvedStreams(row: TrackVideoRow, variants: TrackVideoStreamRow[], settings: MvSettings): boolean {
     if (row.provider !== 'bilibili' || variants.length === 0 || maxQualityHeight(settings.maxQuality) <= 720) {
       return false;
+    }
+
+    if (variants.some(isLegacyCodecCollapsedBilibiliDashVariant)) {
+      return true;
     }
 
     const hasCurrentResolver = variants.some((variant) => {

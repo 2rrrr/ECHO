@@ -130,6 +130,8 @@ export const IpcChannels = {
   LibraryGetDuplicateTrackVersions: 'library:get-duplicate-track-versions',
   LibraryGetDuplicateHiddenCounts: 'library:get-duplicate-hidden-counts',
   LibraryGetDuplicateIndexSummary: 'library:get-duplicate-index-summary',
+  LibraryPreviewDuplicateTrackCleanup: 'library:preview-duplicate-track-cleanup',
+  LibraryApplyDuplicateTrackCleanup: 'library:apply-duplicate-track-cleanup',
   LibraryGetPlaylists: 'library:get-playlists',
   LibraryCreatePlaylist: 'library:create-playlist',
   LibraryUpdatePlaylist: 'library:update-playlist',

@@ -227,6 +227,71 @@ describe('ArtistEventsService', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('falls back to Eventernote when configured providers return no events', async () => {
+    const fetcher = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('ticketmaster.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ _embedded: { events: [] } }),
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+        text: async () => `
+          <div class="gb_event_list clearfix">
+            <ul>
+              <li class="clearfix ">
+                <div class="date">
+                  <p class="day6">2026-07-18 (<span>土</span>)</p>
+                  <p><img src="https://eventernote.example/events/454671_s.jpg" alt="MyGO!!!!! 9th LIVE"></p>
+                </div>
+                <div class="event">
+                  <h4><a href="/events/454671">MyGO!!!!! 9th LIVE「つなぎ目の向こうに」DAY1</a></h4>
+                  <div class="place">会場: <a href="/places/11340">ぴあアリーナMM</a></div>
+                  <div class="place"><span class="s">開場 16:30 開演 18:00 終演 20:00</span></div>
+                  <div class="actor"><ul><li><a href="/actors/MyGO%21%21%21%21%21/66346">MyGO!!!!!</a></li></ul></div>
+                </div>
+              </li>
+            </ul>
+          </div>
+        `,
+      };
+    });
+
+    const result = await new ArtistEventsService(fetcher).getArtistEvents({
+      artistName: 'MyGO!!!!!',
+      ticketmasterApiKey: 'ticketmaster-key',
+      now: new Date('2026-05-25T00:00:00.000Z'),
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain('https://www.eventernote.com/actors/MyGO%21%21%21%21%21/66346');
+    expect(result.sources).toEqual(['ticketmaster', 'eventernote']);
+    expect(result.events).toEqual([
+      {
+        id: 'eventernote:454671',
+        source: 'eventernote',
+        sourceLabel: 'Eventernote',
+        title: 'MyGO!!!!! 9th LIVE「つなぎ目の向こうに」DAY1',
+        startsAt: '2026-07-18T18:00:00',
+        timezone: 'Asia/Tokyo',
+        timeTbd: false,
+        venueName: 'ぴあアリーナMM',
+        city: null,
+        region: null,
+        country: 'Japan',
+        url: 'https://www.eventernote.com/events/454671',
+        ticketUrl: 'https://www.eventernote.com/events/454671',
+        venueUrl: null,
+        imageUrl: 'https://eventernote.example/events/454671_s.jpg',
+      },
+    ]);
+  });
+
   it('degrades to unavailable when Bandsintown fails', async () => {
     const fetcher = vi.fn().mockResolvedValue({
       ok: false,

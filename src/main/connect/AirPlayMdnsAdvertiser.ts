@@ -15,6 +15,8 @@ const airPlayServiceName = '_airplay._tcp.local';
 const serviceEnumerator = '_services._dns-sd._udp.local';
 const recordClassInternet = 1;
 const recordClassCacheFlush = 0x8001;
+const classicAirPlayFeatures = '0x40878A00';
+const classicAirPlayVersion = '130.14';
 
 const cleanMac = (mac: string): string => {
   const cleaned = mac.replace(/[^a-fA-F0-9]/gu, '').toUpperCase();
@@ -231,25 +233,22 @@ export class AirPlayMdnsAdvertiser {
       'ek=1',
       'et=0,1',
       'md=0,1,2',
-      'cn=0,1,2,3',
-      'da=true',
+      'cn=0,1',
       'ch=2',
-      'pw=false',
-      'sf=0x4',
-      'ft=0x527FFFF7',
       'ss=16',
       'sr=44100',
       'vn=3',
+      `vs=${classicAirPlayVersion}`,
       'txtvers=1',
     ]);
     const airPlayTxtData = encodeTxt([
       `deviceid=${mac.match(/.{1,2}/gu)?.join(':') ?? advertisement.mac}`,
       `model=${advertisement.model}`,
-      'features=0x527FFFF7',
+      `features=${classicAirPlayFeatures}`,
       'flags=0x4',
       'pw=false',
-      'srcvers=220.68',
-      'vv=2',
+      `srcvers=${classicAirPlayVersion}`,
+      'vv=1',
       'txtvers=1',
     ]);
 

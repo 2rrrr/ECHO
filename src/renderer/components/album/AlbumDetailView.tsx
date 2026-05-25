@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { ArrowLeft, Disc3, ExternalLink, Heart, Info, Loader2, MoreHorizontal, Play, RefreshCw, Users } from 'lucide-react';
-import type { AlbumOnlineInfo, EditableTrackTags, LibraryAlbum, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import type { AlbumOnlineInfo, EditableTrackTags, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
+import { useI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
-import { openAlbumDetailForTrack } from '../../utils/albumNavigation';
+import { albumDetailNavigationEvent, openAlbumDetailForTrack } from '../../utils/albumNavigation';
 import { resolvePlaylistForTrackAdd } from '../../utils/appPrompt';
 import { getLibraryBridge } from '../../utils/echoBridge';
 import { OsuTimingPanel } from '../library/OsuTimingPanel';
@@ -19,7 +22,7 @@ type AlbumDetailViewProps = {
   onBack: () => void;
 };
 
-const formatDuration = (duration: number): string | null => {
+const formatDuration = (duration: number, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string | null => {
   if (!Number.isFinite(duration) || duration <= 0) {
     return null;
   }
@@ -28,7 +31,7 @@ const formatDuration = (duration: number): string | null => {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 
-  return hours > 0 ? `${hours} hr ${minutes} min` : `${totalMinutes} min`;
+  return hours > 0 ? t('albumDetail.duration.hours', { hours, minutes }) : t('albumDetail.duration.minutes', { minutes: totalMinutes });
 };
 
 const formatSampleRate = (sampleRate: number | null): string | null => {
@@ -69,7 +72,8 @@ const formatTechnicalSummary = (track: LibraryTrack | null): string | null => {
 const uniqueValues = (values: Array<string | null | undefined>): string[] =>
   Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))));
 
-const formatTrackCount = (count: number): string => `${count} ${count === 1 ? 'track' : 'tracks'}`;
+const formatTrackCount = (count: number, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string =>
+  t('albumDetail.count.tracks', { count });
 
 type TrackMenuState = {
   track: LibraryTrack;
@@ -85,6 +89,14 @@ type OnlineInfoState = {
   loadedForAlbumId: string | null;
 };
 
+type RelatedAlbumsState = {
+  loading: boolean;
+  albums: LibraryAlbum[];
+  total: number;
+  error: string | null;
+  loadedForAlbumId: string | null;
+};
+
 const emptyOnlineInfoState = (): OnlineInfoState => ({
   loading: false,
   info: null,
@@ -92,68 +104,84 @@ const emptyOnlineInfoState = (): OnlineInfoState => ({
   loadedForAlbumId: null,
 });
 
+const emptyRelatedAlbumsState = (): RelatedAlbumsState => ({
+  loading: false,
+  albums: [],
+  total: 0,
+  error: null,
+  loadedForAlbumId: null,
+});
+
+const normalizeArtistName = (value: string): string => value.normalize('NFKC').trim().toLocaleLowerCase();
+
+const findMatchingArtist = (artists: LibraryArtist[], name: string): LibraryArtist | null => {
+  const normalizedName = normalizeArtistName(name);
+  return artists.find((artist) => normalizeArtistName(artist.name) === normalizedName) ?? (artists.length === 1 ? artists[0] : null);
+};
+
 const formatConfidence = (value: number): string => `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 
-const creditRoleTitle = (role: string): string => {
+const creditRoleTitle = (role: string, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
   switch (role) {
     case 'Vocal':
-      return 'Vocal & voices';
+      return t('albumDetail.credit.role.vocal');
     case 'Performer':
-      return 'Performance';
+      return t('albumDetail.credit.role.performer');
     case 'Composer':
-      return 'Composition';
+      return t('albumDetail.credit.role.composer');
     case 'Lyrics':
-      return 'Lyrics & words';
+      return t('albumDetail.credit.role.lyrics');
     case 'Arrangement':
-      return 'Arrangement';
+      return t('albumDetail.credit.role.arrangement');
     case 'Production':
-      return 'Production';
+      return t('albumDetail.credit.role.production');
     case 'Engineering':
-      return 'Engineering';
+      return t('albumDetail.credit.role.engineering');
     case 'Label':
-      return 'Release & label';
+      return t('albumDetail.credit.role.label');
     default:
-      return role || 'Other credits';
+      return role || t('albumDetail.credit.role.other');
   }
 };
 
-const creditRoleSummary = (role: string): string => {
+const creditRoleSummary = (role: string, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
   switch (role) {
     case 'Vocal':
-      return 'Lead vocals, featured voices, and credited vocal roles.';
+      return t('albumDetail.credit.summary.vocal');
     case 'Performer':
-      return 'Instrumental and performance credits attached to the release or individual recordings.';
+      return t('albumDetail.credit.summary.performer');
     case 'Composer':
-      return 'Music-writing credits from release, recording, or work relationships.';
+      return t('albumDetail.credit.summary.composer');
     case 'Lyrics':
-      return 'Lyric, words, libretto, and related writing credits.';
+      return t('albumDetail.credit.summary.lyrics');
     case 'Arrangement':
-      return 'Arrangement, orchestration, and adaptation credits.';
+      return t('albumDetail.credit.summary.arrangement');
     case 'Production':
-      return 'Producer and production-side credits.';
+      return t('albumDetail.credit.summary.production');
     case 'Engineering':
-      return 'Recording, mix, mastering, and sound engineering credits.';
+      return t('albumDetail.credit.summary.engineering');
     case 'Label':
-      return 'Label and catalog information tied to the release.';
+      return t('albumDetail.credit.summary.label');
     default:
-      return 'Additional credits found in the online metadata match.';
+      return t('albumDetail.credit.summary.other');
   }
 };
 
-const creditSourceLabel = (source: string): string => {
+const creditSourceLabel = (source: string, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
   switch (source) {
     case 'recording':
-      return 'track credit';
+      return t('albumDetail.credit.source.recording');
     case 'work':
-      return 'work credit';
+      return t('albumDetail.credit.source.work');
     case 'label':
-      return 'label';
+      return t('albumDetail.credit.source.label');
     default:
-      return 'album credit';
+      return t('albumDetail.credit.source.album');
   }
 };
 
 export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.Element => {
+  const { t } = useI18n();
   const { appendToQueue, currentTrackId, playTrack, playTrackNext, removeTrackFromQueue, replaceQueue, updateTrackSnapshot } = usePlaybackQueue();
   const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
   const [firstTrack, setFirstTrack] = useState<LibraryTrack | null>(null);
@@ -174,20 +202,23 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [activeTab, setActiveTab] = useState<AlbumDetailTab>('tracks');
   const [onlineInfoState, setOnlineInfoState] = useState<OnlineInfoState>(() => emptyOnlineInfoState());
+  const [relatedAlbumsState, setRelatedAlbumsState] = useState<RelatedAlbumsState>(() => emptyRelatedAlbumsState());
+  const [failedRelatedCoverUrls, setFailedRelatedCoverUrls] = useState<Record<string, string>>({});
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const onlineInfoRequestRef = useRef(0);
+  const relatedAlbumsRequestRef = useRef(0);
   const likedTrackIds = useLikedTrackIds(loadedTracks.map((track) => track.id));
-  const duration = formatDuration(album.duration);
+  const duration = formatDuration(album.duration, t);
   const formatSummary = formatTechnicalSummary(firstTrack);
   const albumMetadata = useMemo(
     () =>
       [
         album.year ? String(album.year) : null,
-        formatTrackCount(album.trackCount),
+        formatTrackCount(album.trackCount, t),
         duration,
         formatSummary,
       ].filter((item): item is string => Boolean(item)),
-    [album.trackCount, album.year, duration, formatSummary],
+    [album.trackCount, album.year, duration, formatSummary, t],
   );
   const signalItems = useMemo(
     () =>
@@ -207,18 +238,23 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
 
     return [
       ...genres,
-      discs.size > 1 ? `${discs.size} discs` : null,
-      loadedTotal > loadedTracks.length ? `${loadedTracks.length} loaded` : null,
+      discs.size > 1 ? t('albumDetail.texture.discs', { count: discs.size }) : null,
+      loadedTotal > loadedTracks.length ? t('albumDetail.count.loadedTracks', { loaded: loadedTracks.length, total: loadedTotal }) : null,
     ].filter((item): item is string => Boolean(item));
-  }, [loadedTotal, loadedTracks]);
+  }, [loadedTotal, loadedTracks, t]);
   const albumFacts = useMemo(
     () => [
-      { label: 'Format', value: signalItems.join(' / ') || 'Reading signal' },
-      { label: 'Genre', value: textureItems[0] ?? 'Unknown genre' },
-      { label: 'Released', value: album.year ? String(album.year) : 'Unknown year' },
-      { label: 'Library', value: `${loadedTotal > 0 ? `${loadedTracks.length}/${loadedTotal}` : formatTrackCount(album.trackCount)} ready` },
+      { label: t('albumDetail.fact.format'), value: signalItems.join(' / ') || t('albumDetail.status.readingSignal') },
+      { label: t('albumDetail.fact.genre'), value: textureItems[0] ?? t('albumDetail.status.unknownGenre') },
+      { label: t('albumDetail.fact.released'), value: album.year ? String(album.year) : t('albumDetail.status.unknownYear') },
+      {
+        label: t('albumDetail.fact.library'),
+        value: t('albumDetail.status.libraryReady', {
+          value: loadedTotal > 0 ? `${loadedTracks.length}/${loadedTotal}` : formatTrackCount(album.trackCount, t),
+        }),
+      },
     ],
-    [album.trackCount, album.year, loadedTotal, loadedTracks.length, signalItems, textureItems],
+    [album.trackCount, album.year, loadedTotal, loadedTracks.length, signalItems, textureItems, t],
   );
   const albumSource = useMemo(
     () => ({ type: 'album' as const, label: album.title, albumId: album.id }),
@@ -272,11 +308,82 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     [album.id],
   );
 
+  const loadRelatedAlbums = useCallback(async (): Promise<void> => {
+    const library = window.echo?.library;
+    const artistName = album.albumArtist.trim();
+
+    if (!artistName || !library?.getArtists || !library.getArtistAlbums) {
+      setRelatedAlbumsState({
+        loading: false,
+        albums: [],
+        total: 0,
+        error: null,
+        loadedForAlbumId: album.id,
+      });
+      return;
+    }
+
+    const requestId = relatedAlbumsRequestRef.current + 1;
+    relatedAlbumsRequestRef.current = requestId;
+    setRelatedAlbumsState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      loadedForAlbumId: album.id,
+    }));
+
+    try {
+      const sourceProvider = album.mediaType === 'remote' ? 'remote' : 'local';
+      const artists = await library.getArtists({ page: 1, pageSize: 50, search: artistName, sort: 'default', sourceProvider });
+      if (relatedAlbumsRequestRef.current !== requestId) {
+        return;
+      }
+
+      const artist = findMatchingArtist(artists.items, artistName);
+      if (!artist) {
+        setRelatedAlbumsState({
+          loading: false,
+          albums: [],
+          total: 0,
+          error: null,
+          loadedForAlbumId: album.id,
+        });
+        return;
+      }
+
+      const albums = await library.getArtistAlbums(artist.id, { page: 1, pageSize: 8, sort: 'recent' });
+      if (relatedAlbumsRequestRef.current !== requestId) {
+        return;
+      }
+
+      setRelatedAlbumsState({
+        loading: false,
+        albums: albums.items,
+        total: albums.total,
+        error: null,
+        loadedForAlbumId: album.id,
+      });
+    } catch (error) {
+      if (relatedAlbumsRequestRef.current === requestId) {
+        setRelatedAlbumsState({
+          loading: false,
+          albums: [],
+          total: 0,
+          error: error instanceof Error ? error.message : String(error),
+          loadedForAlbumId: album.id,
+        });
+      }
+    }
+  }, [album.albumArtist, album.id, album.mediaType]);
+
   useEffect(() => {
     setActiveTab('tracks');
     setOnlineInfoState(emptyOnlineInfoState());
+    setRelatedAlbumsState(emptyRelatedAlbumsState());
+    setFailedRelatedCoverUrls({});
     void loadOnlineInfo(false);
-  }, [album.id, loadOnlineInfo]);
+    void loadRelatedAlbums();
+  }, [album.id, loadOnlineInfo, loadRelatedAlbums]);
 
   const refreshAlbumLiked = useCallback(async (): Promise<void> => {
     try {
@@ -411,7 +518,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       const library = window.echo?.library;
 
       if (!library?.updateTrackTags) {
-        setTagEditorError('Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.');
+        setTagEditorError(t('albumDetail.tracks.error.desktopBridgeEdit'));
         return;
       }
 
@@ -431,7 +538,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         setIsSavingTags(false);
       }
     },
-    [closeTagEditor, updateTrackSnapshot, withAlbumCoverFallback],
+    [closeTagEditor, t, updateTrackSnapshot, withAlbumCoverFallback],
   );
 
   const handleTrackMenuAction = useCallback(
@@ -440,7 +547,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       setTrackMenu(null);
 
       if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'open-osu-timing' && action !== 'reload-embedded-tags') {
-        setPlayError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
+        setPlayError(t('albumDetail.tracks.error.desktopBridgeActions'));
         return;
       }
 
@@ -458,7 +565,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             action === 'open-system' ||
             action === 'delete-song')
         ) {
-          setPlayError('Remote tracks do not support local file actions yet.');
+          setPlayError(t('albumDetail.tracks.error.remoteFileAction'));
           return;
         }
 
@@ -475,7 +582,11 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           case 'remove-from-queue':
             {
               const removedCount = removeTrackFromQueue(track.id);
-              setTrackActionMessage(removedCount > 0 ? `Removed from queue: ${track.title}` : `This track is not in the queue: ${track.title}`);
+              setTrackActionMessage(
+                removedCount > 0
+                  ? t('albumDetail.tracks.status.removedFromQueue', { title: track.title })
+                  : t('albumDetail.tracks.status.notInQueue', { title: track.title }),
+              );
             }
             return;
           case 'open-osu-timing':
@@ -501,13 +612,13 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
                 setEditingTrack(nextTrack);
               }
               updateTrackSnapshot(nextTrack.id, nextTrack);
-              setTrackActionMessage(`已从内嵌标签重新加载：${nextTrack.title}`);
+              setTrackActionMessage(t('albumDetail.tracks.status.reloadedTags', { title: nextTrack.title }));
               window.dispatchEvent(new Event('library:changed'));
             }
             return;
           case 'go-to-album':
             if (!(await openAlbumDetailForTrack(track))) {
-              setTrackActionMessage(`Already viewing this album: ${album.title}`);
+              setTrackActionMessage(t('albumDetail.tracks.status.albumNotFound', { title: album.title }));
             }
             return;
           case 'show-in-folder':
@@ -524,16 +635,16 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             return;
           case 'copy-cover':
             if (!(await library?.copyTrackCover(track.id))) {
-              setPlayError('This track does not have cover art to copy.');
+              setPlayError(t('albumDetail.tracks.error.noCoverToCopy'));
             }
             return;
           case 'save-cover':
             if (!(await library?.saveTrackCover(track.id))) {
-              setPlayError('No cover art was saved for this track.');
+              setPlayError(t('albumDetail.tracks.error.noCoverSaved'));
             }
             return;
           case 'delete-song':
-            if (!window.confirm(`Delete the music file?\n${track.title}`)) {
+            if (!window.confirm(t('albumDetail.tracks.confirm.delete', { title: track.title }))) {
               return;
             }
             await library?.deleteTrackFile(track.id);
@@ -553,11 +664,11 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
 
               await library!.addTrackToPlaylist(playlist.id, track.id);
               window.dispatchEvent(new Event('library:playlists-changed'));
-              setTrackActionMessage(`Added to playlist: ${playlist.name}`);
+              setTrackActionMessage(t('albumDetail.tracks.status.addedToPlaylist', { playlist: playlist.name }));
             }
             return;
           default:
-            setPlayError('This track action is not available yet.');
+            setPlayError(t('albumDetail.tracks.error.actionUnavailable'));
         }
       } catch (actionError) {
         setPlayError(actionError instanceof Error ? actionError.message : String(actionError));
@@ -573,6 +684,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       loadedTracks,
       playTrackNext,
       removeTrackFromQueue,
+      t,
       updateTrackSnapshot,
       withAlbumCoverFallback,
     ],
@@ -596,13 +708,132 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     void openArtistDetailByName(artistName)
       .then((artist) => {
         if (!artist) {
-          setTrackActionMessage(`Artist not found: ${artistName}`);
+          setTrackActionMessage(t('albumDetail.artist.notFound', { artist: artistName }));
         }
       })
       .catch((error) => {
         setTrackActionMessage(error instanceof Error ? error.message : String(error));
       });
-  }, [album.albumArtist]);
+  }, [album.albumArtist, t]);
+
+  const handleRelatedCoverError = useCallback((relatedAlbum: LibraryAlbum): void => {
+    if (!relatedAlbum.coverThumb) {
+      return;
+    }
+
+    setFailedRelatedCoverUrls((current) =>
+      current[relatedAlbum.id] === relatedAlbum.coverThumb
+        ? current
+        : {
+            ...current,
+            [relatedAlbum.id]: relatedAlbum.coverThumb!,
+          },
+    );
+  }, []);
+
+  const handleOpenRelatedAlbum = useCallback((relatedAlbum: LibraryAlbum): void => {
+    if (relatedAlbum.id === album.id) {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(albumDetailNavigationEvent, { detail: { album: relatedAlbum } }));
+  }, [album.id]);
+
+  const handleExternalLinkClick = useCallback((event: MouseEvent<HTMLAnchorElement>, url: string): void => {
+    const openExternalUrl = window.echo?.app?.openExternalUrl;
+    if (!openExternalUrl) {
+      return;
+    }
+    event.preventDefault();
+    void openExternalUrl(url);
+  }, []);
+
+  const renderRelatedAlbums = (): JSX.Element | null => {
+    if (relatedAlbumsState.loadedForAlbumId !== album.id || relatedAlbumsState.loading) {
+      return (
+        <section className="album-related-library" aria-label={t('albumDetail.related.aria', { artist: album.albumArtist })}>
+          <header>
+            <div>
+              <span>{album.albumArtist}</span>
+              <h2>{t('albumDetail.related.heading')}</h2>
+            </div>
+            <small>{t('albumDetail.related.loading')}</small>
+          </header>
+          <div className="album-related-loading">
+            <Loader2 className="spinning-icon" size={16} />
+          </div>
+        </section>
+      );
+    }
+
+    if (relatedAlbumsState.error || relatedAlbumsState.albums.length <= 1) {
+      return null;
+    }
+
+    return (
+      <section className="album-related-library" aria-label={t('albumDetail.related.aria', { artist: album.albumArtist })}>
+        <header>
+          <div>
+            <span>{album.albumArtist}</span>
+            <h2>{t('albumDetail.related.heading')}</h2>
+          </div>
+          <small>
+            {relatedAlbumsState.albums.length === relatedAlbumsState.total
+              ? t('albumDetail.count.albums', { count: relatedAlbumsState.total })
+              : t('albumDetail.count.loadedAlbums', { loaded: relatedAlbumsState.albums.length, total: relatedAlbumsState.total })}
+          </small>
+        </header>
+        <div className="album-related-album-strip">
+          {relatedAlbumsState.albums.map((relatedAlbum) => {
+            const shouldShowCover = Boolean(relatedAlbum.coverThumb && failedRelatedCoverUrls[relatedAlbum.id] !== relatedAlbum.coverThumb);
+            const isCurrentAlbum = relatedAlbum.id === album.id;
+
+            return (
+              <article
+                className="album-related-album-card"
+                aria-current={isCurrentAlbum ? 'true' : undefined}
+                aria-disabled={isCurrentAlbum ? true : undefined}
+                data-current={isCurrentAlbum}
+                key={relatedAlbum.id}
+                role="button"
+                tabIndex={isCurrentAlbum ? -1 : 0}
+                onClick={() => handleOpenRelatedAlbum(relatedAlbum)}
+                onKeyDown={(event) => {
+                  if (!isCurrentAlbum && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault();
+                    handleOpenRelatedAlbum(relatedAlbum);
+                  }
+                }}
+              >
+                <div className="album-related-album-cover" data-empty={!shouldShowCover} aria-hidden="true">
+                  {shouldShowCover ? (
+                    <img
+                      alt=""
+                      decoding="async"
+                      draggable={false}
+                      height={260}
+                      loading="lazy"
+                      src={relatedAlbum.coverThumb!}
+                      width={260}
+                      onError={() => handleRelatedCoverError(relatedAlbum)}
+                    />
+                  ) : (
+                    <Disc3 size={24} />
+                  )}
+                  {isCurrentAlbum ? <span>{t('albumDetail.related.thisAlbum')}</span> : null}
+                </div>
+                <div className="album-related-album-copy">
+                  {relatedAlbum.year ? <small>{relatedAlbum.year}</small> : null}
+                  <strong>{relatedAlbum.title}</strong>
+                  <span>{relatedAlbum.albumArtist}</span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
 
   const renderOnlineState = (section: 'credits' | 'information'): JSX.Element | null => {
     const info = onlineInfoState.info;
@@ -616,7 +847,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       return (
         <div className="album-online-state">
           <Loader2 className="spinning-icon" size={18} />
-          <span>Reading online album info...</span>
+          <span>{t('albumDetail.online.reading')}</span>
         </div>
       );
     }
@@ -624,11 +855,11 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     if (onlineInfoState.error && !info) {
       return (
         <div className="album-online-state">
-          <strong>Online info unavailable</strong>
+          <strong>{t('albumDetail.online.unavailable')}</strong>
           <span>{onlineInfoState.error}</span>
           <button type="button" onClick={() => void loadOnlineInfo(true)}>
             <RefreshCw size={14} />
-            Refresh
+            {t('albumDetail.action.refresh')}
           </button>
         </div>
       );
@@ -637,11 +868,11 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     if (isEmpty) {
       return (
         <div className="album-online-state">
-          <strong>No reliable online info found</strong>
-          <span>{info.errors[0] ?? 'MusicBrainz and Wikipedia did not return enough matching data for this album.'}</span>
+          <strong>{t('albumDetail.online.emptyTitle')}</strong>
+          <span>{info.errors[0] ?? t('albumDetail.online.emptyDescription')}</span>
           <button type="button" onClick={() => void loadOnlineInfo(true)} disabled={onlineInfoState.loading}>
             {onlineInfoState.loading ? <Loader2 className="spinning-icon" size={14} /> : <RefreshCw size={14} />}
-            Refresh
+            {t('albumDetail.action.refresh')}
           </button>
         </div>
       );
@@ -659,17 +890,17 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     return (
       <div className="album-online-header">
         <div>
-          <span>Online sources</span>
-          <strong>{info.sources.map((source) => source.label).join(' / ') || 'No source matched'}</strong>
+          <span>{t('albumDetail.online.sources')}</span>
+          <strong>{info.sources.map((source) => source.label).join(' / ') || t('albumDetail.online.noSource')}</strong>
           {info.match ? (
             <small>
-              {info.match.possible ? 'Possible MusicBrainz match' : 'MusicBrainz match'} - {formatConfidence(info.match.confidence)}
+              {info.match.possible ? t('albumDetail.online.possibleMatch') : t('albumDetail.online.match')} - {formatConfidence(info.match.confidence)}
             </small>
           ) : null}
         </div>
         <button type="button" onClick={() => void loadOnlineInfo(true)} disabled={onlineInfoState.loading}>
           {onlineInfoState.loading ? <Loader2 className="spinning-icon" size={14} /> : <RefreshCw size={14} />}
-          Refresh
+          {t('albumDetail.action.refresh')}
         </button>
       </div>
     );
@@ -686,11 +917,11 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       <div className="album-online-panel album-credits-panel">
         {renderOnlineHeader()}
         {info?.credits.length ? (
-          <section className="album-credit-overview" aria-label="Credit overview">
+          <section className="album-credit-overview" aria-label={t('albumDetail.credits.overviewAria')}>
             <Users size={18} />
             <div>
-              <span>Album credits</span>
-              <strong>{info.credits.reduce((count, group) => count + group.people.length, 0)} credited people and organizations</strong>
+              <span>{t('albumDetail.credits.heading')}</span>
+              <strong>{t('albumDetail.credits.count', { count: info.credits.reduce((count, group) => count + group.people.length, 0) })}</strong>
             </div>
           </section>
         ) : null}
@@ -699,17 +930,17 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             <header>
               <div>
                 <span>{group.role}</span>
-                <h3>{creditRoleTitle(group.role)}</h3>
+                <h3>{creditRoleTitle(group.role, t)}</h3>
               </div>
-              <small>{group.people.length} entries</small>
+              <small>{t('albumDetail.credits.entries', { count: group.people.length })}</small>
             </header>
-            <p>{creditRoleSummary(group.role)}</p>
+            <p>{creditRoleSummary(group.role, t)}</p>
             <div className="album-credit-people">
               {group.people.map((person) => (
                 <span className="album-credit-chip" key={`${group.role}-${person.name}-${person.trackTitle ?? ''}-${person.detail ?? ''}`}>
                   <strong>{person.name}</strong>
-                  <small>{[person.detail, creditSourceLabel(person.source)].filter(Boolean).join(' - ')}</small>
-                  {person.trackTitle ? <em>Track: {person.trackTitle}</em> : null}
+                  <small>{[person.detail, creditSourceLabel(person.source, t)].filter(Boolean).join(' - ')}</small>
+                  {person.trackTitle ? <em>{t('albumDetail.credits.trackPrefix', { title: person.trackTitle })}</em> : null}
                 </span>
               ))}
             </div>
@@ -733,13 +964,26 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           <h3>{information.title}</h3>
           {information.description ? <small>{information.description}</small> : null}
           <p>{information.extract}</p>
+          {information.externalLinks?.length ? (
+            <div className="album-information-links" aria-label={t('albumDetail.information.externalLinks')}>
+              <span>{t('albumDetail.information.externalLinks')}</span>
+              <div>
+                {information.externalLinks.map((link) => (
+                  <a key={link.url} href={link.url} rel="noreferrer" target="_blank" title={link.url} onClick={(event) => handleExternalLinkClick(event, link.url)}>
+                    <ExternalLink size={13} />
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="album-information-aside">
           {information.thumbnailUrl ? <img alt="" src={information.thumbnailUrl} loading="lazy" decoding="async" /> : null}
           {information.url ? (
-            <a href={information.url} target="_blank" rel="noreferrer">
+            <a href={information.url} target="_blank" rel="noreferrer" onClick={(event) => handleExternalLinkClick(event, information.url ?? '')}>
               <ExternalLink size={14} />
-              Open source
+              {t('albumDetail.action.openSource')}
             </a>
           ) : null}
         </div>
@@ -749,17 +993,17 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     return (
       <div className="album-online-panel album-information-panel">
         {renderOnlineHeader()}
-        <section className="album-information-overview" aria-label="Album and artist overview">
+        <section className="album-information-overview" aria-label={t('albumDetail.information.overviewAria')}>
           <Info size={18} />
           <div>
-            <span>At a glance</span>
+            <span>{t('albumDetail.information.atGlance')}</span>
             <strong>{album.albumArtist}</strong>
-            <small>{[album.title, album.year ? String(album.year) : null, formatTrackCount(album.trackCount)].filter(Boolean).join(' - ')}</small>
+            <small>{[album.title, album.year ? String(album.year) : null, formatTrackCount(album.trackCount, t)].filter(Boolean).join(' - ')}</small>
           </div>
         </section>
         <div className="album-information-articles">
-          {info?.information ? renderInformationArticle(info.information, 'Album profile') : null}
-          {info?.artistInformation ? renderInformationArticle(info.artistInformation, 'Artist profile') : null}
+          {info?.information ? renderInformationArticle(info.information, t('albumDetail.information.albumProfile')) : null}
+          {info?.artistInformation ? renderInformationArticle(info.artistInformation, t('albumDetail.information.artistProfile')) : null}
         </div>
       </div>
     );
@@ -769,10 +1013,10 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     <div className={`album-detail-page ${isReturning ? 'is-returning' : ''}`}>
       <button className="album-back-button" type="button" onClick={returnBack}>
         <ArrowLeft size={17} />
-        Albums
+        {t('albumDetail.action.back')}
       </button>
 
-      <section className="album-detail-hero" aria-label={`${album.title} album details`}>
+      <section className="album-detail-hero album-detail-switch-surface" key={`album-hero-${album.id}`} aria-label={t('albumDetail.aria.details', { album: album.title })}>
         <div className="album-detail-cover" data-empty={!detailCoverSrc}>
           {detailCoverSrc ? (
             <img alt="" decoding="async" draggable={false} height={320} src={detailCoverSrc} width={320} onError={handleDetailCoverError} />
@@ -783,13 +1027,13 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
 
         <div className="album-detail-console">
           <div className="album-detail-copy">
-            <span className="album-detail-kicker">Album</span>
+            <span className="album-detail-kicker">{t('albumDetail.label.album')}</span>
             <h1>{album.title}</h1>
-            <button className="album-detail-artist-link" type="button" aria-label={`Open artist ${album.albumArtist}`} onClick={handleOpenAlbumArtist}>
+            <button className="album-detail-artist-link" type="button" aria-label={t('albumDetail.aria.openArtist', { artist: album.albumArtist })} onClick={handleOpenAlbumArtist}>
               {album.albumArtist}
             </button>
 
-            <div className="album-detail-meta" aria-label="Album metadata">
+            <div className="album-detail-meta" aria-label={t('albumDetail.aria.metadata')}>
               {albumMetadata.map((item) => (
                 <span key={item}>{item}</span>
               ))}
@@ -799,19 +1043,19 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           <div className="album-detail-actions">
             <button className="album-primary-action" type="button" disabled={!firstTrack || isLoadingFirstTrack} onClick={handlePlayNow}>
               <Play size={16} fill="currentColor" />
-              {isLoadingFirstTrack ? 'Reading album' : 'Play Now'}
+              {isLoadingFirstTrack ? t('albumDetail.action.readingAlbum') : t('albumDetail.action.playNow')}
             </button>
             <button
               className={`album-icon-action ${isAlbumLiked ? 'is-liked' : ''}`}
               type="button"
-              aria-label={isAlbumLiked ? 'Unlike album' : 'Like album'}
+              aria-label={isAlbumLiked ? t('albumDetail.action.unlikeAlbum') : t('albumDetail.action.likeAlbum')}
               aria-pressed={isAlbumLiked}
-              title={isAlbumLiked ? 'Unlike album' : 'Like album'}
+              title={isAlbumLiked ? t('albumDetail.action.unlikeAlbum') : t('albumDetail.action.likeAlbum')}
               onClick={() => void handleToggleAlbumLiked()}
             >
               <Heart size={16} fill={isAlbumLiked ? 'currentColor' : 'none'} />
             </button>
-            <button className="album-icon-action" type="button" aria-label="More album actions" title="More album actions">
+            <button className="album-icon-action" type="button" aria-label={t('albumDetail.action.more')} title={t('albumDetail.action.more')}>
               <MoreHorizontal size={17} />
             </button>
           </div>
@@ -819,7 +1063,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           {playError || trackActionMessage ? <p className="album-detail-error">{playError ?? trackActionMessage}</p> : null}
         </div>
 
-        <aside className="album-detail-facts" aria-label="Album info">
+        <aside className="album-detail-facts" aria-label={t('albumDetail.aria.info')}>
           {albumFacts.map((fact) => (
             <div className="album-fact" key={fact.label}>
               <span>{fact.label}</span>
@@ -829,16 +1073,16 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         </aside>
       </section>
 
-      <section className="album-detail-track-console" aria-label={`${album.title} track console`}>
-        <header className="album-detail-tabs" aria-label="Album sections">
+      <section className="album-detail-track-console album-detail-switch-surface" key={`album-console-${album.id}`} aria-label={t('albumDetail.aria.trackConsole', { album: album.title })}>
+        <header className="album-detail-tabs" aria-label={t('albumDetail.aria.sections')}>
           <button className="album-detail-tab" type="button" aria-current={activeTab === 'tracks' ? 'page' : undefined} onClick={() => setActiveTab('tracks')}>
-            Tracks
+            {t('albumDetail.tab.tracks')}
           </button>
           <button className="album-detail-tab" type="button" aria-current={activeTab === 'credits' ? 'page' : undefined} onClick={() => setActiveTab('credits')}>
-            Credits
+            {t('albumDetail.tab.credits')}
           </button>
           <button className="album-detail-tab" type="button" aria-current={activeTab === 'information' ? 'page' : undefined} onClick={() => setActiveTab('information')}>
-            Information
+            {t('albumDetail.tab.information')}
           </button>
         </header>
         {activeTab === 'tracks' ? (
@@ -846,9 +1090,9 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             albumId={album.id}
             currentTrackId={currentTrackId}
             summary={{
-              duration: duration ?? 'Unknown length',
-              signal: formatSummary ?? 'Reading signal',
-              totalLabel: loadedTotal > 0 ? formatTrackCount(loadedTotal) : formatTrackCount(album.trackCount),
+              duration: duration ?? t('albumDetail.status.unknownLength'),
+              signal: formatSummary ?? t('albumDetail.status.readingSignal'),
+              totalLabel: loadedTotal > 0 ? formatTrackCount(loadedTotal, t) : formatTrackCount(album.trackCount, t),
             }}
             onFirstTrackChange={handleFirstTrackChange}
             onLoadedTracksChange={handleLoadedTracksChange}
@@ -861,6 +1105,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         ) : (
           renderInformation()
         )}
+        {activeTab === 'tracks' ? renderRelatedAlbums() : null}
       </section>
 
       {trackMenu ? (

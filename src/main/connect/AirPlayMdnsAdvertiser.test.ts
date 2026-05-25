@@ -27,5 +27,10 @@ describe('AirPlayMdnsAdvertiser', () => {
     expect(payload).toContain('_raop');
     expect(payload).toContain('_airplay');
     expect(payload).toContain('deviceid=60:CF:84:CB:1E:D1');
+    expect(payload).toContain('features=0x40878A00');
+    expect(payload).toContain('srcvers=130.14');
+    expect(payload).toContain('cn=0,1');
+    expect(payload).not.toContain('0x527FFFF7');
+    expect(payload).not.toContain('cn=0,1,2,3');
   });
 });

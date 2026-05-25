@@ -123,6 +123,9 @@ import type {
   FinishPlaybackHistoryRequest,
   TrackCoverSelection,
   CreatePlaylistRequest,
+  DuplicateTrackCleanupApplyRequest,
+  DuplicateTrackCleanupPreview,
+  DuplicateTrackCleanupResult,
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
   DuplicateTrackMode,
@@ -314,6 +317,8 @@ export type EchoApi = {
     getDuplicateTrackVersions: (trackId: string) => Promise<DuplicateTrackMember[]>;
     getDuplicateHiddenCounts: (trackIds: string[], mode?: DuplicateTrackMode) => Promise<Record<string, number>>;
     getDuplicateIndexSummary: (mode?: DuplicateTrackMode) => Promise<DuplicateTrackIndexSummary>;
+    previewDuplicateTrackCleanup: (mode?: DuplicateTrackMode) => Promise<DuplicateTrackCleanupPreview>;
+    applyDuplicateTrackCleanup: (request: DuplicateTrackCleanupApplyRequest) => Promise<DuplicateTrackCleanupResult>;
     getPlaylists: () => Promise<LibraryPlaylist[]>;
     createPlaylist: (request: CreatePlaylistRequest) => Promise<LibraryPlaylist>;
     updatePlaylist: (request: UpdatePlaylistRequest) => Promise<LibraryPlaylist>;

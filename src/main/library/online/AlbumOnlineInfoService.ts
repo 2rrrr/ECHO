@@ -157,6 +157,12 @@ const similarity = (left: string | null | undefined, right: string | null | unde
   return maxLength === 0 ? 0 : Math.max(0, 1 - levenshtein(a, b) / maxLength);
 };
 
+const containsNormalizedText = (haystack: string | null | undefined, needle: string | null | undefined): boolean => {
+  const source = normalizeText(haystack);
+  const target = normalizeText(needle);
+  return Boolean(source && target && source.includes(target));
+};
+
 const fetchJson = async (url: string, headers: Record<string, string>, timeoutMs = 7000): Promise<unknown> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -209,6 +215,22 @@ const wikipediaExtractJson = (language: string, title: string, maxChars: number)
     });
   });
 
+const wikipediaExternalLinksJson = (language: string, title: string): Promise<unknown> =>
+  wikipediaLimiter.run(() => {
+    const params = new URLSearchParams({
+      action: 'query',
+      prop: 'extlinks',
+      ellimit: '20',
+      redirects: '1',
+      titles: title,
+      format: 'json',
+    });
+    return fetchJson(`https://${language}.wikipedia.org/w/api.php?${params.toString()}`, {
+      'Api-User-Agent': 'ECHO-Next/26.5.19 (https://github.com/moekotori/echo)',
+      'User-Agent': 'ECHO-Next/26.5.19 (https://github.com/moekotori/echo)',
+    });
+  });
+
 const wikipediaSearchJson = (language: string, query: string): Promise<unknown> =>
   wikipediaLimiter.run(() =>
     fetchJson(`https://${language}.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=3`, {
@@ -233,6 +255,28 @@ const isInformationSummary = (value: unknown): value is AlbumInformationSummary 
   return Boolean(text(record.title) && text(record.extract) && text(record.language));
 };
 
+const normalizeInformationSummary = (value: unknown): AlbumInformationSummary | null => {
+  if (!isInformationSummary(value)) {
+    return null;
+  }
+  const record = asRecord(value);
+  const externalLinks = Array.isArray(record.externalLinks)
+    ? record.externalLinks
+        .map(asRecord)
+        .map((link) => ({ label: text(link.label), url: text(link.url) }))
+        .filter((link): link is { label: string; url: string } => Boolean(link.label && link.url))
+    : [];
+  return {
+    title: text(record.title) ?? '',
+    description: text(record.description),
+    extract: text(record.extract) ?? '',
+    url: text(record.url),
+    language: text(record.language) ?? '',
+    thumbnailUrl: text(record.thumbnailUrl),
+    externalLinks,
+  };
+};
+
 const pageExtractFromQuery = (value: unknown): string | null => {
   const pages = asRecord(asRecord(asRecord(value).query).pages);
   for (const page of Object.values(pages).map(asRecord)) {
@@ -245,6 +289,46 @@ const pageExtractFromQuery = (value: unknown): string | null => {
     }
   }
   return null;
+};
+
+const linkLabelFromUrl = (value: string): string => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.replace(/^www\./iu, '');
+    const path = decodeURIComponent(url.pathname.replace(/\/$/u, '')).split('/').filter(Boolean).pop();
+    return path ? `${host} / ${path.replace(/[_-]+/gu, ' ')}` : host;
+  } catch {
+    return value;
+  }
+};
+
+const externalLinksFromQuery = (value: unknown): Array<{ label: string; url: string }> => {
+  const pages = asRecord(asRecord(asRecord(value).query).pages);
+  const seen = new Set<string>();
+  const links: Array<{ label: string; url: string }> = [];
+  for (const page of Object.values(pages).map(asRecord)) {
+    const extlinks = Array.isArray(page.extlinks) ? page.extlinks.map(asRecord) : [];
+    for (const extlink of extlinks) {
+      const rawUrl = text(extlink.url) ?? text(extlink['*']);
+      if (!rawUrl || seen.has(rawUrl)) {
+        continue;
+      }
+      try {
+        const url = new URL(rawUrl);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+          continue;
+        }
+        seen.add(rawUrl);
+        links.push({ label: linkLabelFromUrl(rawUrl), url: rawUrl });
+      } catch {
+        continue;
+      }
+      if (links.length >= 8) {
+        return links;
+      }
+    }
+  }
+  return links;
 };
 
 const normalizeExtract = (value: string, maxLength: number): string => {
@@ -262,15 +346,16 @@ const parseInformationCache = (value: unknown): ParsedInformationCache => {
     return { version: 1, information: null, artistInformation: null };
   }
 
-  if (isInformationSummary(parsed)) {
-    return { version: 1, information: parsed, artistInformation: null };
+  const legacyInformation = normalizeInformationSummary(parsed);
+  if (legacyInformation) {
+    return { version: 1, information: legacyInformation, artistInformation: null };
   }
 
   const record = asRecord(parsed);
   return {
     version: Number(record.version) === 2 ? 2 : 1,
-    information: isInformationSummary(record.album) ? record.album : null,
-    artistInformation: isInformationSummary(record.artist) ? record.artist : null,
+    information: normalizeInformationSummary(record.album),
+    artistInformation: normalizeInformationSummary(record.artist),
   };
 };
 
@@ -292,6 +377,29 @@ const mergeSources = (fresh: AlbumOnlineInfoSource[], cached: AlbumOnlineInfoSou
     }
   }
   return merged;
+};
+
+const isRelevantAlbumInformation = (snapshot: AlbumSnapshot, information: AlbumInformationSummary | null): boolean => {
+  if (!information) {
+    return true;
+  }
+
+  const titleScore = similarity(snapshot.album.title, information.title);
+  const albumMentioned = containsNormalizedText(information.title, snapshot.album.title) || containsNormalizedText(information.extract, snapshot.album.title);
+  const artistMentioned =
+    containsNormalizedText(information.title, snapshot.album.albumArtist) ||
+    containsNormalizedText(information.description, snapshot.album.albumArtist) ||
+    containsNormalizedText(information.extract, snapshot.album.albumArtist);
+
+  return titleScore >= 0.72 || (albumMentioned && artistMentioned);
+};
+
+const isRelevantArtistInformation = (snapshot: AlbumSnapshot, information: AlbumInformationSummary | null): boolean => {
+  if (!information) {
+    return true;
+  }
+
+  return similarity(snapshot.album.albumArtist, information.title) >= 0.72 || containsNormalizedText(information.extract, snapshot.album.albumArtist);
 };
 
 const pickArtistCredit = (value: unknown): { name: string | null; id: string | null } => {
@@ -361,7 +469,7 @@ export class AlbumOnlineInfoService {
     if (options.force !== true) {
       const cached = this.readCache(cacheKey, snapshot.album.id);
       if (cached && Date.parse(cached.expiresAt ?? '') > now.getTime()) {
-        if (cached.cacheVersion >= 2) {
+        if (cached.cacheVersion >= 2 && isRelevantAlbumInformation(snapshot, cached.information) && isRelevantArtistInformation(snapshot, cached.artistInformation)) {
           return cached;
         }
         legacyCache = cached;
@@ -370,13 +478,21 @@ export class AlbumOnlineInfoService {
 
     const fetchedPayload = await this.fetchOnlineInfo(snapshot, language);
     const payload: OnlinePayload = legacyCache
-      ? {
-          ...fetchedPayload,
-          credits: fetchedPayload.credits.length > 0 ? fetchedPayload.credits : legacyCache.credits,
-          information: fetchedPayload.information ?? legacyCache.information,
-          match: fetchedPayload.match ?? legacyCache.match,
-          sources: mergeSources(fetchedPayload.sources, legacyCache.sources),
-        }
+      ? (() => {
+          const cachedInformation = isRelevantAlbumInformation(snapshot, legacyCache.information) ? legacyCache.information : null;
+          const cachedArtistInformation = isRelevantArtistInformation(snapshot, legacyCache.artistInformation) ? legacyCache.artistInformation : null;
+          const cachedSources = cachedInformation || cachedArtistInformation
+            ? legacyCache.sources
+            : legacyCache.sources.filter((source) => source.provider !== 'wikipedia');
+          return {
+            ...fetchedPayload,
+            credits: fetchedPayload.credits.length > 0 ? fetchedPayload.credits : legacyCache.credits,
+            information: fetchedPayload.information ?? cachedInformation,
+            artistInformation: fetchedPayload.artistInformation ?? cachedArtistInformation,
+            match: fetchedPayload.match ?? legacyCache.match,
+            sources: mergeSources(fetchedPayload.sources, cachedSources),
+          };
+        })()
       : fetchedPayload;
     const hasData =
       payload.credits.length > 0 ||
@@ -562,10 +678,14 @@ export class AlbumOnlineInfoService {
         }))
           .filter((page): page is { key: string; title: string; score: number } => Boolean(page.key && page.title))
           .sort((left, right) => right.score - left.score)[0];
-        const pageTitle = best?.key ?? query;
-        const [summaryPayload, extractPayload] = await Promise.all([
+        if (!best || best.score < 0.45) {
+          continue;
+        }
+        const pageTitle = best.key;
+        const [summaryPayload, extractPayload, externalLinksPayload] = await Promise.all([
           wikipediaJson(language, pageTitle),
           wikipediaExtractJson(language, pageTitle, 2600),
+          wikipediaExternalLinksJson(language, pageTitle),
         ]);
         const data = asRecord(summaryPayload);
         const extract = text(data.extract);
@@ -574,14 +694,19 @@ export class AlbumOnlineInfoService {
         if (!richExtract || !title) {
           continue;
         }
-        return {
+        const information = {
           title,
           description: text(data.description),
           extract: normalizeExtract(richExtract, 2400),
           url: text(asRecord(asRecord(data.content_urls).desktop).page),
           language,
           thumbnailUrl: text(asRecord(data.thumbnail).source),
+          externalLinks: externalLinksFromQuery(externalLinksPayload),
         };
+        if (!isRelevantAlbumInformation(snapshot, information)) {
+          continue;
+        }
+        return information;
       } catch {
         continue;
       }
@@ -614,10 +739,14 @@ export class AlbumOnlineInfoService {
         }))
           .filter((page): page is { key: string; title: string; score: number } => Boolean(page.key && page.title))
           .sort((left, right) => right.score - left.score)[0];
-        const pageTitle = best?.key ?? query;
-        const [summaryPayload, extractPayload] = await Promise.all([
+        if (!best || best.score < 0.45) {
+          continue;
+        }
+        const pageTitle = best.key;
+        const [summaryPayload, extractPayload, externalLinksPayload] = await Promise.all([
           wikipediaJson(language, pageTitle),
           wikipediaExtractJson(language, pageTitle, 3600),
+          wikipediaExternalLinksJson(language, pageTitle),
         ]);
         const data = asRecord(summaryPayload);
         const extract = text(data.extract);
@@ -626,14 +755,19 @@ export class AlbumOnlineInfoService {
         if (!richExtract || !title) {
           continue;
         }
-        return {
+        const information = {
           title,
           description: text(data.description),
           extract: normalizeExtract(richExtract, 3200),
           url: text(asRecord(asRecord(data.content_urls).desktop).page),
           language,
           thumbnailUrl: text(asRecord(data.thumbnail).source),
+          externalLinks: externalLinksFromQuery(externalLinksPayload),
         };
+        if (!isRelevantArtistInformation(snapshot, information)) {
+          continue;
+        }
+        return information;
       } catch {
         continue;
       }

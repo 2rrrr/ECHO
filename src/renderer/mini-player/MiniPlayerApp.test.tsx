@@ -123,6 +123,7 @@ const installEchoMock = (track: LibraryTrack): void => {
           settings: {
             miniPlayerEnabled: true,
             miniPlayerLocked: false,
+            miniPlayerAutoHideMainWindow: false,
             miniPlayerBounds: null,
           },
         }),

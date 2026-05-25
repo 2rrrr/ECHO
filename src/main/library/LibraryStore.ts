@@ -61,6 +61,7 @@ import type {
   LibraryInboxUpdateStateResult,
   LibraryPlaylist,
   LibraryPlaylistItem,
+  DuplicateTrackCleanupPreview,
   DuplicateTrackGroup,
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
@@ -4217,6 +4218,10 @@ export class LibraryStore {
     return this.createDuplicateTrackService().rebuildDuplicateTrackIndex(mode);
   }
 
+  refreshDuplicateTracksAsync(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackIndexSummary> {
+    return this.createDuplicateTrackService().rebuildDuplicateTrackIndexAsync(mode);
+  }
+
   getDuplicateTrackGroup(trackId: string): DuplicateTrackGroup | null {
     return this.createDuplicateTrackService().getDuplicateGroupForTrack(trackId);
   }
@@ -4260,6 +4265,14 @@ export class LibraryStore {
 
   getDuplicateIndexSummary(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
     return this.createDuplicateTrackService().getDuplicateIndexSummary(mode);
+  }
+
+  getDuplicateTrackCleanupPreview(mode: DuplicateTrackMode = 'strict'): DuplicateTrackCleanupPreview {
+    return this.createDuplicateTrackService().getCleanupPreview(mode);
+  }
+
+  scanDuplicateTrackCleanupPreview(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackCleanupPreview> {
+    return this.createDuplicateTrackService().scanCleanupPreview(mode);
   }
 
   getAlbums(query?: LibraryPageQuery): LibraryPage<LibraryAlbum> {

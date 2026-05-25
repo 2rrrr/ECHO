@@ -12,6 +12,7 @@ const setMiniPlayerLockedMock = vi.fn((locked: boolean) => ({
   settings: {
     miniPlayerEnabled: true,
     miniPlayerLocked: locked,
+    miniPlayerAutoHideMainWindow: false,
     miniPlayerBounds: null,
   },
 }));

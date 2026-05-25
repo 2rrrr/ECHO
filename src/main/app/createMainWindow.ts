@@ -126,7 +126,13 @@ export const createMainWindow = (): BrowserWindow => {
   };
 
   window.once('ready-to-show', () => {
-    window.show();
+    const settings = getAppSettings();
+    if (settings.miniPlayerEnabled === true && settings.miniPlayerAutoHideMainWindow === true) {
+      ensureTray();
+      window.hide();
+    } else {
+      window.show();
+    }
     markStartupStage('main-window:ready-to-show');
   });
 

@@ -94,7 +94,7 @@ describe('mini player window bounds', () => {
     });
   });
 
-  it('clamps a saved visible position back into the work area', async () => {
+  it('compacts oversized visible bounds back to the clickable player chrome', async () => {
     mocks.settings.miniPlayerBounds = {
       x: -80,
       y: 24,
@@ -106,8 +106,8 @@ describe('mini player window bounds', () => {
     expect(resolveInitialMiniPlayerBounds()).toEqual({
       x: 0,
       y: 24,
-      width: 520,
-      height: 116,
+      width: 388,
+      height: 74,
     });
   });
 });

@@ -6,5 +6,5 @@ export type MiniPlayerState = {
   visible: boolean;
   locked: boolean;
   bounds: MiniPlayerBounds | null;
-  settings: Pick<AppSettings, 'miniPlayerEnabled' | 'miniPlayerLocked' | 'miniPlayerBounds'>;
+  settings: Pick<AppSettings, 'miniPlayerEnabled' | 'miniPlayerLocked' | 'miniPlayerAutoHideMainWindow' | 'miniPlayerBounds'>;
 };
