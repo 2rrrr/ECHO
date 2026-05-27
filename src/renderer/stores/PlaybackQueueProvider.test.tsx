@@ -1625,7 +1625,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     await waitFor(() => expect(screen.getByLabelText('queue-index').textContent).toBe('1'));
   });
 
-  it('passes ReplayGain and a gapless next-track plan after opt-in', async () => {
+  it('passes ReplayGain and only a gapless next-track plan after opt-in', async () => {
     const first = {
       ...makeTrack(1),
       replayGainTrackGainDb: -5,
@@ -1692,15 +1692,10 @@ describe('PlaybackQueueProvider playback history session', () => {
           trackId: second.id,
           path: second.path,
         },
-        upcomingItems: [
-          expect.objectContaining({
-            mediaType: 'local',
-            trackId: third.id,
-            path: third.path,
-          }),
-        ],
       },
     });
+    expect(playLocalFile.mock.calls[0]?.[0].gapless).not.toHaveProperty('upcomingItems');
+    expect(playLocalFile.mock.calls[0]?.[0].gapless).not.toHaveProperty('upcomingProbes');
     expect(playLocalFile.mock.calls[0]?.[0].automix).toBeUndefined();
   });
 

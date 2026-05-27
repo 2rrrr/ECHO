@@ -31,7 +31,7 @@ import type {
 } from '../../shared/types/library';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
-import { openAlbumDetailForTrack, requestAlbumDetailNavigation } from '../utils/albumNavigation';
+import { openAlbumDetail, openAlbumDetailForTrack } from '../utils/albumNavigation';
 import { openArtistDetailByName } from '../utils/artistNavigation';
 import type { AppRouteId } from '../app/routes';
 
@@ -1449,13 +1449,17 @@ export const HomePage = (): JSX.Element => {
   }, []);
 
   const openRecommendedAlbum = useCallback((album: LibraryAlbum): void => {
-    requestAlbumDetailNavigation(album, { returnTo: 'home' });
+    void openAlbumDetail(album, { returnTo: 'home' }).catch((navigationError) => {
+      setError(navigationError instanceof Error ? navigationError.message : String(navigationError));
+    });
   }, []);
 
   const openFavoriteAlbum = useCallback((album: PlaybackStatsAlbum): void => {
     const libraryAlbum = statsAlbumToLibraryAlbum(album);
     if (libraryAlbum) {
-      requestAlbumDetailNavigation(libraryAlbum, { returnTo: 'home' });
+      void openAlbumDetail(libraryAlbum, { returnTo: 'home' }).catch((navigationError) => {
+        setError(navigationError instanceof Error ? navigationError.message : String(navigationError));
+      });
     }
   }, []);
 

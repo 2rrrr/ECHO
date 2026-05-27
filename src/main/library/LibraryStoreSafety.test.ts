@@ -141,4 +141,22 @@ describe('LibraryStore track metadata safety', () => {
       sortName: 'Unknown Artist',
     });
   });
+
+  it('counts only available tracks when paging album detail tracks', () => {
+    const store = makeStore();
+    const folder = store.addFolder('D:\\Music');
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\one.flac', { id: 'track-1', title: 'One', trackNo: 1 }));
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\two.flac', { id: 'track-2', title: 'Two', trackNo: 2 }));
+    store.refreshAlbums(new AlbumService(), '2026-01-01T00:00:00.000Z');
+
+    const album = store.getAlbums({ pageSize: 1 }).items[0];
+    database!.prepare('UPDATE tracks SET missing = 1 WHERE id = ?').run('track-2');
+
+    const tracks = store.getAlbumTracks(album.id, { page: 1, pageSize: 10 });
+
+    expect(tracks.total).toBe(1);
+    expect(tracks.hasMore).toBe(false);
+    expect(tracks.items.map((track) => track.id)).toEqual(['track-1']);
+  });
 });

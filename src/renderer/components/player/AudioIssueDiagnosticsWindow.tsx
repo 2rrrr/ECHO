@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Copy, Trash2, X } from 'lucide-react';
 import type { AudioDiagnostics, AudioStatus } from '../../../shared/types/audio';
+import type { AppSettings } from '../../../shared/types/appSettings';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 
 type DiagnosticSource = 'audio-status' | 'poll' | 'manual';
@@ -51,7 +52,11 @@ type AudioIssueDiagnosticsWindowProps = {
 
 const maxEntries = 240;
 const pollIntervalMs = 3000;
+const enhancedLowLoadPollIntervalMs = 15_000;
 const maxStoredDiagnosticEventsPerEntry = 12;
+
+const readEnhancedLowLoadPlaybackActive = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.lowLoadPlaybackModeEnabled === true && settings.lowLoadPlaybackEnhancementsEnabled === true;
 
 const labels = {
   aria: '音频问题诊断窗口',
@@ -187,7 +192,10 @@ export const AudioIssueDiagnosticsWindow = ({ onClose }: AudioIssueDiagnosticsWi
   const [latestStatus, setLatestStatus] = useState<AudioStatus | null>(null);
   const [latestDiagnostics, setLatestDiagnostics] = useState<AudioDiagnostics | null>(null);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [enhancedLowLoadPlaybackActive, setEnhancedLowLoadPlaybackActive] = useState(false);
   const previousStatusRef = useRef<AudioStatus | null>(null);
+  const shouldUseEnhancedLowLoadPolling =
+    enhancedLowLoadPlaybackActive && (latestStatus?.state === 'loading' || latestStatus?.state === 'playing');
 
   const appendEntry = useCallback((
     source: DiagnosticSource,
@@ -228,16 +236,52 @@ export const AudioIssueDiagnosticsWindow = ({ onClose }: AudioIssueDiagnosticsWi
     });
 
     void captureSnapshot('manual').catch(() => undefined);
+    const intervalMs = shouldUseEnhancedLowLoadPolling ? enhancedLowLoadPollIntervalMs : pollIntervalMs;
     const timer = window.setInterval(() => {
       void captureSnapshot('poll').catch(() => undefined);
-    }, pollIntervalMs);
+    }, intervalMs);
 
     return () => {
       disposed = true;
       unsubscribe?.();
       window.clearInterval(timer);
     };
-  }, [appendEntry, captureSnapshot]);
+  }, [appendEntry, captureSnapshot, shouldUseEnhancedLowLoadPolling]);
+
+  useEffect(() => {
+    let disposed = false;
+    const refreshSettings = (): void => {
+      void window.echo?.app?.getSettings?.()
+        .then((settings) => {
+          if (!disposed) {
+            setEnhancedLowLoadPlaybackActive(readEnhancedLowLoadPlaybackActive(settings));
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<Partial<AppSettings> | null | undefined>).detail;
+      if (
+        !detail ||
+        (
+          !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackModeEnabled') &&
+          !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackEnhancementsEnabled')
+        )
+      ) {
+        return;
+      }
+
+      refreshSettings();
+    };
+
+    refreshSettings();
+    window.addEventListener('settings:changed', handleSettingsChanged);
+    return () => {
+      disposed = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
 
   const diagnosticEvents = latestDiagnostics?.recentPlaybackEvents ?? [];
   const { suspectEvents, visibleEvents } = useMemo(() => {

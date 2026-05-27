@@ -1,7 +1,12 @@
 import { useSyncExternalStore } from 'react';
 import type { AudioPlaybackState, AudioStatus } from '../../shared/types/audio';
-import { hqPlayerConnectDeviceId, type ConnectSessionStatus } from '../../shared/types/connect';
+import type { AppSettings } from '../../shared/types/appSettings';
+import type { ConnectSessionStatus } from '../../shared/types/connect';
 import type { PlaybackStatus } from '../../shared/types/playback';
+import {
+  isActiveConnectPlaybackStatus,
+  playbackStatusFromConnectStatus,
+} from '../utils/connectPlayback';
 
 type PlaybackVisualIntent = {
   type: 'track-switch';
@@ -22,11 +27,11 @@ type PlaybackStatusSnapshot = {
 
 const idlePollingStates = new Set(['paused', 'stopped', 'idle', 'error']);
 const activePollingIntervalMs = 500;
+const enhancedLowLoadActivePollingIntervalMs = 1800;
 const idlePollingIntervalMs = 2000;
 const trackSwitchVisualIntentGuardMs = 2500;
 const trackSwitchPositionGuardMs = 15_000;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
-const hqPlayerEndedGraceMs = 5000;
 const nonActionableAudioStatusErrorPatterns = [
   /\beq_control_(?:closed|disconnected)\b/u,
   /\beq_control_sync_skipped\b/u,
@@ -46,8 +51,9 @@ const listeners = new Set<() => void>();
 let pollTimer: number | null = null;
 let unsubscribeAudioStatus: (() => void) | undefined;
 let unsubscribeConnectStatus: (() => void) | undefined;
-let activeHqPlayerConnectStatus: ConnectSessionStatus | null = null;
+let activeConnectStatus: ConnectSessionStatus | null = null;
 let refreshRequestId = 0;
+let enhancedLowLoadPlaybackActive = false;
 
 const getSnapshot = (): PlaybackStatusSnapshot => snapshot;
 
@@ -110,60 +116,12 @@ const getActionableAudioStatusError = (error: string | null | undefined): string
 const shouldIgnoreAudioStatusPatch = (audioStatus: AudioStatus): boolean =>
   audioStatus.state === 'error' && Boolean(audioStatus.error) && !getActionableAudioStatusError(audioStatus.error);
 
-const connectStateToPlaybackState = (status: ConnectSessionStatus): AudioPlaybackState => {
-  switch (status.state) {
-    case 'playing':
-      return 'playing';
-    case 'paused':
-      return 'paused';
-    case 'stopped':
-      return 'stopped';
-    case 'error':
-      return 'error';
-    case 'idle':
-      return 'idle';
-    default:
-      return 'loading';
-  }
-};
-
-const isHqPlayerConnectStatus = (status: ConnectSessionStatus | null | undefined): status is ConnectSessionStatus =>
-  status?.protocol === 'hqplayer' && status.deviceId === hqPlayerConnectDeviceId;
-
-const isHqPlayerStoppedAtTrackEnd = (status: ConnectSessionStatus): boolean => {
-  if (!isHqPlayerConnectStatus(status) || status.state !== 'stopped' || !status.currentTrackId) {
-    return false;
-  }
-
-  const durationMs = Math.round(Math.max(0, status.durationSeconds || status.metadata?.durationSeconds || 0) * 1000);
-  if (durationMs <= 0) {
-    return false;
-  }
-
-  const positionMs = Math.round(Math.max(0, status.positionSeconds) * 1000);
-  return positionMs >= Math.max(0, durationMs - hqPlayerEndedGraceMs);
-};
-
-const shouldTreatHqPlayerAsActivePlayback = (status: ConnectSessionStatus | null | undefined): boolean =>
-  isHqPlayerConnectStatus(status) &&
-  (['connecting', 'ready', 'playing', 'paused'].includes(status.state) || isHqPlayerStoppedAtTrackEnd(status));
-
-const playbackStatusFromConnectStatus = (status: ConnectSessionStatus): PlaybackStatus => ({
-  state: isHqPlayerStoppedAtTrackEnd(status) ? 'ended' : connectStateToPlaybackState(status),
-  currentTrackId: status.currentTrackId,
-  positionMs: Math.round(Math.max(0, status.positionSeconds) * 1000),
-  durationMs: Math.round(Math.max(0, status.durationSeconds || status.metadata?.durationSeconds || 0) * 1000),
-  filePath: null,
-});
-
 const applyConnectStatus = (connectStatus: ConnectSessionStatus): PlaybackStatusSnapshot => {
-  activeHqPlayerConnectStatus = shouldTreatHqPlayerAsActivePlayback(connectStatus) ? connectStatus : null;
+  const connectState = connectStatus.state;
+  const connectIsActive = isActiveConnectPlaybackStatus(connectStatus);
+  activeConnectStatus = connectIsActive ? connectStatus : null;
 
-  if (!isHqPlayerConnectStatus(connectStatus)) {
-    return snapshot;
-  }
-
-  if (!shouldTreatHqPlayerAsActivePlayback(connectStatus) && connectStatus.state !== 'stopped' && connectStatus.state !== 'error') {
+  if (!connectIsActive && connectState !== 'error') {
     return snapshot;
   }
 
@@ -309,7 +267,7 @@ export const refreshPlaybackStatus = async (): Promise<PlaybackStatusSnapshot> =
       return snapshot;
     }
 
-    if (connectStatus && isHqPlayerConnectStatus(connectStatus)) {
+    if (connectStatus && isActiveConnectPlaybackStatus(connectStatus)) {
       return applyConnectStatus(connectStatus);
     }
 
@@ -338,7 +296,11 @@ const clearPolling = (): void => {
 
 function getPollingIntervalMs(): number {
   const state = snapshot.playbackStatus?.state ?? snapshot.audioStatus?.state ?? 'idle';
-  return document.visibilityState === 'hidden' || idlePollingStates.has(state) ? idlePollingIntervalMs : activePollingIntervalMs;
+  if (document.visibilityState === 'hidden' || idlePollingStates.has(state)) {
+    return idlePollingIntervalMs;
+  }
+
+  return enhancedLowLoadPlaybackActive ? enhancedLowLoadActivePollingIntervalMs : activePollingIntervalMs;
 }
 
 function shouldPollStatus(): boolean {
@@ -368,13 +330,45 @@ const handleVisibilityChange = (): void => {
   }
 };
 
+const readEnhancedLowLoadPlaybackActive = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.lowLoadPlaybackModeEnabled === true && settings.lowLoadPlaybackEnhancementsEnabled === true;
+
+const applyLowLoadPlaybackSettings = (settings: Partial<AppSettings> | null | undefined): void => {
+  const next = readEnhancedLowLoadPlaybackActive(settings);
+  if (enhancedLowLoadPlaybackActive === next) {
+    return;
+  }
+
+  enhancedLowLoadPlaybackActive = next;
+  schedulePolling();
+};
+
+const refreshLowLoadPlaybackSettings = (): void => {
+  void window.echo?.app?.getSettings?.().then(applyLowLoadPlaybackSettings).catch(() => undefined);
+};
+
+const handleSettingsChanged = (event: Event): void => {
+  const detail = (event as CustomEvent<Partial<AppSettings> | null | undefined>).detail;
+  if (
+    !detail ||
+    (
+      !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackModeEnabled') &&
+      !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackEnhancementsEnabled')
+    )
+  ) {
+    return;
+  }
+
+  refreshLowLoadPlaybackSettings();
+};
+
 const ensureStarted = (): void => {
   if (listeners.size !== 1) {
     return;
   }
 
   unsubscribeAudioStatus = window.echo?.audio?.onStatus?.((audioStatus) => {
-    if (shouldTreatHqPlayerAsActivePlayback(activeHqPlayerConnectStatus)) {
+    if (isActiveConnectPlaybackStatus(activeConnectStatus)) {
       return;
     }
 
@@ -385,15 +379,12 @@ const ensureStarted = (): void => {
     });
   });
   unsubscribeConnectStatus = window.echo?.connect?.onStatus?.((connectStatus) => {
-    if (!isHqPlayerConnectStatus(connectStatus)) {
-      activeHqPlayerConnectStatus = null;
-      return;
-    }
-
     refreshRequestId += 1;
     applyConnectStatus(connectStatus);
   });
   document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('settings:changed', handleSettingsChanged);
+  refreshLowLoadPlaybackSettings();
   void refreshPlaybackStatus();
   schedulePolling();
 };
@@ -408,7 +399,7 @@ const stopIfUnused = (): void => {
   unsubscribeAudioStatus = undefined;
   unsubscribeConnectStatus?.();
   unsubscribeConnectStatus = undefined;
-  activeHqPlayerConnectStatus = null;
+  activeConnectStatus = null;
   snapshot = {
     audioStatus: null,
     playbackStatus: null,
@@ -417,6 +408,8 @@ const stopIfUnused = (): void => {
     version: snapshot.version + 1,
   };
   document.removeEventListener('visibilitychange', handleVisibilityChange);
+  window.removeEventListener('settings:changed', handleSettingsChanged);
+  enhancedLowLoadPlaybackActive = false;
 };
 
 const subscribe = (listener: () => void): (() => void) => {

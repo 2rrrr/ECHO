@@ -312,6 +312,7 @@ export type AppSettings = {
   homeWaveformVisualizerEnabled?: boolean;
   audioVisualSpectrumEnabled?: boolean;
   lowLoadPlaybackModeEnabled?: boolean;
+  lowLoadPlaybackEnhancementsEnabled?: boolean;
   homeRandomHeroTitleEnabled?: boolean;
   playerWaveformProgressEnabled?: boolean;
   fixedVolumeEnabled?: boolean;

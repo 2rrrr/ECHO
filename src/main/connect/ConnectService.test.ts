@@ -1,7 +1,11 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hqPlayerConnectDeviceId, type ConnectStartRequest } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { HqPlayerConnectionTestResult, HqPlayerSettings, HqPlayerStatus } from '../../shared/types/hqplayer';
+import type { DlnaDevice } from './DlnaClient';
 
 const mocks = vi.hoisted(() => {
   const audioSession = {
@@ -48,6 +52,43 @@ const localTrack: LibraryTrack = {
   coverThumb: null,
   fieldSources: {},
 };
+
+const dlnaDevice = (overrides: Partial<DlnaDevice> = {}): DlnaDevice => ({
+  id: 'dlna:uuid:streamer-1',
+  name: 'Living Room Streamer',
+  protocol: 'dlna',
+  model: 'N130',
+  manufacturer: 'Silent Angel',
+  address: '192.168.1.42',
+  capabilities: {
+    canPlay: true,
+    canPause: true,
+    canStop: true,
+    canSeek: true,
+    canSetVolume: true,
+    supportsMetadata: true,
+    supportsSetNext: false,
+    supportedMimeTypes: ['audio/flac', 'audio/wav', 'audio/mpeg'],
+    requiresTranscode: false,
+  },
+  state: 'available',
+  lastSeenAt: '2026-05-21T01:00:00.000Z',
+  unsupportedReason: null,
+  descriptionUrl: 'http://192.168.1.42:49152/description.xml',
+  udn: 'uuid:streamer-1',
+  services: {
+    avTransport: {
+      serviceType: 'urn:schemas-upnp-org:service:AVTransport:1',
+      controlUrl: 'http://192.168.1.42:49152/upnp/control/avtransport',
+    },
+    renderingControl: {
+      serviceType: 'urn:schemas-upnp-org:service:RenderingControl:1',
+      controlUrl: 'http://192.168.1.42:49152/upnp/control/rendering',
+    },
+    connectionManager: null,
+  },
+  ...overrides,
+});
 
 const hqStatus = (state: HqPlayerStatus['state'] = 'disabled'): HqPlayerStatus => ({
   enabled: state !== 'disabled',
@@ -188,6 +229,7 @@ const hqConnectionWithoutPlayback: HqPlayerConnectionTestResult = {
 describe('ConnectService HQPlayer output device', () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   beforeEach(() => {
@@ -249,6 +291,215 @@ describe('ConnectService HQPlayer output device', () => {
         lastSeenAt: '2026-05-21T01:00:01.000Z',
       }),
     ]));
+  });
+
+  it('keeps recently missed DLNA streamers visible as unavailable instead of dropping them', async () => {
+    const { ConnectService } = await import('./ConnectService');
+    const hqPlayer = createHqPlayerService();
+    const service = new ConnectService(hqPlayer);
+    const merge = service as unknown as { mergeDiscoveredDlnaDevices: (devices: DlnaDevice[], now?: number) => void };
+    const firstSeenAt = Date.parse('2026-05-21T01:00:00.000Z');
+
+    merge.mergeDiscoveredDlnaDevices([dlnaDevice()], firstSeenAt);
+    merge.mergeDiscoveredDlnaDevices([], firstSeenAt + 60_000);
+
+    expect(service.listDevices()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'dlna:uuid:streamer-1',
+        state: 'unavailable',
+        lastSeenAt: '2026-05-21T01:00:00.000Z',
+        unsupportedReason: expect.stringContaining('本次扫描未响应'),
+      }),
+    ]));
+  });
+
+  it('drops old missed DLNA streamers after the retention window', async () => {
+    const { ConnectService } = await import('./ConnectService');
+    const hqPlayer = createHqPlayerService();
+    const service = new ConnectService(hqPlayer);
+    const merge = service as unknown as { mergeDiscoveredDlnaDevices: (devices: DlnaDevice[], now?: number) => void };
+    const firstSeenAt = Date.parse('2026-05-21T01:00:00.000Z');
+
+    merge.mergeDiscoveredDlnaDevices([dlnaDevice()], firstSeenAt);
+    merge.mergeDiscoveredDlnaDevices([], firstSeenAt + (11 * 60_000));
+
+    expect(service.listDevices()).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'dlna:uuid:streamer-1',
+      }),
+    ]));
+  });
+
+  it('hands DLNA renderers a playable URL with album art metadata before pausing local playback', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-connect-service-'));
+    try {
+      const audioPath = join(tempRoot, 'song.flac');
+      const coverPath = join(tempRoot, 'cover.jpg');
+      writeFileSync(audioPath, Buffer.from('audio', 'utf8'));
+      writeFileSync(coverPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+      const trackWithCover: LibraryTrack = {
+        ...localTrack,
+        path: audioPath,
+        coverId: 'cover-1',
+        coverThumb: 'echo-cover://thumb/cover-1',
+      };
+      const soapCalls: Array<{ soapAction: string | null; body: string }> = [];
+      vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+        soapCalls.push({
+          soapAction: typeof init?.headers === 'object' && init.headers !== null && !Array.isArray(init.headers)
+            ? String((init.headers as Record<string, string>).SOAPAction ?? '')
+            : null,
+          body: typeof init?.body === 'string' ? init.body : '',
+        });
+        return {
+          ok: true,
+          text: () => Promise.resolve('<s:Envelope><s:Body /></s:Envelope>'),
+        };
+      }));
+      mocks.libraryService.resolveCoverAsset.mockReturnValue({ filePath: coverPath });
+      mocks.audioSession.getStatus.mockReturnValue({
+        state: 'playing',
+        currentTrackId: trackWithCover.id,
+        currentFilePath: audioPath,
+        positionSeconds: 7,
+      });
+      const { ConnectService } = await import('./ConnectService');
+      const hqPlayer = createHqPlayerService();
+      const service = new ConnectService(hqPlayer);
+      const merge = service as unknown as { mergeDiscoveredDlnaDevices: (devices: DlnaDevice[], now?: number) => void };
+      merge.mergeDiscoveredDlnaDevices([dlnaDevice({ address: '127.0.0.1' })], Date.parse('2026-05-21T01:00:00.000Z'));
+
+      await expect(service.connect({
+        deviceId: 'dlna:uuid:streamer-1',
+        track: trackWithCover,
+        filePath: audioPath,
+        positionSeconds: 7,
+      })).resolves.toMatchObject({
+        deviceId: 'dlna:uuid:streamer-1',
+        protocol: 'dlna',
+        state: 'playing',
+        currentTrackId: trackWithCover.id,
+        metadata: expect.objectContaining({
+          coverHttpUrl: expect.stringContaining('/connect/cover/'),
+        }),
+      });
+
+      const setUriCall = soapCalls.find((call) => call.soapAction?.includes('#SetAVTransportURI'));
+      expect(setUriCall?.body).toContain('CurrentURI');
+      expect(setUriCall?.body).toContain('/connect/audio/');
+      expect(setUriCall?.body).toContain('&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_TN&quot;&gt;');
+      expect(setUriCall?.body).toContain('/connect/cover/');
+      expect(soapCalls.some((call) => call.soapAction?.includes('#Play'))).toBe(true);
+      expect(mocks.audioSession.pause).toHaveBeenCalledOnce();
+      await service.dispose();
+    } finally {
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('proxies HTTP artwork through the local Connect server instead of handing the renderer URL to DLNA devices', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-connect-service-'));
+    try {
+      const audioPath = join(tempRoot, 'song.flac');
+      writeFileSync(audioPath, Buffer.from('audio', 'utf8'));
+      const trackWithRemoteCover: LibraryTrack = {
+        ...localTrack,
+        path: audioPath,
+        coverId: null,
+        coverThumb: 'https://covers.example.test/cover.webp',
+      };
+      const soapCalls: Array<{ soapAction: string | null; body: string }> = [];
+      vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+        soapCalls.push({
+          soapAction: typeof init?.headers === 'object' && init.headers !== null && !Array.isArray(init.headers)
+            ? String((init.headers as Record<string, string>).SOAPAction ?? '')
+            : null,
+          body: typeof init?.body === 'string' ? init.body : '',
+        });
+        return {
+          ok: true,
+          text: () => Promise.resolve('<s:Envelope><s:Body /></s:Envelope>'),
+        };
+      }));
+      mocks.libraryService.resolveCoverAsset.mockReturnValue(null);
+      mocks.audioSession.getStatus.mockReturnValue({
+        state: 'playing',
+        currentTrackId: trackWithRemoteCover.id,
+        currentFilePath: audioPath,
+        positionSeconds: 0,
+      });
+      const { ConnectService } = await import('./ConnectService');
+      const service = new ConnectService(createHqPlayerService());
+      const merge = service as unknown as { mergeDiscoveredDlnaDevices: (devices: DlnaDevice[], now?: number) => void };
+      merge.mergeDiscoveredDlnaDevices([dlnaDevice({ address: '127.0.0.1' })], Date.parse('2026-05-21T01:00:00.000Z'));
+
+      await service.connect({
+        deviceId: 'dlna:uuid:streamer-1',
+        track: trackWithRemoteCover,
+        filePath: audioPath,
+      });
+
+      const setUriCall = soapCalls.find((call) => call.soapAction?.includes('#SetAVTransportURI'));
+      expect(setUriCall?.body).toContain('/connect/cover/');
+      expect(setUriCall?.body).not.toContain('covers.example.test');
+      await service.dispose();
+    } finally {
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps FLAC direct when a renderer advertises application/flac', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-connect-service-'));
+    try {
+      const audioPath = join(tempRoot, 'song.flac');
+      writeFileSync(audioPath, Buffer.from('flac', 'utf8'));
+      const soapCalls: Array<{ soapAction: string | null; body: string }> = [];
+      vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+        soapCalls.push({
+          soapAction: typeof init?.headers === 'object' && init.headers !== null && !Array.isArray(init.headers)
+            ? String((init.headers as Record<string, string>).SOAPAction ?? '')
+            : null,
+          body: typeof init?.body === 'string' ? init.body : '',
+        });
+        return {
+          ok: true,
+          text: () => Promise.resolve('<s:Envelope><s:Body /></s:Envelope>'),
+        };
+      }));
+      mocks.libraryService.resolveCoverAsset.mockReturnValue(null);
+      mocks.audioSession.getStatus.mockReturnValue({
+        state: 'playing',
+        currentTrackId: localTrack.id,
+        currentFilePath: audioPath,
+        positionSeconds: 0,
+      });
+      const { ConnectService } = await import('./ConnectService');
+      const service = new ConnectService(createHqPlayerService());
+      const merge = service as unknown as { mergeDiscoveredDlnaDevices: (devices: DlnaDevice[], now?: number) => void };
+      merge.mergeDiscoveredDlnaDevices([
+        dlnaDevice({
+          address: '127.0.0.1',
+          capabilities: {
+            ...dlnaDevice().capabilities,
+            supportedMimeTypes: ['application/flac'],
+          },
+        }),
+      ], Date.parse('2026-05-21T01:00:00.000Z'));
+
+      await service.connect({
+        deviceId: 'dlna:uuid:streamer-1',
+        track: { ...localTrack, path: audioPath },
+        filePath: audioPath,
+      });
+
+      const setUriCall = soapCalls.find((call) => call.soapAction?.includes('#SetAVTransportURI'));
+      expect(setUriCall?.body).toContain('/connect/audio/');
+      expect(setUriCall?.body).toContain('application/flac');
+      expect(setUriCall?.body).not.toContain('/connect/transcode/');
+      await service.dispose();
+    } finally {
+      rmSync(tempRoot, { force: true, recursive: true });
+    }
   });
 
   it('connects HQPlayer through the official control sender after releasing local ECHO playback', async () => {

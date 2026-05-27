@@ -2779,7 +2779,7 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
   box-shadow:
     0 -28px 64px rgba(36, 39, 48, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(24px) saturate(1.04);
+  backdrop-filter: none;
   transform: none;
 }
 
@@ -3008,6 +3008,7 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
 .app-shell--lyrics-player-drawer .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-track-copy h1 {
   font-size: clamp(26px, 2.15vw, 36px);
   line-height: 1.08;
+  text-shadow: none;
   -webkit-line-clamp: 2;
 }
 
@@ -3015,6 +3016,7 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
 .app-shell--lyrics-player-drawer .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-track-artist {
   font-size: clamp(16px, 1.28vw, 20px);
   line-height: 1.18;
+  text-shadow: none;
   -webkit-line-clamp: 1;
 }
 

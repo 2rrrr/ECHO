@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ChangeEvent, PointerEvent } from 'react';
 import { ListMusic, Pause, Play, RotateCcw, SkipBack, SkipForward, Volume1, Volume2, VolumeX, X } from 'lucide-react';
 import type { AudioPlaybackState, AudioStatus } from '../../shared/types/audio';
+import type { AppSettings } from '../../shared/types/appSettings';
 import type { MiniPlayerState } from '../../shared/types/miniPlayer';
 import type { PlaybackStatus } from '../../shared/types/playback';
 import { isSpotifyTrack, pauseSpotifyPlayback, resumeSpotifyPlayback, seekSpotifyPlayback, setSpotifyVolume } from '../integrations/spotify/spotifyPlayback';
@@ -33,6 +34,7 @@ type PlaybackVisualIntentSnapshot = {
 };
 
 const progressRenderIntervalMs = 500;
+const enhancedLowLoadProgressRenderIntervalMs = 1500;
 const forwardedSystemStatusMaxAgeMs = 30_000;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
 const activeStates = new Set<AudioPlaybackState>(['loading', 'playing']);
@@ -70,6 +72,9 @@ const readFixedVolumeEnabledPatch = (patch: unknown): boolean | null => {
   const value = (patch as { fixedVolumeEnabled?: unknown }).fixedVolumeEnabled;
   return typeof value === 'boolean' ? value : null;
 };
+
+const readEnhancedLowLoadPlaybackActive = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.lowLoadPlaybackModeEnabled === true && settings.lowLoadPlaybackEnhancementsEnabled === true;
 
 const playbackTrackKey = (audioStatus: AudioStatus | null, playbackStatus: PlaybackStatus | null, fallbackTrackId: string | null): string | null =>
   audioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? fallbackTrackId ?? audioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
@@ -141,6 +146,7 @@ export const MiniPlayerApp = (): JSX.Element => {
   const [isVolumeOpen, setIsVolumeOpen] = useState(false);
   const [volumePreview, setVolumePreview] = useState(1);
   const [fixedVolumeEnabled, setFixedVolumeEnabled] = useState(false);
+  const [enhancedLowLoadPlaybackActive, setEnhancedLowLoadPlaybackActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const volumeInteractingRef = useRef(false);
   const pendingVolumeRef = useRef<number | null>(null);
@@ -291,6 +297,7 @@ export const MiniPlayerApp = (): JSX.Element => {
       const getSettings = window.echo?.app?.getSettings;
       if (typeof getSettings !== 'function') {
         setFixedVolumeEnabled(false);
+        setEnhancedLowLoadPlaybackActive(false);
         return;
       }
 
@@ -298,11 +305,13 @@ export const MiniPlayerApp = (): JSX.Element => {
         .then((settings) => {
           if (!cancelled) {
             setFixedVolumeEnabled(readFixedVolumeEnabled(settings));
+            setEnhancedLowLoadPlaybackActive(readEnhancedLowLoadPlaybackActive(settings));
           }
         })
         .catch(() => {
           if (!cancelled) {
             setFixedVolumeEnabled(false);
+            setEnhancedLowLoadPlaybackActive(false);
           }
         });
     };
@@ -377,6 +386,7 @@ export const MiniPlayerApp = (): JSX.Element => {
       return undefined;
     }
 
+    const intervalMs = enhancedLowLoadPlaybackActive ? enhancedLowLoadProgressRenderIntervalMs : progressRenderIntervalMs;
     const timer = window.setInterval(() => {
       const clock = clockRef.current;
       if (clock.state !== 'playing') {
@@ -385,10 +395,10 @@ export const MiniPlayerApp = (): JSX.Element => {
       const elapsedSeconds = ((performance.now() - clock.updatedAtMs) / 1000) * clock.playbackRate;
       const nextPosition = clock.positionSeconds + elapsedSeconds;
       setRealtimePositionSeconds(clock.durationSeconds > 0 ? clamp(nextPosition, 0, clock.durationSeconds) : Math.max(0, nextPosition));
-    }, progressRenderIntervalMs);
+    }, intervalMs);
 
     return () => window.clearInterval(timer);
-  }, [seekPreviewSeconds, visualState]);
+  }, [enhancedLowLoadPlaybackActive, seekPreviewSeconds, visualState]);
 
   useEffect(() => {
     requestMiniPlayerQueueBounds(isQueueOpen);

@@ -2099,11 +2099,27 @@ export class LibraryService {
           },
           previewRescanPaths: (folderId, paths) => this.previewRescanPathsFromWatcher(folderId, paths),
           hasRunningJobs: () => this.scanJobQueue.hasRunningJobs(),
+          shouldDelayRescan: () => this.shouldDelayWatcherRescanForLowLoadPlayback(),
         },
       });
     }
 
     return this.watcherService;
+  }
+
+  private async shouldDelayWatcherRescanForLowLoadPlayback(): Promise<boolean> {
+    const settings = this.readAppSettings();
+    if (settings.lowLoadPlaybackModeEnabled !== true || settings.lowLoadPlaybackEnhancementsEnabled !== true) {
+      return false;
+    }
+
+    try {
+      const { getAudioSession } = await import('../audio/AudioSession');
+      const state = getAudioSession().getStatus().state;
+      return state === 'loading' || state === 'playing';
+    } catch {
+      return false;
+    }
   }
 
   private composeLibraryLabState(

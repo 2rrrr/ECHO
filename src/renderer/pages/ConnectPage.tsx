@@ -14,7 +14,6 @@ import {
   Square,
   Unplug,
   Volume2,
-  Wifi,
 } from 'lucide-react';
 import type { AppSettings } from '../../shared/types/appSettings';
 import { hqPlayerConnectDeviceId } from '../../shared/types/connect';
@@ -218,6 +217,91 @@ const formatTime = (seconds: number): string => {
 const formatProtocol = (device: Pick<ConnectDevice, 'protocol'>): string =>
   device.protocol === 'dlna' ? 'DLNA / UPnP' : device.protocol === 'hqplayer' ? 'HQPlayer' : 'AirPlay';
 
+const uniqueText = (values: Array<string | null | undefined>): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed || seen.has(trimmed.toLowerCase())) {
+      continue;
+    }
+    seen.add(trimmed.toLowerCase());
+    result.push(trimmed);
+  }
+  return result;
+};
+
+const formatDeviceProduct = (device: ConnectDevice): string => {
+  const parts = uniqueText([
+    device.manufacturer,
+    device.discovery?.modelName ?? device.model,
+    device.discovery?.modelNumber,
+  ]);
+  return parts.length > 0 ? parts.join(' · ') : '型号待识别';
+};
+
+const formatDeviceAddress = (device: ConnectDevice): string =>
+  device.address ? `局域网 ${device.address}` : '等待网络地址';
+
+const formatMimeLabel = (mimeType: string): string => {
+  switch (mimeType.toLowerCase()) {
+    case 'audio/flac':
+      return 'FLAC';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'WAV';
+    case 'audio/mpeg':
+      return 'MP3';
+    case 'audio/mp4':
+      return 'MP4 / ALAC';
+    case 'audio/aac':
+      return 'AAC';
+    case 'audio/ogg':
+      return 'OGG';
+    case 'audio/aiff':
+      return 'AIFF';
+    default:
+      return mimeType.replace(/^audio\//iu, '').toUpperCase();
+  }
+};
+
+const formatDeviceFormatSupport = (device: ConnectDevice): string => {
+  const supported = device.capabilities.supportedMimeTypes;
+  if (supported.some((item) => item === '*/*' || item.endsWith('/*'))) {
+    return '全格式接收';
+  }
+
+  const formats = supported
+    .filter((item) => item !== 'application/octet-stream')
+    .map(formatMimeLabel)
+    .slice(0, 3);
+
+  if (formats.length === 0) {
+    return '格式待探测';
+  }
+
+  const extraCount = Math.max(0, supported.length - formats.length);
+  return extraCount > 0 ? `${formats.join(' / ')} +${extraCount}` : formats.join(' / ');
+};
+
+const formatDeviceSupport = (device: ConnectDevice): string => {
+  if (device.protocol === 'hqplayer') {
+    return '本机控制 · 高精度输出';
+  }
+
+  if (device.protocol === 'airplay') {
+    return '实验通道 · 元数据门控';
+  }
+
+  const controls = [
+    device.capabilities.canSeek ? '可定位' : null,
+    device.capabilities.canSetVolume ? '可调音量' : null,
+    device.capabilities.supportsMetadata ? '封面/元数据' : null,
+  ].filter(Boolean);
+  const route = device.capabilities.requiresTranscode ? '需要转码' : '可直连';
+  return [...controls, route, formatDeviceFormatSupport(device)].join(' · ') || '基础 DLNA 投送';
+};
+
 const formatReceiverAddress = (value: string): string => {
   try {
     const url = new URL(value);
@@ -338,6 +422,65 @@ const formatHqPlayerSignal = (status: HqPlayerRemotePlaybackStatus | null): stri
 
 const isStreamingProviderName = (value: string | null | undefined): value is StreamingProviderName =>
   streamingProviderNames.includes(value as StreamingProviderName);
+
+const StreamerGlyph = (): JSX.Element => (
+  <svg className="connect-device-glyph" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <path d="M8.5 16.5 20 11l11.5 5.5v10.2L20 32 8.5 26.7z" />
+    <path d="m8.5 16.5 11.5 5.3 11.5-5.3" />
+    <path d="M20 21.8V32" />
+    <path d="M13.5 25.1h6" />
+    <circle cx="27.5" cy="24.7" r="1.4" />
+  </svg>
+);
+
+const TvGlyph = (): JSX.Element => (
+  <svg className="connect-device-glyph" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <rect x="7.5" y="10.5" width="25" height="17" rx="3" />
+    <path d="M16 31h8" />
+    <path d="M20 27.5V31" />
+    <path d="M12 15.5h16" />
+  </svg>
+);
+
+const AirPlayGlyph = (): JSX.Element => (
+  <svg className="connect-device-glyph" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <rect x="8.5" y="10.5" width="23" height="15" rx="3" />
+    <path d="m15 31 5-6 5 6z" />
+  </svg>
+);
+
+const HqPlayerGlyph = (): JSX.Element => (
+  <span className="connect-hqplayer-wordmark" aria-hidden="true">
+    HQ
+  </span>
+);
+
+const looksLikeTvDevice = (device: ConnectDevice): boolean => {
+  const text = uniqueText([
+    device.name,
+    device.model,
+    device.manufacturer,
+    device.discovery?.modelName,
+    device.discovery?.modelDescription,
+  ]).join(' ').toLowerCase();
+  return /\b(tv|bravia|webos|roku|chromecast|android tv|google tv|samsung|lg tv|tcl|hisense|xiaomi tv|mi tv)\b/iu.test(text);
+};
+
+const deviceVisual = (device: ConnectDevice): { icon: JSX.Element; label: string; tone: string } => {
+  if (device.protocol === 'hqplayer') {
+    return { icon: <HqPlayerGlyph />, label: 'HQPlayer', tone: 'hqplayer' };
+  }
+
+  if (device.protocol === 'airplay') {
+    return { icon: <AirPlayGlyph />, label: 'AirPlay', tone: 'airplay' };
+  }
+
+  if (looksLikeTvDevice(device)) {
+    return { icon: <TvGlyph />, label: 'TV', tone: 'tv' };
+  }
+
+  return { icon: <StreamerGlyph />, label: '数播', tone: 'streamer' };
+};
 
 const toHqPlayerPlayableTrack = (track: LibraryTrack | null, fallbackPath: string | null): PlayableTrack | null => {
   if (!track) {
@@ -498,6 +641,20 @@ export const ConnectPage = (): JSX.Element => {
     ? `${hqPlayerLastHandoff.source.mediaServer.publicHost ?? 'unknown'}:${hqPlayerLastHandoff.source.mediaServer.port ?? 'auto'}`
     : null;
   const activeDeviceCapabilities = activeDevice?.capabilities ?? null;
+  const activeTargetLabel = activeDevice
+    ? `${formatProtocol(activeDevice)} · ${activeDevice.name}`
+    : status.deviceId
+      ? status.deviceId
+      : '未连接输出';
+  const activeDeviceInfoLabel = activeDevice
+    ? `${formatDeviceProduct(activeDevice)} · ${formatDeviceAddress(activeDevice)}`
+    : '选择一台局域网数播后开始投送';
+  const activeMediaInfoLabel = [
+    status.metadata?.coverHttpUrl ? '封面 URL 已发送' : '等待封面 URL',
+    status.latencyMs != null ? `投送握手 ${status.latencyMs}ms` : null,
+    activeDevice?.protocol === 'dlna' ? '状态轮询约 3s' : null,
+  ].filter(Boolean).join(' · ');
+  const outgoingHttpEvents = status.httpEvents ?? [];
 
   const refreshDevices = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -888,11 +1045,142 @@ export const ConnectPage = (): JSX.Element => {
         </div>
       ) : null}
 
+      <section className="connect-stage" aria-label="快速投送">
+        <section className="connect-now connect-now--stage" aria-label="当前投送">
+          <div className="connect-artwork" data-empty={!previewCover}>
+            {previewCover ? <img alt="" src={previewCover} /> : <Cast size={42} />}
+          </div>
+          <div className="connect-now-copy">
+            <span>{stateLabel[status.state]}</span>
+            <h2>{previewTitle}</h2>
+            <p>{previewArtist}{previewAlbum ? ` · ${previewAlbum}` : ''}</p>
+            <div className="connect-now-facts" aria-label="当前投送信息">
+              <small>{activeTargetLabel}</small>
+              <small>{activeDeviceInfoLabel}</small>
+              <small>{activeMediaInfoLabel || '等待投送信息'}</small>
+            </div>
+            <div className="connect-progress" aria-label="投送进度">
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
+            <small>{formatTime(status.positionSeconds)} / {formatTime(status.durationSeconds || currentTrack?.duration || 0)}</small>
+          </div>
+          <div className="connect-controls" aria-label="Connect 控制">
+            <button className="icon-button" type="button" aria-label="播放" title="播放" onClick={() => void runCommand('play')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canPlay !== true}>
+              <Play size={17} />
+            </button>
+            <button className="icon-button" type="button" aria-label="暂停" title="暂停" onClick={() => void runCommand('pause')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canPause !== true}>
+              <Pause size={17} />
+            </button>
+            <button className="icon-button" type="button" aria-label="停止" title="停止" onClick={() => void runCommand('stop')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canStop !== true}>
+              <Square size={16} />
+            </button>
+            <button className="icon-button" type="button" aria-label="断开" title="断开" onClick={() => void runCommand('disconnect')} disabled={isCommandBusy || !status.deviceId}>
+              <Unplug size={17} />
+            </button>
+            <label className="connect-volume">
+              <Volume2 size={16} />
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={volumePercent}
+                onChange={(event) => setVolumePercent(Number(event.currentTarget.value))}
+                onMouseUp={() => void commitVolume(volumePercent)}
+                onKeyUp={(event) => {
+                  if (event.key === 'Enter') {
+                    void commitVolume(volumePercent);
+                  }
+                }}
+                disabled={activeDeviceCapabilities?.canSetVolume !== true}
+                aria-label="投送音量"
+              />
+            </label>
+          </div>
+        </section>
+
+        <details className="connect-receiver-debug connect-outgoing-debug" aria-label="DLNA outgoing request log">
+          <summary>
+            <span>DLNA Out</span>
+            <small>{outgoingHttpEvents.length > 0 ? `${outgoingHttpEvents.length} recent` : 'No pulls yet'}</small>
+          </summary>
+          <div className="connect-receiver-debug__items">
+            {outgoingHttpEvents.length > 0 ? (
+              outgoingHttpEvents.slice(0, 8).map((event) => (
+                <code key={event.id}>
+                  {new Date(event.at).toLocaleTimeString()} {event.remoteAddress ?? '-'} {event.method} {event.kind} {event.statusCode ?? '-'}
+                  {event.bytes != null ? ` ${event.bytes}B` : ''}{event.range ? ` ${event.range}` : ''}
+                  {event.message ? ` ${event.message}` : ''}
+                </code>
+              ))
+            ) : (
+              <small>Matrix 拉封面/音频后会显示在这里</small>
+            )}
+          </div>
+        </details>
+
+        <section className="connect-device-section connect-device-section--stage" aria-label="设备列表">
+          <div className="connect-section-title">
+            <div>
+              <span>Network Streamers</span>
+              <h2>局域网数播</h2>
+            </div>
+            <small>{devices.filter((device) => device.protocol === 'dlna').length} 台数播 · {devices.length} 个入口</small>
+          </div>
+          <div className="connect-device-list">
+            {devices.length === 0 ? (
+              <div className="connect-device-empty">
+                <StreamerGlyph />
+                <strong>未发现局域网设备</strong>
+                <span>刷新后会在这里显示数播、TV、HQPlayer 和 AirPlay 入口。</span>
+              </div>
+            ) : devices.map((device) => {
+              const isActive = device.id === status.deviceId;
+              const isBusy = busyDeviceId === device.id;
+              const disabled = device.state === 'unsupported' || device.state === 'unavailable' || isBusy || (!currentTrack && !currentFilePath);
+              const deviceProduct = formatDeviceProduct(device);
+              const deviceAddress = formatDeviceAddress(device);
+              const deviceSupport = formatDeviceSupport(device);
+              const visual = deviceVisual(device);
+              return (
+                <article className="connect-device-row" data-active={isActive ? 'true' : undefined} key={device.id}>
+                  <div className="connect-device-icon" data-protocol={device.protocol} data-tone={visual.tone}>
+                    {visual.icon}
+                  </div>
+                  <div className="connect-device-copy">
+                    <strong>{device.name}</strong>
+                    <span>{formatProtocol(device)} · {deviceProduct}</span>
+                    <div className="connect-device-facts" aria-label={`${device.name} 设备信息`}>
+                      <small>{deviceAddress}</small>
+                      <small>{deviceSupport}</small>
+                      <small>{device.lastSeenAt ? `最后发现 ${formatTimestamp(device.lastSeenAt)}` : '尚未完成发现'}</small>
+                    </div>
+                    {device.unsupportedReason ? <small>{device.unsupportedReason}</small> : null}
+                  </div>
+                  <div className="connect-device-meta">
+                    <span data-state={device.state}>{isActive ? stateLabel[status.state] : deviceStateLabel[device.state]}</span>
+                    <small>{visual.label}</small>
+                  </div>
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => void connectDevice(device)}
+                  >
+                    {isBusy ? <Loader2 className="spinning-icon" size={15} /> : device.protocol === 'hqplayer' ? <Cable size={15} /> : <Cast size={15} />}
+                    {isActive ? '重新投送' : '连接'}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      </section>
+
       <section className="connect-hqplayer-panel" aria-label="HQPlayer Connect" data-collapsed={isHqPlayerExpanded ? undefined : 'true'}>
         <div className="connect-hqplayer-header">
           <div className="connect-hqplayer-title">
             <div className="connect-hqplayer-icon">
-              <Cable size={24} />
+              <HqPlayerGlyph />
             </div>
             <div>
               <span>External Renderer</span>
@@ -1265,94 +1553,6 @@ export const ConnectPage = (): JSX.Element => {
         </details>
       </section>
 
-      <section className="connect-now" aria-label="当前投送">
-        <div className="connect-artwork" data-empty={!previewCover}>
-          {previewCover ? <img alt="" src={previewCover} /> : <Cast size={42} />}
-        </div>
-        <div className="connect-now-copy">
-          <span>{stateLabel[status.state]}</span>
-          <h2>{previewTitle}</h2>
-          <p>{previewArtist}{previewAlbum ? ` · ${previewAlbum}` : ''}</p>
-          <div className="connect-progress" aria-label="投送进度">
-            <span style={{ width: `${progressPercent}%` }} />
-          </div>
-          <small>{formatTime(status.positionSeconds)} / {formatTime(status.durationSeconds || currentTrack?.duration || 0)}</small>
-        </div>
-        <div className="connect-controls" aria-label="Connect 控制">
-          <button className="icon-button" type="button" aria-label="播放" title="播放" onClick={() => void runCommand('play')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canPlay !== true}>
-            <Play size={17} />
-          </button>
-          <button className="icon-button" type="button" aria-label="暂停" title="暂停" onClick={() => void runCommand('pause')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canPause !== true}>
-            <Pause size={17} />
-          </button>
-          <button className="icon-button" type="button" aria-label="停止" title="停止" onClick={() => void runCommand('stop')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canStop !== true}>
-            <Square size={16} />
-          </button>
-          <button className="icon-button" type="button" aria-label="断开" title="断开" onClick={() => void runCommand('disconnect')} disabled={isCommandBusy || !status.deviceId}>
-            <Unplug size={17} />
-          </button>
-          <label className="connect-volume">
-            <Volume2 size={16} />
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={volumePercent}
-              onChange={(event) => setVolumePercent(Number(event.currentTarget.value))}
-              onMouseUp={() => void commitVolume(volumePercent)}
-              onKeyUp={(event) => {
-                if (event.key === 'Enter') {
-                  void commitVolume(volumePercent);
-                }
-              }}
-              disabled={activeDeviceCapabilities?.canSetVolume !== true}
-              aria-label="投送音量"
-            />
-          </label>
-        </div>
-      </section>
-
-      <section className="connect-device-section" aria-label="设备列表">
-        <div className="connect-section-title">
-          <div>
-            <span>Devices</span>
-            <h2>可连接设备</h2>
-          </div>
-          <small>{devices.length} 个入口</small>
-        </div>
-        <div className="connect-device-list">
-          {devices.map((device) => {
-            const isActive = device.id === status.deviceId;
-            const isBusy = busyDeviceId === device.id;
-            const disabled = device.state === 'unsupported' || device.state === 'unavailable' || isBusy || (!currentTrack && !currentFilePath);
-            return (
-              <article className="connect-device-row" data-active={isActive ? 'true' : undefined} key={device.id}>
-                <div className="connect-device-icon" data-protocol={device.protocol}>
-                  {device.protocol === 'dlna' ? <Wifi size={20} /> : device.protocol === 'hqplayer' ? <Cable size={20} /> : <Cast size={20} />}
-                </div>
-                <div className="connect-device-copy">
-                  <strong>{device.name}</strong>
-                  <span>{formatProtocol(device)} · {device.model ?? device.manufacturer ?? 'Unknown device'}</span>
-                  {device.unsupportedReason ? <small>{device.unsupportedReason}</small> : null}
-                </div>
-                <div className="connect-device-meta">
-                  <span data-state={device.state}>{isActive ? stateLabel[status.state] : deviceStateLabel[device.state]}</span>
-                  <small>{device.capabilities.supportsMetadata ? 'Metadata OK' : 'No metadata'}</small>
-                </div>
-                <button
-                  className="settings-action-button"
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => void connectDevice(device)}
-                >
-                  {isBusy ? <Loader2 className="spinning-icon" size={15} /> : device.protocol === 'hqplayer' ? <Cable size={15} /> : <Cast size={15} />}
-                  {isActive ? '重新投送' : '连接'}
-                </button>
-              </article>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 };

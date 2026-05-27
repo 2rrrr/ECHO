@@ -130,6 +130,7 @@ export class RemoteBackgroundJobQueue {
   private readonly coverPromisesByKey = new Map<string, Promise<string | null>>();
   private globalPaused = false;
   private playbackActive = false;
+  private playbackLowLoadEnhancedActive = false;
   private scheduling = false;
   private updatedAt: string | null = null;
 
@@ -192,8 +193,9 @@ export class RemoteBackgroundJobQueue {
     return this.getGlobalStatus();
   }
 
-  setPlaybackActive(active: boolean): RemoteBackgroundGlobalStatus {
+  setPlaybackActive(active: boolean, options: { lowLoadEnhanced?: boolean } = {}): RemoteBackgroundGlobalStatus {
     this.playbackActive = active;
+    this.playbackLowLoadEnhancedActive = active && options.lowLoadEnhanced === true;
     this.touch();
     if (!active) {
       this.schedule();
@@ -794,7 +796,7 @@ export class RemoteBackgroundJobQueue {
       return false;
     }
 
-    if (this.playbackActive && playbackDeferredKinds.has(job.kind)) {
+    if (this.playbackActive && (this.playbackLowLoadEnhancedActive || playbackDeferredKinds.has(job.kind))) {
       return false;
     }
 
@@ -828,8 +830,8 @@ export class RemoteBackgroundJobQueue {
     }
 
     if (this.playbackActive) {
-      concurrency.metadata = Math.min(concurrency.metadata, 1);
-      concurrency['duration-backfill'] = Math.min(concurrency['duration-backfill'], 1);
+      concurrency.metadata = this.playbackLowLoadEnhancedActive ? 0 : Math.min(concurrency.metadata, 1);
+      concurrency['duration-backfill'] = this.playbackLowLoadEnhancedActive ? 0 : Math.min(concurrency['duration-backfill'], 1);
       concurrency.cover = 0;
       concurrency.lyrics = 0;
       concurrency.mv = 0;

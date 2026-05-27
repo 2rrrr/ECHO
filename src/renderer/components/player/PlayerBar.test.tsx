@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus } from '../../../shared/types/audio';
+import type { ConnectSessionStatus } from '../../../shared/types/connect';
 import type { EqState } from '../../../shared/types/eq';
 import { createDefaultGlobalShortcuts, createDefaultLocalShortcuts, type GlobalShortcutAction } from '../../../shared/types/globalShortcuts';
 import type { LibraryTrack } from '../../../shared/types/library';
@@ -91,6 +92,26 @@ const eqState = (): EqState => ({
   })),
 });
 
+const dlnaConnectStatus = (track: LibraryTrack, state: ConnectSessionStatus['state'] = 'paused'): ConnectSessionStatus => ({
+  deviceId: 'dlna:matrix-mini-i-pro-4',
+  protocol: 'dlna',
+  state,
+  currentTrackId: track.id,
+  metadata: {
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    albumArtist: track.albumArtist,
+    durationSeconds: track.duration,
+    coverHttpUrl: '',
+  },
+  positionSeconds: 12,
+  durationSeconds: track.duration,
+  latencyMs: 86,
+  error: null,
+  updatedAt: '2026-05-27T07:30:00.000Z',
+});
+
 const QueueSeed = ({ tracks }: { tracks: LibraryTrack[] }): JSX.Element => {
   const { setCurrentTrackId, replaceQueue } = usePlaybackQueue();
 
@@ -138,12 +159,142 @@ const ManualVisibleTrackSeed = ({
 
 afterEach(() => {
   cleanup();
+  window.echo = undefined as unknown as typeof window.echo;
   window.sessionStorage.clear();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 describe('PlayerBar', () => {
+  it('routes footer play to the active DLNA Connect session instead of local playback', async () => {
+    const track = makeTrack(31, { title: 'Matrix Route Track' });
+    const pausedConnectStatus = dlnaConnectStatus(track, 'paused');
+    const playingConnectStatus = dlnaConnectStatus(track, 'playing');
+    const connectPlay = vi.fn().mockResolvedValue(playingConnectStatus);
+    const localPlay = vi.fn();
+    const localPause = vi.fn();
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'paused',
+          currentTrackId: track.id,
+          positionMs: 8000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: localPlay,
+        pause: localPause,
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(pausedConnectStatus),
+        play: connectPlay,
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        onStatus: vi.fn(() => vi.fn()),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Matrix Route Track');
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+    await waitFor(() => expect(connectPlay).toHaveBeenCalledTimes(1));
+    expect(localPlay).not.toHaveBeenCalled();
+    expect(localPause).not.toHaveBeenCalled();
+  });
+
+  it('routes global play/pause to the active DLNA Connect session instead of local playback', async () => {
+    const track = makeTrack(32, { title: 'Matrix Shortcut Track' });
+    const playingConnectStatus = dlnaConnectStatus(track, 'playing');
+    const pausedConnectStatus = dlnaConnectStatus(track, 'paused');
+    const connectPause = vi.fn().mockResolvedValue(pausedConnectStatus);
+    const localPause = vi.fn();
+    const globalShortcutHandlers: Array<(action: GlobalShortcutAction) => void> = [];
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 8000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: localPause,
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(playingConnectStatus),
+        play: vi.fn(),
+        pause: connectPause,
+        stop: vi.fn(),
+        seek: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        onStatus: vi.fn(() => vi.fn()),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+        onGlobalShortcutCommand: vi.fn((handler) => {
+          globalShortcutHandlers[0] = handler as typeof globalShortcutHandlers[number];
+          return () => {
+            globalShortcutHandlers.length = 0;
+          };
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <PlaybackCommandController />
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Matrix Shortcut Track');
+    await waitFor(() => expect(globalShortcutHandlers[0]).toBeTruthy());
+    globalShortcutHandlers[0]?.('playPause');
+
+    await waitFor(() => expect(connectPause).toHaveBeenCalledTimes(1));
+    expect(localPause).not.toHaveBeenCalled();
+  });
+
   it('opens the lyrics page when the artwork button is clicked', async () => {
     const track = makeTrack(3, {
       title: 'Cover Click Track',

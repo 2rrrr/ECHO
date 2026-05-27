@@ -34,6 +34,8 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.guard.exclusiveInstability.description': 'Switch unstable Exclusive to Shared.',
   'audioDrawer.option.lowLoadPlaybackMode': 'Low-Load Playback Mode',
   'audioDrawer.option.lowLoadPlaybackModeDescription': 'Disables heavy playback visuals and analysis while playing.',
+  'audioDrawer.option.lowLoadPlaybackEnhancements': 'Enhanced Low-Load Protection',
+  'audioDrawer.option.lowLoadPlaybackEnhancementsDescription': 'Further reduces polling, diagnostics, lyrics, and library background work while playing.',
   'audioDrawer.option.set': 'Set',
   'audioDrawer.option.showAsioPanelSettings': 'Show ASIO panel settings',
   'audioDrawer.option.showAsioPanelSettingsDescription': 'Show ASIO panel buttons',
@@ -195,6 +197,7 @@ const renderDrawer = (
         audioDsdOutputMode: status.dsdOutputModeRequested ?? 'pcm',
         audioReleaseExclusiveOnPauseExperimentalEnabled: false,
         lowLoadPlaybackModeEnabled: false,
+        lowLoadPlaybackEnhancementsEnabled: false,
       }),
       setSettings: vi.fn().mockResolvedValue({}),
     },
@@ -663,6 +666,23 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     await waitFor(() => expect(window.echo?.app?.setSettings).toHaveBeenCalledWith({ lowLoadPlaybackModeEnabled: true }));
     await waitFor(() => expect(settingsChanged).toHaveBeenCalled());
     expect((settingsChanged.mock.calls.at(-1)?.[0] as CustomEvent).detail).toMatchObject({ lowLoadPlaybackModeEnabled: true });
+    expect(setOutput).not.toHaveBeenCalled();
+
+    window.removeEventListener('settings:changed', settingsChanged);
+  });
+
+  it('persists enhanced low-load protection from the audio settings drawer without switching output', async () => {
+    const setOutput = vi.fn().mockResolvedValue(baseStatus);
+    const settingsChanged = vi.fn();
+    window.addEventListener('settings:changed', settingsChanged);
+
+    renderDrawer(baseStatus, setOutput);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Enhanced Low-Load Protection/ }));
+
+    await waitFor(() => expect(window.echo?.app?.setSettings).toHaveBeenCalledWith({ lowLoadPlaybackEnhancementsEnabled: true }));
+    await waitFor(() => expect(settingsChanged).toHaveBeenCalled());
+    expect((settingsChanged.mock.calls.at(-1)?.[0] as CustomEvent).detail).toMatchObject({ lowLoadPlaybackEnhancementsEnabled: true });
     expect(setOutput).not.toHaveBeenCalled();
 
     window.removeEventListener('settings:changed', settingsChanged);

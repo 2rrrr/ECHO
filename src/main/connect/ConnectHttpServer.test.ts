@@ -26,16 +26,42 @@ describe('Connect HTTP server', () => {
     const audioPath = join(tempRoot, 'range-test.mp3');
     writeFileSync(audioPath, Buffer.from('abcdef', 'utf8'));
 
-    const audio = await server.createAudioUrl(audioPath, { host: '127.0.0.1' });
+    const audio = await server.createAudioUrl(audioPath, { host: '127.0.0.1', audioMimeType: 'audio/x-test' });
     const response = await fetch(audio.url, { headers: { Range: 'bytes=2-4' } });
     const body = Buffer.from(await response.arrayBuffer()).toString('utf8');
 
-    expect(audio.mimeType).toBe('audio/mpeg');
+    expect(audio.mimeType).toBe('audio/x-test');
     expect(audio.sizeBytes).toBe(6);
     expect(response.status).toBe(206);
+    expect(response.headers.get('content-type')).toContain('audio/x-test');
     expect(response.headers.get('accept-ranges')).toBe('bytes');
     expect(response.headers.get('content-range')).toBe('bytes 2-4/6');
     expect(body).toBe('cde');
+    expect(server.getDebugEvents()[0]).toMatchObject({
+      kind: 'audio',
+      statusCode: 206,
+      bytes: 3,
+      range: 'bytes=2-4',
+      message: 'audio/x-test',
+    });
+  });
+
+  it('serves DLNA-compatible JPEG covers when requested', async () => {
+    const coverPath = join(tempRoot, 'cover.svg');
+    writeFileSync(coverPath, '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>');
+
+    const url = await server.createCoverUrl(coverPath, { host: '127.0.0.1', forceJpegCover: true, mimeType: 'image/svg+xml' });
+    const response = await fetch(url);
+    const body = Buffer.from(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('image/jpeg');
+    expect(body.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+    expect(server.getDebugEvents()[0]).toMatchObject({
+      kind: 'cover',
+      statusCode: 200,
+      message: 'image/jpeg',
+    });
   });
 
   it('returns a cacheable default cover when no local cover exists', async () => {

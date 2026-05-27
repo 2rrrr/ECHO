@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
 import type {
   ConnectDevice,
+  ConnectHttpDebugEvent,
   ConnectPlaybackTarget,
   ConnectSessionStatus,
   ConnectStartRequest,
@@ -20,6 +21,8 @@ import { buildDlnaDidlLite, createConnectMetadata, protocolInfoForMime } from '.
 import { chooseLocalAddressForRemote, ConnectHttpServer, mimeTypeForAudioPath } from './ConnectHttpServer';
 import {
   discoverDlnaDevices,
+  getDlnaPositionInfo,
+  getDlnaTransportInfo,
   pauseDlna,
   playDlna,
   seekDlna,
@@ -52,6 +55,11 @@ type PlaybackSource = {
   durationSeconds: number;
 };
 
+type ConnectCoverAsset = {
+  filePath: string;
+  mimeType: string | null;
+};
+
 const idleStatus = (): ConnectSessionStatus => ({
   deviceId: null,
   protocol: null,
@@ -63,6 +71,7 @@ const idleStatus = (): ConnectSessionStatus => ({
   latencyMs: null,
   error: null,
   updatedAt: new Date().toISOString(),
+  httpEvents: [],
 });
 
 const airPlayPlaceholder: ConnectDevice = {
@@ -107,6 +116,9 @@ const hqPlayerPlaybackConfirmAttempts = 4;
 const hqPlayerPlaybackConfirmDelayMs = 250;
 const hqPlayerStatusSyncIntervalMs = 2500;
 const hqPlayerEndedGraceSeconds = 5;
+const dlnaStatusSyncIntervalMs = 3000;
+const dlnaDeviceRetentionMs = 10 * 60 * 1000;
+const dlnaDeviceMissedScanReason = '本次扫描未响应，可能已离线或被局域网暂时漏报。';
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, ms);
@@ -116,6 +128,12 @@ const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
 
 const positiveNumberOrNull = (value: number | null | undefined): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+
+const compatibleCoverMimeTypes = new Set(['image/jpeg', 'image/png']);
+const mimeAliases: Record<string, string[]> = {
+  'audio/flac': ['application/flac', 'audio/x-flac'],
+  'application/flac': ['audio/flac', 'audio/x-flac'],
+};
 
 const formatSeekTarget = (positionSeconds: number): string => {
   const safe = Math.max(0, Math.floor(positionSeconds));
@@ -177,9 +195,13 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   private refreshInFlight: Promise<ConnectDevice[]> | null = null;
   private hqPlayerStatusTimer: ReturnType<typeof setInterval> | null = null;
   private hqPlayerStatusSyncInFlight = false;
+  private dlnaStatusTimer: ReturnType<typeof setInterval> | null = null;
+  private dlnaStatusSyncInFlight = false;
+  private readonly unsubscribeHttpEvents: () => void;
 
   constructor(private readonly hqPlayerService: HqPlayerConnectService = getHqPlayerService()) {
     super();
+    this.unsubscribeHttpEvents = this.httpServer.onRequestEvent((event) => this.handleHttpDebugEvent(event));
   }
 
   listDevices(): ConnectDevice[] {
@@ -202,10 +224,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
 
     this.refreshInFlight = discoverDlnaDevices()
       .then((devices) => {
-        this.devices.clear();
-        for (const device of devices) {
-          this.devices.set(device.id, device);
-        }
+        this.mergeDiscoveredDlnaDevices(devices);
         if (this.session.state === 'discovering') {
           this.setSession(idleStatus());
         }
@@ -229,6 +248,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     }
 
     this.stopHqPlayerStatusSync();
+    this.stopDlnaStatusSync();
     if (request.deviceId === airPlayPlaceholder.id) {
       const status: ConnectSessionStatus = {
         ...idleStatus(),
@@ -254,6 +274,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
       state: 'connecting',
       error: null,
       updatedAt: new Date().toISOString(),
+      httpEvents: [],
     });
 
     try {
@@ -280,6 +301,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
         error: null,
         updatedAt: new Date().toISOString(),
       });
+      this.startDlnaStatusSync();
       return this.getStatus();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -298,6 +320,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
 
   async disconnect(): Promise<ConnectSessionStatus> {
     this.stopHqPlayerStatusSync();
+    this.stopDlnaStatusSync();
     if (this.session.protocol === 'hqplayer' && this.session.deviceId === hqPlayerConnectDeviceId) {
       await this.hqPlayerService.stopPlayback().catch(() => undefined);
     }
@@ -314,6 +337,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   async play(): Promise<ConnectSessionStatus> {
     const device = this.requireActiveDlnaDevice();
     await playDlna(device);
+    this.startDlnaStatusSync();
     this.setSession({ ...this.getStatus(), state: 'playing', error: null, updatedAt: new Date().toISOString() });
     return this.getStatus();
   }
@@ -339,6 +363,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
 
     const device = this.requireActiveDlnaDevice();
     await stopDlna(device);
+    this.stopDlnaStatusSync();
     this.setSession({ ...this.getStatus(), state: 'stopped', positionSeconds: 0, error: null, updatedAt: new Date().toISOString() });
     return this.getStatus();
   }
@@ -371,20 +396,79 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   async dispose(): Promise<void> {
+    this.unsubscribeHttpEvents();
     this.stopHqPlayerStatusSync();
+    this.stopDlnaStatusSync();
     await this.disconnect().catch(() => undefined);
     await this.httpServer.close();
     this.devices.clear();
   }
 
   private setSession(status: ConnectSessionStatus): void {
-    this.session = { ...status, updatedAt: status.updatedAt || new Date().toISOString() };
+    const shouldKeepHttpEvents =
+      status.httpEvents === undefined &&
+      status.protocol === 'dlna' &&
+      status.deviceId !== null &&
+      status.deviceId === this.session.deviceId;
+    this.session = {
+      ...status,
+      httpEvents: shouldKeepHttpEvents ? this.session.httpEvents ?? [] : status.httpEvents ?? [],
+      updatedAt: status.updatedAt || new Date().toISOString(),
+    };
     this.emit('status', this.getStatus());
   }
 
+  private handleHttpDebugEvent(event: ConnectHttpDebugEvent): void {
+    if (this.session.protocol !== 'dlna' || !this.session.deviceId) {
+      return;
+    }
+
+    this.setSession({
+      ...this.session,
+      httpEvents: [event, ...(this.session.httpEvents ?? [])].slice(0, 24),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   private publicDevice(device: DlnaDevice): ConnectDevice {
-    const { id, name, protocol, model, manufacturer, address, capabilities, state, lastSeenAt, unsupportedReason } = device;
-    return { id, name, protocol, model, manufacturer, address, capabilities, state, lastSeenAt, unsupportedReason };
+    const { id, name, protocol, model, manufacturer, address, capabilities, state, lastSeenAt, unsupportedReason, discovery } = device;
+    return { id, name, protocol, model, manufacturer, address, capabilities, state, lastSeenAt, unsupportedReason, discovery };
+  }
+
+  private mergeDiscoveredDlnaDevices(discoveredDevices: DlnaDevice[], now = Date.now()): void {
+    const nextDevices = new Map<string, DlnaDevice>();
+    for (const device of discoveredDevices) {
+      nextDevices.set(device.id, {
+        ...device,
+        state: 'available',
+        unsupportedReason: null,
+        lastSeenAt: device.lastSeenAt ?? new Date(now).toISOString(),
+      });
+    }
+
+    for (const previous of this.devices.values()) {
+      if (nextDevices.has(previous.id)) {
+        continue;
+      }
+
+      const lastSeenMs = Date.parse(previous.lastSeenAt ?? '');
+      const recentlySeen = Number.isFinite(lastSeenMs) && now - lastSeenMs <= dlnaDeviceRetentionMs;
+      const activeDevice = this.session.protocol === 'dlna' && this.session.deviceId === previous.id;
+      if (!recentlySeen && !activeDevice) {
+        continue;
+      }
+
+      nextDevices.set(previous.id, {
+        ...previous,
+        state: 'unavailable',
+        unsupportedReason: dlnaDeviceMissedScanReason,
+      });
+    }
+
+    this.devices.clear();
+    for (const [id, device] of nextDevices) {
+      this.devices.set(id, device);
+    }
   }
 
   private hqPlayerDevice(): ConnectDevice {
@@ -529,20 +613,34 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     return playbackStatus.positionSeconds ?? previous.positionSeconds;
   }
 
-  private resolveCoverPath(coverId: string | null | undefined): string | null {
+  private resolveCoverAsset(coverId: string | null | undefined): ConnectCoverAsset | null {
     if (!coverId) {
       return null;
     }
 
-    const variants: CoverVariant[] = ['large', 'album', 'thumb'];
+    const variants: CoverVariant[] = ['original', 'large', 'album', 'thumb'];
+    const candidates: ConnectCoverAsset[] = [];
     for (const variant of variants) {
       const asset = getLibraryService().resolveCoverAsset(coverId, variant);
       if (asset?.filePath && existsSync(asset.filePath)) {
-        return asset.filePath;
+        candidates.push(asset);
       }
     }
 
-    return null;
+    return candidates.find((asset) => compatibleCoverMimeTypes.has((asset.mimeType ?? '').toLowerCase())) ?? candidates[0] ?? null;
+  }
+
+  private async createCoverHttpUrl(track: ConnectPlaybackTarget | LibraryTrack | null, host: string): Promise<string> {
+    const asset = this.resolveCoverAsset(track?.coverId ?? null);
+    if (!asset && track?.coverThumb && isHttpUrl(track.coverThumb)) {
+      return this.httpServer.createRemoteCoverUrl(track.coverThumb, { host });
+    }
+
+    return this.httpServer.createCoverUrl(asset?.filePath ?? null, {
+      host,
+      forceJpegCover: true,
+      mimeType: asset?.mimeType ?? null,
+    });
   }
 
   private getTrackFromStatus(request: ConnectStartRequest): ConnectPlaybackTarget | LibraryTrack | null {
@@ -648,6 +746,22 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     }
   }
 
+  private mapDlnaTransportState(state: string | null | undefined): ConnectSessionStatus['state'] | null {
+    switch (state?.toUpperCase()) {
+      case 'PLAYING':
+      case 'TRANSITIONING':
+        return 'playing';
+      case 'PAUSED_PLAYBACK':
+      case 'PAUSED_RECORDING':
+        return 'paused';
+      case 'STOPPED':
+      case 'NO_MEDIA_PRESENT':
+        return 'stopped';
+      default:
+        return null;
+    }
+  }
+
   private createHqPlayerMetadata(item: PlayableTrack): ConnectSessionStatus['metadata'] {
     return {
       title: item.title,
@@ -722,6 +836,73 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     this.hqPlayerStatusSyncInFlight = false;
   }
 
+  private startDlnaStatusSync(): void {
+    if (this.dlnaStatusTimer) {
+      return;
+    }
+
+    this.dlnaStatusTimer = setInterval(() => {
+      void this.syncDlnaSessionStatus();
+    }, dlnaStatusSyncIntervalMs);
+    (this.dlnaStatusTimer as { unref?: () => void }).unref?.();
+  }
+
+  private stopDlnaStatusSync(): void {
+    if (!this.dlnaStatusTimer) {
+      return;
+    }
+
+    clearInterval(this.dlnaStatusTimer);
+    this.dlnaStatusTimer = null;
+    this.dlnaStatusSyncInFlight = false;
+  }
+
+  private async syncDlnaSessionStatus(): Promise<void> {
+    if (this.dlnaStatusSyncInFlight || this.session.protocol !== 'dlna' || !this.session.deviceId) {
+      return;
+    }
+
+    const device = this.activeDlnaDevice();
+    if (!device) {
+      return;
+    }
+
+    this.dlnaStatusSyncInFlight = true;
+    try {
+      const previous = this.withInterpolatedPosition(this.session);
+      const [transportResult, positionResult] = await Promise.allSettled([
+        getDlnaTransportInfo(device),
+        getDlnaPositionInfo(device),
+      ]);
+      if (transportResult.status === 'rejected' && positionResult.status === 'rejected') {
+        return;
+      }
+
+      if (this.session.protocol !== 'dlna' || this.session.deviceId !== device.id) {
+        return;
+      }
+
+      const transportState = transportResult.status === 'fulfilled'
+        ? this.mapDlnaTransportState(transportResult.value.state)
+        : null;
+      const position = positionResult.status === 'fulfilled' ? positionResult.value : null;
+      const nextState = transportState ?? previous.state;
+      this.setSession({
+        ...previous,
+        state: nextState,
+        positionSeconds: position?.positionSeconds ?? previous.positionSeconds,
+        durationSeconds: position?.durationSeconds ?? previous.durationSeconds,
+        error: null,
+        updatedAt: new Date().toISOString(),
+      });
+      if (nextState === 'stopped') {
+        this.stopDlnaStatusSync();
+      }
+    } finally {
+      this.dlnaStatusSyncInFlight = false;
+    }
+  }
+
   private async syncHqPlayerSessionStatus(): Promise<void> {
     if (
       this.hqPlayerStatusSyncInFlight ||
@@ -783,6 +964,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     const startedAt = Date.now();
     const item = this.createHqPlayerPlayableTrack(request);
     this.stopHqPlayerStatusSync();
+    this.stopDlnaStatusSync();
     this.setSession({
       ...this.session,
       deviceId: hqPlayerConnectDeviceId,
@@ -851,16 +1033,28 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   private supportsMimeType(device: DlnaDevice, mimeType: string): boolean {
+    return this.selectDeviceMimeType(device, mimeType) !== null;
+  }
+
+  private selectDeviceMimeType(device: DlnaDevice, mimeType: string): string | null {
     const supported = device.capabilities.supportedMimeTypes;
     if (supported.length === 0) {
-      return true;
+      return mimeType;
     }
 
     const lower = mimeType.toLowerCase();
-    return supported.some((candidate) => {
+    const compatible = new Set([lower, ...(mimeAliases[lower] ?? [])]);
+    for (const candidate of supported) {
       const normalized = candidate.toLowerCase();
-      return normalized === lower || normalized === '*/*' || (normalized.endsWith('/*') && lower.startsWith(normalized.slice(0, -1)));
-    });
+      if (normalized === '*/*' || (normalized.endsWith('/*') && lower.startsWith(normalized.slice(0, -1)))) {
+        return mimeType;
+      }
+      if (compatible.has(normalized)) {
+        return normalized;
+      }
+    }
+
+    return null;
   }
 
   private async createPlaybackSource(device: DlnaDevice, request: ConnectStartRequest): Promise<PlaybackSource> {
@@ -875,8 +1069,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     }
 
     const host = chooseLocalAddressForRemote(device.address);
-    const coverPath = this.resolveCoverPath(track?.coverId ?? null);
-    const coverHttpUrl = await this.httpServer.createCoverUrl(coverPath, { host });
+    const coverHttpUrl = await this.createCoverHttpUrl(track, host);
     const metadata = createConnectMetadata({ track, status, coverHttpUrl });
     let streamUrl = filePath;
     let mimeType = mimeTypeForAudioPath(filePath);
@@ -887,8 +1080,9 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
         throw new Error(`投送文件不存在：${filePath}`);
       }
 
-      if (this.supportsMimeType(device, mimeType)) {
-        const direct = await this.httpServer.createAudioUrl(filePath, { host });
+      const deviceMimeType = this.selectDeviceMimeType(device, mimeType);
+      if (deviceMimeType) {
+        const direct = await this.httpServer.createAudioUrl(filePath, { host, audioMimeType: deviceMimeType });
         streamUrl = direct.url;
         mimeType = direct.mimeType;
         sizeBytes = direct.sizeBytes;

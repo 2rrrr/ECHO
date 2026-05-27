@@ -20,6 +20,7 @@ import { streamingProviderNames, streamingStableKey } from '../../shared/types/s
 import type { StreamingProviderName } from '../../shared/types/streaming';
 import { isReliableBpmAnalysis } from '../../shared/constants/audioAnalysis';
 import { isSpotifyTrack, pauseSpotifyPlayback, playSpotifyTrack } from '../integrations/spotify/spotifyPlayback';
+import { isActiveConnectPlaybackStatus } from '../utils/connectPlayback';
 import { beginPlaybackSwitchSnapshot, setPlaybackStatusSnapshot } from './playbackStatusStore';
 
 const playbackCancellationErrorMessage = 'audio_session_run_cancelled';
@@ -1886,8 +1887,6 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     enabled: boolean;
     nextItem: PlayableTrack | null;
     nextProbe?: ReturnType<typeof createProbeFromTrack>;
-    upcomingItems?: PlayableTrack[];
-    upcomingProbes?: ReturnType<typeof createProbeFromTrack>[];
   } | undefined => {
     const playbackRate = typeof output?.playbackRate === 'number' && Number.isFinite(output.playbackRate) ? output.playbackRate : 1;
     if (
@@ -1913,22 +1912,10 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       return undefined;
     }
 
-    const upcoming: QueueItem[] = [];
-    let previous = next;
-    for (const candidate of current.slice(index + 2)) {
-      if (upcoming.length >= 3 || !isLocalGaplessCandidate(candidate.track) || !isGaplessAlbumAdjacent(previous.track, candidate.track)) {
-        break;
-      }
-      upcoming.push(candidate);
-      previous = candidate;
-    }
-
     return {
       enabled: true,
       nextItem: toPlayableTrack(next.track),
       nextProbe: createProbeFromTrack(next.track),
-      upcomingItems: upcoming.map((candidate) => toPlayableTrack(candidate.track)),
-      upcomingProbes: upcoming.map((candidate) => createProbeFromTrack(candidate.track)),
     };
   }, []);
 
@@ -1956,14 +1943,14 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     return positionSeconds;
   }, []);
 
-  const isHqPlayerConnectOutputActive = useCallback(async (): Promise<boolean> => {
+  const isConnectOutputActive = useCallback(async (): Promise<boolean> => {
     const connect = window.echo?.connect;
     if (!connect?.getStatus) {
       return false;
     }
 
     const status = await connect.getStatus().catch(() => null);
-    return status?.protocol === 'hqplayer' && status.deviceId === hqPlayerConnectDeviceId;
+    return isActiveConnectPlaybackStatus(status);
   }, []);
 
   const playConnectOutputTrack = useCallback(async (item: QueueItem, requestToken: number, startSeconds = 0, forceHqPlayerConnect = false): Promise<PlaybackStatus | null> => {
@@ -1980,7 +1967,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     const deviceId =
       forceHqPlayerConnect || (status?.protocol === 'hqplayer' && status.deviceId === hqPlayerConnectDeviceId)
         ? hqPlayerConnectDeviceId
-        : null;
+        : isActiveConnectPlaybackStatus(status)
+          ? status.deviceId
+          : null;
 
     if (!deviceId) {
       return null;
@@ -2197,7 +2186,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
     const unsubscribe = audio.onStatus(maybeArmAutomix);
     return () => {
-      unsubscribe();
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
     };
   }, [createAutomixOptions, playLocalTrack]);
 
@@ -2844,7 +2835,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     const routeToConnectOutput =
       options.autoAdvance !== true ||
       hqPlayerTakeoverEnabledRef.current ||
-      (await isHqPlayerConnectOutputActive());
+      (await isConnectOutputActive());
 
     const repeatCurrentItem = async (): Promise<PlaybackStatus | null> => {
       if (activeItem) {
@@ -2926,7 +2917,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     }
     commitPlayedItem(target, status);
     return status;
-  }, [commitPlayedItem, fetchLibraryRandomQueueRefresh, fetchLibraryShuffleTarget, finishPlaylistSequence, isHqPlayerConnectOutputActive, playLocalTrack, playTrack, setHistory, setItems]);
+  }, [commitPlayedItem, fetchLibraryRandomQueueRefresh, fetchLibraryShuffleTarget, finishPlaylistSequence, isConnectOutputActive, playLocalTrack, playTrack, setHistory, setItems]);
 
   const activateHqPlayerTakeover = useCallback(async (): Promise<PlaybackStatus | null> => {
     const activeItem =

@@ -4101,7 +4101,7 @@ export class AudioSession extends EventEmitter {
     }
 
     const currentStartSeconds = Math.max(0, request.startSeconds ?? 0);
-    const candidates = [next, ...(gapless.following ?? [])].slice(0, 4);
+    const candidates = [next];
     const resolvedCandidates: Array<{
       track: AudioSessionGaplessNextTrack;
       probe: AudioProbeResult;

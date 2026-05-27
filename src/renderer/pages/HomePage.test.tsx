@@ -306,6 +306,16 @@ const installLibraryMock = (overrides: Partial<NonNullable<Window['echo']>['libr
       album('daily-6', { title: 'Daily Album Six', albumArtist: 'Next', coverId: 'daily-cover-6', coverThumb: 'echo-cover://album/daily-cover-6' }),
       album('daily-7', { title: 'Daily Album Seven', albumArtist: 'Moe', coverId: 'daily-cover-7', coverThumb: 'echo-cover://album/daily-cover-7' }),
     ])),
+    getAlbum: vi.fn(async (albumId: string) => {
+      if (albumId === 'daily-1') {
+        return { ...album('daily-1', { title: 'Daily Album One', albumArtist: 'Moe', coverId: 'daily-cover-1', coverThumb: 'echo-cover://album/daily-cover-1' }), coverLarge: null };
+      }
+      if (albumId === 'favorite-album-1') {
+        return { ...album('favorite-album-1', { title: 'Favorite Album One', albumArtist: 'Moe', coverId: 'favorite-cover-1', coverThumb: 'echo-cover://album/favorite-cover-1' }), coverLarge: null };
+      }
+
+      return null;
+    }),
     getArtists: vi.fn().mockResolvedValue(page([artist('artist-moe', { name: 'Moe', sortName: 'Moe' })])),
     getAlbumForTrack,
     getPlaybackHistorySummary: vi.fn().mockResolvedValue(historySummary()),
@@ -603,15 +613,69 @@ describe('HomePage', () => {
       fireEvent.click((await screen.findAllByRole('button', { name: /Daily Album One/ }))[0]);
 
       expect(queueState.value.playTrack).not.toHaveBeenCalled();
-      expect((navigateAlbum.mock.calls[0]?.[0] as CustomEvent<unknown> | undefined)?.detail).toEqual(
-        expect.objectContaining({ album: expect.objectContaining({ id: 'daily-1' }), returnTo: 'home' }),
+      await waitFor(() =>
+        expect((navigateAlbum.mock.calls[0]?.[0] as CustomEvent<unknown> | undefined)?.detail).toEqual(
+          expect.objectContaining({ album: expect.objectContaining({ id: 'daily-1' }), returnTo: 'home' }),
+        ),
       );
 
       fireEvent.click(screen.getByRole('button', { name: /Favorite Album One/ }));
 
-      expect((navigateAlbum.mock.calls[1]?.[0] as CustomEvent<unknown> | undefined)?.detail).toEqual(
-        expect.objectContaining({ album: expect.objectContaining({ id: 'favorite-album-1' }), returnTo: 'home' }),
+      await waitFor(() =>
+        expect((navigateAlbum.mock.calls[1]?.[0] as CustomEvent<unknown> | undefined)?.detail).toEqual(
+          expect.objectContaining({ album: expect.objectContaining({ id: 'favorite-album-1' }), returnTo: 'home' }),
+        ),
       );
+      expect(queueState.value.playTrack).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(albumDetailNavigationEvent, navigateAlbum);
+    }
+  });
+
+  it('recovers a stale recent-added album id before opening detail', async () => {
+    const staleAlbum = album('stale-added-album', {
+      albumKey: 'stale-added-key',
+      title: 'Daily Album One',
+      albumArtist: 'Moe',
+      coverId: 'daily-cover-1',
+      coverThumb: 'echo-cover://album/daily-cover-1',
+    });
+    const freshAlbum = album('fresh-added-album', {
+      albumKey: 'fresh-added-key',
+      title: 'Daily Album One',
+      albumArtist: 'Moe',
+      coverId: 'daily-cover-1',
+      coverThumb: 'echo-cover://album/daily-cover-1',
+    });
+    const getAlbums = vi.fn(async (query?: { search?: string; sort?: string }) => {
+      if (query?.search === 'Daily Album One') {
+        return page([freshAlbum]);
+      }
+      if (query?.sort === 'recent') {
+        return page([staleAlbum]);
+      }
+
+      return page([album('daily-recommendation', { title: 'Daily Recommendation', coverId: 'daily-recommendation-cover' })]);
+    });
+    const library = installLibraryMock({
+      getAlbum: vi.fn().mockResolvedValue(null),
+      getAlbums,
+    });
+    const navigateAlbum = vi.fn<(event: Event) => void>();
+    window.addEventListener(albumDetailNavigationEvent, navigateAlbum);
+
+    try {
+      render(<HomePage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /Daily Album One/ }));
+
+      await waitFor(() =>
+        expect((navigateAlbum.mock.calls[0]?.[0] as CustomEvent<unknown> | undefined)?.detail).toEqual(
+          expect.objectContaining({ album: expect.objectContaining({ id: 'fresh-added-album' }), returnTo: 'home' }),
+        ),
+      );
+      expect(library.getAlbum).toHaveBeenCalledWith('stale-added-album');
+      expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Daily Album One' });
       expect(queueState.value.playTrack).not.toHaveBeenCalled();
     } finally {
       window.removeEventListener(albumDetailNavigationEvent, navigateAlbum);

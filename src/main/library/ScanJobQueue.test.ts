@@ -257,10 +257,12 @@ class FakeStore {
 
 class FakeScanner implements FileScanner {
   calls = 0;
+  lastOptions: Parameters<FileScanner['scanFolder']>[1] | undefined;
   constructor(private readonly files: ScannedFile[]) {}
 
-  async *scanFolder(): AsyncIterable<ScannedFile> {
+  async *scanFolder(_folderPath?: string, options?: Parameters<FileScanner['scanFolder']>[1]): AsyncIterable<ScannedFile> {
     this.calls += 1;
+    this.lastOptions = options;
     for (const file of this.files) {
       yield file;
     }
@@ -704,6 +706,58 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
       `${resolve(audioPath)}#cueTrack=1`,
       `${resolve(audioPath)}#cueTrack=2`,
     ]);
+    expect(store.missingPaths).toEqual([audioPath]);
+  });
+
+  it('expands sidecar cue sheets into virtual library tracks during folder scans', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const audioPath = join(folder.path, 'long-album.flac');
+    const cuePath = join(folder.path, 'long-album.cue');
+    writeFileSync(audioPath, 'audio');
+    writeFileSync(
+      cuePath,
+      [
+        'PERFORMER "Album Artist"',
+        'TITLE "Long Album"',
+        'FILE "long-album.flac" WAVE',
+        '  TRACK 01 AUDIO',
+        '    TITLE "Opening"',
+        '    INDEX 01 00:00:00',
+        '  TRACK 02 AUDIO',
+        '    TITLE "Middle"',
+        '    INDEX 01 20:00:00',
+        '  TRACK 03 AUDIO',
+        '    TITLE "Finale"',
+        '    INDEX 01 42:30:00',
+      ].join('\n'),
+    );
+
+    const audioFile = { path: resolve(audioPath), sizeBytes: 5, mtimeMs: Math.round(statMtimeMs(audioPath)) };
+    const cueFile = { path: resolve(cuePath), sizeBytes: statSync(cuePath).size, mtimeMs: Math.round(statMtimeMs(cuePath)) };
+    const store = new FakeStore(coverStateMap([audioFile], (file) => coverState(file)));
+    const scanner = new FakeScanner([audioFile, cueFile]);
+    const metadataReader = new FakeMetadataReader();
+    const cacheRoot = join(root, 'custom-cache');
+
+    const status = await runQueue(
+      store,
+      scanner,
+      metadataReader,
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      folder,
+    );
+
+    const expectedPaths = [1, 2, 3].map((trackNumber) => `${resolve(cuePath)}#cueTrack=${trackNumber}`);
+    expect(scanner.lastOptions?.audioExtensions).toContain('.cue');
+    expect(status.totalFiles).toBe(3);
+    expect(status.addedTracks).toBe(3);
+    expect(status.removedTracks).toBe(1);
+    expect(metadataReader.paths).toEqual(expectedPaths);
+    expect(store.upsertedTracks.map((track) => track.path)).toEqual(expectedPaths);
+    expect(store.upsertedTracks.every((track) => track.sizeBytes > audioFile.sizeBytes)).toBe(true);
     expect(store.missingPaths).toEqual([audioPath]);
   });
 

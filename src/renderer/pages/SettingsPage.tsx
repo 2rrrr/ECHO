@@ -3975,6 +3975,14 @@ export const SettingsPage = (): JSX.Element => {
         terms: ['低负载播放模式', '低负载', '卡死', '鼠标卡死', 'CPU', 'IO', 'FFT', 'ReplayGain', 'BPM', '歌词深搜', '封面', '艺人图', 'MV', 'low load', 'performance', 'mouse freeze'],
       },
       {
+        id: 'row-low-load-playback-enhancements',
+        sectionKey: 'playback',
+        targetId: 'settings-row-low-load-playback-enhancements',
+        title: '低负载增强保护',
+        description: '默认关闭。仅在低负载播放模式开启时生效，会进一步降低轮询、桌面歌词、诊断和后台库任务负载。',
+        terms: ['低负载增强保护', '增强低负载', '增强保护', '播放轮询', '桌面歌词', '诊断降频', '后台库任务', 'low load enhanced', 'enhanced low load'],
+      },
+      {
         id: 'row-theme',
         sectionKey: 'appearance',
         targetId: 'settings-row-theme',
@@ -8734,6 +8742,22 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() =>
                     patchAppSettings({
                       lowLoadPlaybackModeEnabled: appSettings?.lowLoadPlaybackModeEnabled !== true,
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-low-load-playback-enhancements"
+                highlighted={highlightedSettingId === 'settings-row-low-load-playback-enhancements'}
+                title="低负载增强保护"
+                description="默认关闭。仅在低负载播放模式开启时生效，会进一步降低轮询、桌面歌词、诊断和后台库任务负载。"
+              >
+                <ToggleButton
+                  active={appSettings?.lowLoadPlaybackEnhancementsEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      lowLoadPlaybackEnhancementsEnabled: appSettings?.lowLoadPlaybackEnhancementsEnabled !== true,
                     })
                   }
                 />

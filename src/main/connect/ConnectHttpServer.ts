@@ -2,14 +2,24 @@ import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { networkInterfaces } from 'node:os';
-import { extname } from 'node:path';
+import { basename, extname } from 'node:path';
 import { spawn } from 'node:child_process';
+import { Readable } from 'node:stream';
+import sharp from 'sharp';
+import type { ConnectHttpDebugEvent } from '../../shared/types/connect';
 import { resolveFfmpegToolchain } from '../audio/FfmpegToolchain';
 import { defaultCoverSvg } from '../library/workers/TsCoverExtractor';
 
 type DirectAudioToken = {
   kind: 'audio';
   filePath: string;
+  mimeType: string;
+  expiresAtMs: number;
+};
+
+type RemoteAudioToken = {
+  kind: 'remote-audio';
+  remoteUrl: string;
   mimeType: string;
   expiresAtMs: number;
 };
@@ -23,15 +33,22 @@ type TranscodeToken = {
 type CoverToken = {
   kind: 'cover';
   filePath: string | null;
+  remoteUrl: string | null;
   mimeType: string;
+  sourceMimeType: string | null;
+  transcodeToJpeg: boolean;
+  cachedBody?: Buffer;
   expiresAtMs: number;
 };
 
-type TokenRecord = DirectAudioToken | TranscodeToken | CoverToken;
+type TokenRecord = DirectAudioToken | RemoteAudioToken | TranscodeToken | CoverToken;
 
 type TokenUrlOptions = {
   host: string;
   ttlMs?: number;
+  forceJpegCover?: boolean;
+  mimeType?: string | null;
+  audioMimeType?: string | null;
 };
 
 const defaultTokenTtlMs = 8 * 60 * 60 * 1000;
@@ -45,6 +62,66 @@ const extensionSource = (filePath: string): string => {
     return filePath;
   }
 };
+
+const extensionForMimeType = (mimeType: string): string => {
+  switch (mimeType.toLowerCase()) {
+    case 'audio/mpeg':
+      return '.mp3';
+    case 'audio/flac':
+    case 'audio/x-flac':
+    case 'application/flac':
+      return '.flac';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return '.wav';
+    case 'audio/aac':
+      return '.aac';
+    case 'audio/mp4':
+      return '.m4a';
+    case 'audio/aiff':
+    case 'audio/x-aiff':
+      return '.aiff';
+    case 'audio/ogg':
+      return '.ogg';
+    default:
+      return '.bin';
+  }
+};
+
+const safeUrlSegment = (value: string): string => {
+  const cleaned = value
+    .replace(/[\\/:*?"<>|#%]+/gu, '_')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return encodeURIComponent(cleaned || 'stream');
+};
+
+const dlnaFriendlyAudioName = (source: string, mimeType: string): string => {
+  const pathname = extensionSource(source);
+  let name = basename(pathname);
+  try {
+    name = decodeURIComponent(name);
+  } catch {
+    // Keep the raw basename if it was not valid percent-encoding.
+  }
+  const extension = extname(name) || extensionForMimeType(mimeType);
+  const stem = name.slice(0, name.length - extname(name).length).trim() || 'stream';
+  return `${safeUrlSegment(stem)}${extension}`;
+};
+
+const dlnaContentFeaturesForMime = (mimeType: string): string => {
+  switch (mimeType.toLowerCase()) {
+    case 'audio/mpeg':
+      return 'DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'DLNA.ORG_PN=WAV;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000';
+    default:
+      return 'DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000';
+  }
+};
+
+const jpegCoverContentFeatures = 'DLNA.ORG_PN=JPEG_TN;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=00D00000000000000000000000000000';
 
 export const mimeTypeForAudioPath = (filePath: string): string => {
   switch (extname(extensionSource(filePath)).toLowerCase()) {
@@ -160,9 +237,23 @@ export class ConnectHttpServer {
   private server: Server | null = null;
   private port: number | null = null;
   private readonly tokens = new Map<string, TokenRecord>();
+  private readonly debugEvents: ConnectHttpDebugEvent[] = [];
+  private readonly debugListeners = new Set<(event: ConnectHttpDebugEvent) => void>();
+
+  onRequestEvent(listener: (event: ConnectHttpDebugEvent) => void): () => void {
+    this.debugListeners.add(listener);
+    return () => {
+      this.debugListeners.delete(listener);
+    };
+  }
+
+  getDebugEvents(): ConnectHttpDebugEvent[] {
+    return [...this.debugEvents];
+  }
 
   async close(): Promise<void> {
     this.tokens.clear();
+    this.debugEvents.length = 0;
     if (!this.server) {
       return;
     }
@@ -176,17 +267,18 @@ export class ConnectHttpServer {
 
   async createAudioUrl(filePath: string, options: TokenUrlOptions): Promise<{ url: string; mimeType: string; sizeBytes: number }> {
     await this.ensureStarted();
+    const mimeType = options.audioMimeType ?? mimeTypeForAudioPath(filePath);
     const token = this.createToken({
       kind: 'audio',
       filePath,
-      mimeType: mimeTypeForAudioPath(filePath),
+      mimeType,
       expiresAtMs: Date.now() + (options.ttlMs ?? defaultTokenTtlMs),
     });
     const fileStat = statSync(filePath);
 
     return {
       url: `http://${options.host}:${this.port}/connect/audio/${token}`,
-      mimeType: mimeTypeForAudioPath(filePath),
+      mimeType,
       sizeBytes: fileStat.size,
     };
   }
@@ -213,11 +305,31 @@ export class ConnectHttpServer {
 
   async createCoverUrl(filePath: string | null, options: TokenUrlOptions): Promise<string> {
     await this.ensureStarted();
-    const mimeType = filePath ? mimeTypeForImagePath(filePath) : 'image/svg+xml';
+    const sourceMimeType = options.mimeType ?? (filePath ? mimeTypeForImagePath(filePath) : 'image/svg+xml');
+    const transcodeToJpeg = options.forceJpegCover === true;
+    const mimeType = transcodeToJpeg ? 'image/jpeg' : sourceMimeType;
     const token = this.createToken({
       kind: 'cover',
       filePath,
+      remoteUrl: null,
       mimeType,
+      sourceMimeType,
+      transcodeToJpeg,
+      expiresAtMs: Date.now() + (options.ttlMs ?? defaultTokenTtlMs),
+    });
+
+    return `http://${options.host}:${this.port}/connect/cover/${token}`;
+  }
+
+  async createRemoteCoverUrl(remoteUrl: string, options: TokenUrlOptions): Promise<string> {
+    await this.ensureStarted();
+    const token = this.createToken({
+      kind: 'cover',
+      filePath: null,
+      remoteUrl,
+      mimeType: 'image/jpeg',
+      sourceMimeType: null,
+      transcodeToJpeg: true,
       expiresAtMs: Date.now() + (options.ttlMs ?? defaultTokenTtlMs),
     });
 
@@ -237,6 +349,32 @@ export class ConnectHttpServer {
     const token = randomBytes(24).toString('base64url');
     this.tokens.set(token, record);
     return token;
+  }
+
+  private recordDebugEvent(
+    request: IncomingMessage,
+    event: Omit<ConnectHttpDebugEvent, 'id' | 'at' | 'remoteAddress' | 'method' | 'path' | 'range' | 'userAgent'> & {
+      path?: string;
+    },
+  ): void {
+    const next: ConnectHttpDebugEvent = {
+      id: randomBytes(8).toString('hex'),
+      at: new Date().toISOString(),
+      remoteAddress: request.socket.remoteAddress?.replace(/^::ffff:/u, '') ?? null,
+      method: request.method ?? 'UNKNOWN',
+      path: event.path ?? request.url ?? '',
+      range: safeHeader(request.headers.range) ?? null,
+      userAgent: safeHeader(request.headers['user-agent']) ?? null,
+      kind: event.kind,
+      statusCode: event.statusCode,
+      bytes: event.bytes,
+      message: event.message,
+    };
+    this.debugEvents.unshift(next);
+    this.debugEvents.splice(24);
+    for (const listener of this.debugListeners) {
+      listener(next);
+    }
   }
 
   private async ensureStarted(): Promise<void> {
@@ -267,12 +405,14 @@ export class ConnectHttpServer {
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     try {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
+        this.recordDebugEvent(request, { kind: 'unknown', statusCode: 405, bytes: 0, message: 'method_not_allowed' });
         response.writeHead(405, { 'Cache-Control': 'no-store' });
         response.end();
         return;
       }
 
       const match = request.url?.match(/^\/connect\/(audio|cover|transcode)\/([^/?#]+)/u);
+      const kind = (match?.[1] ?? 'unknown') as ConnectHttpDebugEvent['kind'];
       const token = match?.[2] ?? null;
       const record = token ? this.tokens.get(token) : null;
 
@@ -280,6 +420,7 @@ export class ConnectHttpServer {
         if (token) {
           this.tokens.delete(token);
         }
+        this.recordDebugEvent(request, { kind, statusCode: 401, bytes: 0, message: 'token_expired_or_missing' });
         response.writeHead(401, { 'Cache-Control': 'no-store' });
         response.end();
         return;
@@ -295,8 +436,14 @@ export class ConnectHttpServer {
         return;
       }
 
-      this.serveCover(record, request, response);
+      await this.serveCover(record, request, response);
     } catch (error) {
+      this.recordDebugEvent(request, {
+        kind: 'unknown',
+        statusCode: 500,
+        bytes: 0,
+        message: error instanceof Error ? error.message : String(error),
+      });
       if (!response.headersSent) {
         response.writeHead(500, { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' });
       }
@@ -307,6 +454,7 @@ export class ConnectHttpServer {
   private async serveAudioFile(record: DirectAudioToken, request: IncomingMessage, response: ServerResponse): Promise<void> {
     const fileStat = statSync(record.filePath);
     if (!fileStat.isFile()) {
+      this.recordDebugEvent(request, { kind: 'audio', statusCode: 404, bytes: 0, message: 'audio_file_missing' });
       response.writeHead(404, { 'Cache-Control': 'no-store' });
       response.end();
       return;
@@ -339,6 +487,7 @@ export class ConnectHttpServer {
       end = Math.min(total - 1, end);
 
       if (!match || total <= 0 || !Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= total) {
+        this.recordDebugEvent(request, { kind: 'audio', statusCode: 416, bytes: 0, message: 'invalid_range' });
         response.writeHead(416, {
           ...baseHeaders,
           'Content-Range': `bytes */${total}`,
@@ -348,6 +497,7 @@ export class ConnectHttpServer {
         return;
       }
 
+      this.recordDebugEvent(request, { kind: 'audio', statusCode: 206, bytes: end - start + 1, message: record.mimeType });
       response.writeHead(206, {
         ...baseHeaders,
         'Content-Range': `bytes ${start}-${end}/${total}`,
@@ -361,6 +511,7 @@ export class ConnectHttpServer {
       return;
     }
 
+    this.recordDebugEvent(request, { kind: 'audio', statusCode: 200, bytes: total, message: record.mimeType });
     response.writeHead(200, {
       ...baseHeaders,
       'Content-Length': String(total),
@@ -373,6 +524,7 @@ export class ConnectHttpServer {
   }
 
   private serveTranscodedAudio(record: TranscodeToken, request: IncomingMessage, response: ServerResponse): void {
+    this.recordDebugEvent(request, { kind: 'transcode', statusCode: 200, bytes: null, message: 'audio/mpeg' });
     if (request.method === 'HEAD') {
       response.writeHead(200, {
         'Accept-Ranges': 'none',
@@ -409,9 +561,56 @@ export class ConnectHttpServer {
     });
   }
 
-  private serveCover(record: CoverToken, request: IncomingMessage, response: ServerResponse): void {
+  private async coverBody(record: CoverToken): Promise<Buffer> {
+    if (record.cachedBody) {
+      return record.cachedBody;
+    }
+
+    let source: string | Buffer = Buffer.from(defaultCoverSvg, 'utf8');
+    if (record.filePath && existsSync(record.filePath)) {
+      source = record.filePath;
+    } else if (record.remoteUrl) {
+      const response = await fetch(record.remoteUrl, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) {
+        throw new Error(`remote cover HTTP ${response.status}`);
+      }
+      source = Buffer.from(await response.arrayBuffer());
+    }
+    const body = await sharp(source, { animated: false })
+      .rotate()
+      .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 88, mozjpeg: true })
+      .toBuffer();
+    record.cachedBody = body;
+    return body;
+  }
+
+  private async serveCover(record: CoverToken, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (record.transcodeToJpeg) {
+      const body = await this.coverBody(record);
+      this.recordDebugEvent(request, {
+        kind: 'cover',
+        statusCode: 200,
+        bytes: body.byteLength,
+        message: record.filePath && existsSync(record.filePath)
+          ? 'image/jpeg'
+          : record.remoteUrl
+            ? 'remote-cover:image/jpeg'
+            : 'default-cover:image/jpeg',
+      });
+      response.writeHead(200, {
+        'Cache-Control': 'private, max-age=86400',
+        'Content-Length': String(body.byteLength),
+        'Content-Type': 'image/jpeg',
+      });
+      response.end(request.method === 'HEAD' ? undefined : body);
+      return;
+    }
+
     if (record.filePath && existsSync(record.filePath)) {
       const fileStat = statSync(record.filePath);
+      this.recordDebugEvent(request, { kind: 'cover', statusCode: 200, bytes: fileStat.size, message: record.mimeType });
       response.writeHead(200, {
         'Cache-Control': 'private, max-age=86400',
         'Content-Length': String(fileStat.size),
@@ -427,6 +626,7 @@ export class ConnectHttpServer {
     }
 
     const body = Buffer.from(defaultCoverSvg, 'utf8');
+    this.recordDebugEvent(request, { kind: 'cover', statusCode: 200, bytes: body.byteLength, message: 'default-cover:image/svg+xml' });
     response.writeHead(200, {
       'Cache-Control': 'private, max-age=86400',
       'Content-Length': String(body.byteLength),

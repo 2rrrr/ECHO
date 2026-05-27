@@ -178,8 +178,8 @@ export class RemoteSourceService {
     return this.backgroundQueue.updateRuntimeLimits(sourceId, limits);
   }
 
-  setPlaybackActive(active: boolean): RemoteBackgroundGlobalStatus {
-    return this.backgroundQueue.setPlaybackActive(active);
+  setPlaybackActive(active: boolean, options: { lowLoadEnhanced?: boolean } = {}): RemoteBackgroundGlobalStatus {
+    return this.backgroundQueue.setPlaybackActive(active, options);
   }
 
   refreshTrackMetadata(trackId: string): Promise<RemoteLibraryTrack | null> {

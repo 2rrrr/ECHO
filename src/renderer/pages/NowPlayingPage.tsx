@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Disc3, Mic2, Music2 } from 'lucide-react';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AppSettings } from '../../shared/types/appSettings';
@@ -9,8 +9,82 @@ import { useI18n } from '../i18n/I18nProvider';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const idlePollingStates = new Set(['paused', 'stopped', 'idle', 'error']);
+const nowPlayingMarqueeOverflowPx = 4;
 const readLowLoadPlaybackModeEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.lowLoadPlaybackModeEnabled === true;
+
+const NowPlayingMarqueeText = ({
+  as,
+  className,
+  text,
+}: {
+  as: 'h2' | 'p';
+  className?: string;
+  text: string;
+}): JSX.Element => {
+  const textRef = useRef<HTMLElement | null>(null);
+  const innerRef = useRef<HTMLSpanElement | null>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    const innerElement = innerRef.current;
+    if (!element || !innerElement) {
+      setIsOverflowing(false);
+      return undefined;
+    }
+
+    let frameId: number | null = null;
+    const updateOverflow = (): void => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        const distance = Math.max(0, innerElement.scrollWidth - element.clientWidth);
+        element.style.setProperty('--now-playing-marquee-distance', `${distance + 22}px`);
+        element.style.setProperty('--now-playing-marquee-duration', `${Math.min(24, Math.max(9, distance / 18 + 7))}s`);
+        setIsOverflowing(distance > nowPlayingMarqueeOverflowPx);
+      });
+    };
+
+    updateOverflow();
+
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(updateOverflow) : null;
+    resizeObserver?.observe(element);
+    resizeObserver?.observe(innerElement);
+    window.addEventListener('resize', updateOverflow);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateOverflow);
+    };
+  }, [text]);
+
+  const setTextRef = (node: HTMLHeadingElement | HTMLParagraphElement | null): void => {
+    textRef.current = node;
+  };
+  const props = {
+    className: `now-playing-marquee ${className ?? ''}`,
+    'data-overflow': isOverflowing ? 'true' : undefined,
+    title: text,
+  };
+  const content = <span ref={innerRef}>{text}</span>;
+
+  return as === 'h2' ? (
+    <h2 {...props} ref={setTextRef}>
+      {content}
+    </h2>
+  ) : (
+    <p {...props} ref={setTextRef}>
+      {content}
+    </p>
+  );
+};
 
 export const NowPlayingPage = (): JSX.Element => {
   const { t } = useI18n();
@@ -111,8 +185,8 @@ export const NowPlayingPage = (): JSX.Element => {
         </div>
         <div className="now-playing-copy">
           <span>{currentTrack || filePath ? t('nowPlaying.state.playing') : t('nowPlaying.state.idle')}</span>
-          <h2>{currentTrack || filePath ? title : t('nowPlaying.emptyTitle')}</h2>
-          <p>{artist}</p>
+          <NowPlayingMarqueeText as="h2" text={currentTrack || filePath ? title : t('nowPlaying.emptyTitle')} />
+          <NowPlayingMarqueeText as="p" text={artist} />
           <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
           {error ? <strong className="now-playing-error">{error}</strong> : null}
         </div>

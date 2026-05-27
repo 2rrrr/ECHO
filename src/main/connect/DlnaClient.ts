@@ -1,4 +1,5 @@
 import dgram from 'node:dgram';
+import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { ConnectDevice, ConnectDeviceCapabilities } from '../../shared/types/connect';
 
@@ -17,11 +18,24 @@ export type DlnaDevice = ConnectDevice & {
   };
 };
 
+export type DlnaTransportInfo = {
+  state: string | null;
+  status: string | null;
+  speed: string | null;
+};
+
+export type DlnaPositionInfo = {
+  durationSeconds: number | null;
+  positionSeconds: number | null;
+};
+
 const ssdpAddress = '239.255.255.250';
 const ssdpPort = 1900;
 const searchTargets = [
+  'urn:schemas-upnp-org:device:MediaRenderer:2',
   'urn:schemas-upnp-org:device:MediaRenderer:1',
   'urn:schemas-upnp-org:service:AVTransport:1',
+  'upnp:rootdevice',
 ];
 
 const defaultCapabilities: ConnectDeviceCapabilities = {
@@ -34,6 +48,22 @@ const defaultCapabilities: ConnectDeviceCapabilities = {
   supportsSetNext: false,
   supportedMimeTypes: ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/mp4', 'audio/aac', 'audio/ogg'],
   requiresTranscode: false,
+};
+
+const isLinkLocalIPv4 = (address: string): boolean => /^169\.254\./u.test(address);
+
+const isIPv4Interface = (item: NetworkInterfaceInfo): boolean =>
+  item.family === 'IPv4';
+
+export const getSsdpSearchAddresses = (
+  interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
+): Array<string | null> => {
+  const addresses = Object.values(interfaces)
+    .flatMap((items) => items ?? [])
+    .filter((item) => isIPv4Interface(item) && !item.internal && !isLinkLocalIPv4(item.address))
+    .map((item) => item.address);
+
+  return [null, ...Array.from(new Set(addresses))];
 };
 
 const headerValue = (raw: string, name: string): string | null => {
@@ -74,7 +104,7 @@ const absoluteUrl = (url: string | null, baseUrl: string): string | null => {
   }
 };
 
-const parseDeviceDescription = (xml: string, descriptionUrl: string): DlnaDevice | null => {
+export const parseDeviceDescription = (xml: string, descriptionUrl: string): DlnaDevice | null => {
   const deviceBlock = xmlBlocks(xml, 'device').find((block) => /MediaRenderer/iu.test(xmlText(block, 'deviceType') ?? ''));
   if (!deviceBlock) {
     return null;
@@ -98,23 +128,39 @@ const parseDeviceDescription = (xml: string, descriptionUrl: string): DlnaDevice
     return null;
   }
 
+  const deviceType = xmlText(deviceBlock, 'deviceType');
   const udn = xmlText(deviceBlock, 'UDN') ?? descriptionUrl;
   const name = xmlText(deviceBlock, 'friendlyName') ?? 'DLNA Renderer';
   const manufacturer = xmlText(deviceBlock, 'manufacturer');
   const modelName = xmlText(deviceBlock, 'modelName');
+  const modelNumber = xmlText(deviceBlock, 'modelNumber');
+  const modelDescription = xmlText(deviceBlock, 'modelDescription');
+  const serialNumber = xmlText(deviceBlock, 'serialNumber');
+  const presentationUrl = absoluteUrl(xmlText(deviceBlock, 'presentationURL'), urlBase);
   const host = new URL(descriptionUrl).hostname;
+  const model = modelName ?? modelNumber ?? modelDescription ?? null;
 
   return {
     id: `dlna:${udn}`,
     name,
     protocol: 'dlna',
-    model: modelName,
+    model,
     manufacturer,
     address: host,
     capabilities: { ...defaultCapabilities },
     state: 'available',
     lastSeenAt: new Date().toISOString(),
     unsupportedReason: null,
+    discovery: {
+      deviceType,
+      descriptionUrl,
+      presentationUrl,
+      modelName,
+      modelNumber,
+      modelDescription,
+      serialNumber,
+      udn,
+    },
     descriptionUrl,
     udn,
     services: {
@@ -151,6 +197,21 @@ const parseProtocolInfo = (value: string | null): string[] => {
         .filter((item): item is string => Boolean(item)),
     ),
   );
+};
+
+export const parseDlnaTime = (value: string | null): number | null => {
+  if (!value || value === 'NOT_IMPLEMENTED') {
+    return null;
+  }
+
+  const [clock] = value.trim().split('.');
+  const parts = clock.split(':').map((part) => Number(part));
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part) || part < 0)) {
+    return null;
+  }
+
+  const [hours, minutes, seconds] = parts;
+  return (hours * 3600) + (minutes * 60) + seconds;
 };
 
 const createSoapEnvelope = (serviceType: string, action: string, args: Record<string, string | number>): string =>
@@ -229,7 +290,7 @@ const enrichCapabilities = async (device: DlnaDevice): Promise<DlnaDevice> => {
   }
 };
 
-export const discoverDlnaDevices = async (timeoutMs = 2400): Promise<DlnaDevice[]> => {
+const discoverSsdpLocations = async (bindAddress: string | null, timeoutMs: number): Promise<Set<string>> => {
   const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   const locations = new Set<string>();
 
@@ -242,27 +303,47 @@ export const discoverDlnaDevices = async (timeoutMs = 2400): Promise<DlnaDevice[
 
   await new Promise<void>((resolve, reject) => {
     socket.once('error', reject);
-    socket.bind(0, () => {
+    socket.bind(0, bindAddress ?? undefined, () => {
       socket.off('error', reject);
       resolve();
     });
   });
 
-  for (const target of searchTargets) {
-    const payload = [
-      'M-SEARCH * HTTP/1.1',
-      `HOST: ${ssdpAddress}:${ssdpPort}`,
-      'MAN: "ssdp:discover"',
-      'MX: 2',
-      `ST: ${target}`,
-      '',
-      '',
-    ].join('\r\n');
-    socket.send(Buffer.from(payload), ssdpPort, ssdpAddress);
+  try {
+    for (const target of searchTargets) {
+      const payload = [
+        'M-SEARCH * HTTP/1.1',
+        `HOST: ${ssdpAddress}:${ssdpPort}`,
+        'MAN: "ssdp:discover"',
+        'MX: 2',
+        `ST: ${target}`,
+        '',
+        '',
+      ].join('\r\n');
+      socket.send(Buffer.from(payload), ssdpPort, ssdpAddress);
+    }
+
+    await delay(timeoutMs);
+  } finally {
+    socket.close();
   }
 
-  await delay(timeoutMs);
-  socket.close();
+  return locations;
+};
+
+export const discoverDlnaDevices = async (timeoutMs = 2400): Promise<DlnaDevice[]> => {
+  const locations = new Set<string>();
+  const settled = await Promise.allSettled(
+    getSsdpSearchAddresses().map((address) => discoverSsdpLocations(address, timeoutMs)),
+  );
+  for (const result of settled) {
+    if (result.status !== 'fulfilled') {
+      continue;
+    }
+    for (const location of result.value) {
+      locations.add(location);
+    }
+  }
 
   const devices = (await Promise.all([...locations].map(requestDeviceDescription))).filter(
     (device): device is DlnaDevice => Boolean(device),
@@ -297,6 +378,27 @@ export const pauseDlna = (device: DlnaDevice): Promise<string> =>
 
 export const stopDlna = (device: DlnaDevice): Promise<string> =>
   callDlnaAction(requireDlnaService(device.services.avTransport, 'AVTransport'), 'Stop', { InstanceID: 0 });
+
+export const getDlnaTransportInfo = async (device: DlnaDevice): Promise<DlnaTransportInfo> => {
+  const response = await callDlnaAction(requireDlnaService(device.services.avTransport, 'AVTransport'), 'GetTransportInfo', {
+    InstanceID: 0,
+  });
+  return {
+    state: xmlText(response, 'CurrentTransportState'),
+    status: xmlText(response, 'CurrentTransportStatus'),
+    speed: xmlText(response, 'CurrentSpeed'),
+  };
+};
+
+export const getDlnaPositionInfo = async (device: DlnaDevice): Promise<DlnaPositionInfo> => {
+  const response = await callDlnaAction(requireDlnaService(device.services.avTransport, 'AVTransport'), 'GetPositionInfo', {
+    InstanceID: 0,
+  });
+  return {
+    durationSeconds: parseDlnaTime(xmlText(response, 'TrackDuration')),
+    positionSeconds: parseDlnaTime(xmlText(response, 'RelTime')),
+  };
+};
 
 export const seekDlna = (device: DlnaDevice, target: string): Promise<string> =>
   callDlnaAction(requireDlnaService(device.services.avTransport, 'AVTransport'), 'Seek', { InstanceID: 0, Unit: 'REL_TIME', Target: target });

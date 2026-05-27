@@ -67,11 +67,17 @@ const fallbackSettings: DesktopLyricsSettings = {
 
 const colorSwatches = ['#FFFFFF', '#FFD166', '#6EE7B7', '#7DD3FC', '#F0ABFC', '#FB7185'];
 const forwardedStatusMaxAgeMs = 45_000;
+const desktopLyricsClockPollIntervalMs = 700;
+const enhancedLowLoadClockPollIntervalMs = 1800;
+const enhancedLowLoadLyricSyncIntervalMs = 500;
 const desktopLyricsClockStaleTelemetryThresholdMs = 750;
 const desktopLyricsClockUnderrunBufferThresholdMs = 40;
 const desktopLyricsStageHorizontalPaddingPx = 36;
 const desktopLyricsOverflowTolerancePx = 4;
 const desktopLyricsMouseInteractiveSelector = '.desktop-lyrics-lines, .desktop-lyrics-menu';
+
+const readEnhancedLowLoadPlaybackActive = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.lowLoadPlaybackModeEnabled === true && settings.lowLoadPlaybackEnhancementsEnabled === true;
 
 type DesktopLyricsTextFitOptions = {
   text: string;
@@ -387,6 +393,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const [lyrics, setLyrics] = useState<DesktopLyricsStateSnapshot>(() => emptyLyrics());
   const [activeIndex, setActiveIndex] = useState(-1);
   const [viewportWidthPx, setViewportWidthPx] = useState(() => window.innerWidth);
+  const [enhancedLowLoadPlaybackActive, setEnhancedLowLoadPlaybackActive] = useState(false);
   const lyricsRequestRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
 
@@ -450,9 +457,11 @@ export const DesktopLyricsApp = (): JSX.Element => {
         }
 
         setSettings(pickDesktopLyricsSettings(desktopState?.settings ?? appSettings));
+        setEnhancedLowLoadPlaybackActive(readEnhancedLowLoadPlaybackActive(appSettings));
       } catch {
         if (!disposed) {
           setSettings(fallbackSettings);
+          setEnhancedLowLoadPlaybackActive(false);
         }
       }
     };
@@ -462,9 +471,33 @@ export const DesktopLyricsApp = (): JSX.Element => {
       setSettings(pickDesktopLyricsSettings(state.settings));
     });
 
+    const handleSettingsChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<Partial<AppSettings> | null | undefined>).detail;
+      if (
+        !detail ||
+        (
+          !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackModeEnabled') &&
+          !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackEnhancementsEnabled')
+        )
+      ) {
+        return;
+      }
+
+      void window.echo?.app?.getSettings?.()
+        .then((nextSettings) => {
+          if (!disposed) {
+            setEnhancedLowLoadPlaybackActive(readEnhancedLowLoadPlaybackActive(nextSettings));
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
     return () => {
       disposed = true;
       unsubscribe?.();
+      window.removeEventListener('settings:changed', handleSettingsChanged);
     };
   }, []);
 
@@ -530,12 +563,13 @@ export const DesktopLyricsApp = (): JSX.Element => {
 
   useEffect(() => {
     void refreshPlaybackClock();
+    const intervalMs = enhancedLowLoadPlaybackActive ? enhancedLowLoadClockPollIntervalMs : desktopLyricsClockPollIntervalMs;
     const timer = window.setInterval(() => {
       void refreshPlaybackClock();
-    }, 700);
+    }, intervalMs);
 
     return () => window.clearInterval(timer);
-  }, [refreshPlaybackClock]);
+  }, [enhancedLowLoadPlaybackActive, refreshPlaybackClock]);
 
   useEffect(() => {
     const unsubscribe = window.echo?.connect?.onStatus?.((status) => {
@@ -625,6 +659,11 @@ export const DesktopLyricsApp = (): JSX.Element => {
       return undefined;
     }
 
+    if (enhancedLowLoadPlaybackActive) {
+      const timer = window.setInterval(sync, enhancedLowLoadLyricSyncIntervalMs);
+      return () => window.clearInterval(timer);
+    }
+
     const tick = (): void => {
       sync();
       animationFrameRef.current = window.requestAnimationFrame(tick);
@@ -637,7 +676,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
         animationFrameRef.current = null;
       }
     };
-  }, [activeClock, lyrics]);
+  }, [activeClock, enhancedLowLoadPlaybackActive, lyrics]);
 
   const patchStyle = useCallback(async (patch: DesktopLyricsStylePatch): Promise<void> => {
     setSettings((current) => pickDesktopLyricsSettings({ ...current, ...patch }));

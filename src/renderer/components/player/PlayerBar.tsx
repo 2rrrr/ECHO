@@ -3,7 +3,7 @@ import { Captions, Download, FileDown, Loader2, Monitor } from 'lucide-react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { audioExportFormats, type AudioExportFormat, type AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
-import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverStatus } from '../../../shared/types/connect';
+import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverStatus, ConnectSessionStatus } from '../../../shared/types/connect';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import type { MiniPlayerState } from '../../../shared/types/miniPlayer';
@@ -19,6 +19,7 @@ import {
 } from '../../integrations/spotify/spotifyPlayback';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
+import { isActiveConnectPlaybackStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { PlayerProgress } from './PlayerProgress';
 import { PlayerSpeedControl } from './PlayerSpeedControl';
@@ -410,6 +411,11 @@ const isProviderLikedStreamingProvider = (provider: string | null | undefined): 
 
 const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null): void => {
   window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
+};
+
+const getActiveConnectPlaybackStatus = async (): Promise<ConnectSessionStatus | null> => {
+  const status = await window.echo?.connect?.getStatus?.().catch(() => null);
+  return isActiveConnectPlaybackStatus(status) ? status : null;
 };
 
 const rememberLyricsViewMode = (mode: 'lyrics' | 'mv'): void => {
@@ -1844,8 +1850,38 @@ export const PlayerBar = ({
     [refreshStatus, setQueueCurrentTrackId],
   );
 
+  const applyConnectPlaybackStatus = useCallback(
+    (connectStatus: ConnectSessionStatus, fallbackPositionSeconds?: number): PlaybackStatus => {
+      const nextStatus = playbackStatusFromConnectStatus(connectStatus, {
+        currentTrackId: connectStatus.currentTrackId ?? trackId,
+        durationMs: Math.round(Math.max(0, durationSeconds) * 1000),
+        filePath,
+      });
+      const normalizedStatus =
+        fallbackPositionSeconds === undefined
+          ? nextStatus
+          : {
+              ...nextStatus,
+              positionMs: Math.round(Math.max(0, fallbackPositionSeconds) * 1000),
+            };
+      lastPlaybackActionStatusRef.current = {
+        state: normalizedStatus.state,
+        trackId: normalizedStatus.currentTrackId,
+        filePath: normalizedStatus.filePath,
+        updatedAtMs: performance.now(),
+      };
+      setPlaybackStatus(normalizedStatus);
+      setAudioStatus(null);
+      setQueueCurrentTrackId(normalizedStatus.currentTrackId);
+      setPlaybackStatusSnapshot({ audioStatus: null, playbackStatus: normalizedStatus, playbackVisualIntent: null, error: null });
+      return normalizedStatus;
+    },
+    [durationSeconds, filePath, setQueueCurrentTrackId, trackId],
+  );
+
   const handlePlayPause = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
+    const connect = window.echo?.connect;
 
     if (queue.hqPlayerTakeoverEnabled) {
       if (visualState === 'playing' || visualState === 'loading') {
@@ -1854,6 +1890,22 @@ export const PlayerBar = ({
       }
 
       await runPlaybackAction(queue.activateHqPlayerTakeover);
+      return;
+    }
+
+    const activeConnectStatus = await getActiveConnectPlaybackStatus();
+    if (activeConnectStatus && connect?.play && connect.pause) {
+      try {
+        const nextStatus =
+          visualState === 'playing' || visualState === 'loading'
+            ? await connect.pause()
+            : await connect.play();
+        applyConnectPlaybackStatus(nextStatus);
+      } catch (connectError) {
+        const message = connectError instanceof Error ? connectError.message : String(connectError);
+        setError(formatAudioHostError(message));
+        setPlaybackStatusSnapshot({ error: shouldSuppressAudioHostError(message) ? null : message });
+      }
       return;
     }
 
@@ -1895,7 +1947,7 @@ export const PlayerBar = ({
 
       return playback.play();
     });
-  }, [activeReceiverStatus, currentTrack, isSpotifyCurrentTrack, queue, runPlaybackAction, visualState]);
+  }, [activeReceiverStatus, applyConnectPlaybackStatus, currentTrack, isSpotifyCurrentTrack, queue, runPlaybackAction, visualState]);
 
   const handlePrevious = useCallback((): void => {
     void runPlaybackAction(queue.playPrevious);
@@ -2062,35 +2114,15 @@ export const PlayerBar = ({
           return;
         }
 
-        if (queue.hqPlayerTakeoverEnabled) {
+        const activeConnectStatus = await getActiveConnectPlaybackStatus();
+        if (activeConnectStatus) {
           const connect = window.echo?.connect;
           if (!connect?.seek) {
-            throw new Error('HQPlayer 接管中，Connect seek 不可用。');
+            throw new Error('Connect 投送中，远端 seek 不可用。');
           }
 
           const connectStatus = await connect.seek(safePositionSeconds);
-          const nextStatus: PlaybackStatus = {
-            state:
-              connectStatus.state === 'playing'
-                ? 'playing'
-                : connectStatus.state === 'paused'
-                  ? 'paused'
-                  : connectStatus.state === 'stopped'
-                    ? 'stopped'
-                    : connectStatus.state === 'error'
-                      ? 'error'
-                      : state,
-            currentTrackId: connectStatus.currentTrackId ?? trackId,
-            positionMs: Math.round(Math.max(0, connectStatus.positionSeconds || safePositionSeconds) * 1000),
-            durationMs: Math.round(Math.max(0, connectStatus.durationSeconds || durationSeconds) * 1000),
-            filePath,
-          };
-          setPlaybackStatus(nextStatus);
-          setPlaybackStatusSnapshot({
-            playbackStatus: nextStatus,
-            playbackVisualIntent: null,
-            error: null,
-          });
+          const nextStatus = applyConnectPlaybackStatus(connectStatus, safePositionSeconds);
           dispatchPlaybackSeeked(safePositionSeconds, nextStatus.currentTrackId ?? trackId ?? null);
           return;
         }
@@ -2128,7 +2160,7 @@ export const PlayerBar = ({
         setSeekPreviewSeconds(null);
       }
     },
-    [currentTrack, durationSeconds, filePath, isSpotifyCurrentTrack, queue.hqPlayerTakeoverEnabled, refreshStatus, state, trackId],
+    [applyConnectPlaybackStatus, currentTrack, durationSeconds, filePath, isSpotifyCurrentTrack, refreshStatus, trackId],
   );
 
   return (

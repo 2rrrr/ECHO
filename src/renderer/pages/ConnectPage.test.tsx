@@ -198,10 +198,79 @@ const hqPlayerConnectStatus: ConnectSessionStatus = {
   updatedAt: '2026-05-21T01:00:00.000Z',
 };
 
+const dlnaDevice: ConnectDevice = {
+  id: 'dlna:uuid-streamer-1',
+  name: 'Living Room Streamer',
+  protocol: 'dlna',
+  model: 'N130',
+  manufacturer: 'Silent Angel',
+  address: '192.168.1.42',
+  capabilities: {
+    canPlay: true,
+    canPause: true,
+    canStop: true,
+    canSeek: true,
+    canSetVolume: true,
+    supportsMetadata: true,
+    supportsSetNext: false,
+    supportedMimeTypes: ['audio/flac', 'audio/wav', 'audio/mpeg'],
+    requiresTranscode: false,
+  },
+  state: 'available',
+  lastSeenAt: '2026-05-21T01:00:00.000Z',
+  unsupportedReason: null,
+  discovery: {
+    deviceType: 'urn:schemas-upnp-org:device:MediaRenderer:1',
+    descriptionUrl: 'http://192.168.1.42:49152/description.xml',
+    presentationUrl: null,
+    modelName: 'N130',
+    modelNumber: 'v2',
+    modelDescription: 'Network Transport',
+    serialNumber: 'SA-001',
+    udn: 'uuid-streamer-1',
+  },
+};
+
+const dlnaConnectStatus: ConnectSessionStatus = {
+  deviceId: dlnaDevice.id,
+  protocol: 'dlna',
+  state: 'playing',
+  currentTrackId: 'track-1',
+  metadata: {
+    title: 'Song',
+    artist: 'Artist',
+    album: 'Album',
+    albumArtist: null,
+    durationSeconds: 180,
+    coverHttpUrl: 'http://192.168.1.20:45000/connect/cover/token',
+  },
+  positionSeconds: 12,
+  durationSeconds: 180,
+  latencyMs: 86,
+  error: null,
+  updatedAt: '2026-05-21T01:00:00.000Z',
+  httpEvents: [
+    {
+      id: 'event-cover',
+      at: '2026-05-21T01:00:01.000Z',
+      remoteAddress: '192.168.1.42',
+      method: 'GET',
+      path: '/connect/cover/token',
+      kind: 'cover',
+      statusCode: 200,
+      bytes: 1234,
+      range: null,
+      userAgent: 'Matrix',
+      message: 'image/jpeg',
+    },
+  ],
+};
+
 const installEchoBridge = (
   status: HqPlayerStatus,
   settings: HqPlayerSettings = hqSettings,
   initialConnectStatus: ConnectSessionStatus = connectStatus,
+  devices: ConnectDevice[] = [hqPlayerDevice],
 ) => {
   const sentControl = hqControl('sent');
   const bridge = {
@@ -210,8 +279,8 @@ const installEchoBridge = (
       setSettings: vi.fn(),
     },
     connect: {
-      listDevices: vi.fn().mockResolvedValue([hqPlayerDevice]),
-      refresh: vi.fn().mockResolvedValue([hqPlayerDevice]),
+      listDevices: vi.fn().mockResolvedValue(devices),
+      refresh: vi.fn().mockResolvedValue(devices),
       getStatus: vi.fn().mockResolvedValue(initialConnectStatus),
       connect: vi.fn().mockResolvedValue(hqPlayerConnectStatus),
       disconnect: vi.fn().mockResolvedValue(connectStatus),
@@ -323,6 +392,44 @@ describe('ConnectPage HQPlayer controls', () => {
       }),
     ));
     expect(bridge.hqPlayer.sendLastPlaybackControl).not.toHaveBeenCalled();
+  });
+
+  it('shows DLNA streamer model, address, and metadata support directly in the device list', async () => {
+    installEchoBridge(hqStatus('available'), hqSettings, connectStatus, [dlnaDevice, hqPlayerDevice]);
+    render(<ConnectPage />);
+
+    await screen.findByText('Living Room Streamer');
+    expect(screen.getByText('DLNA / UPnP · Silent Angel · N130 · v2')).toBeTruthy();
+    expect(screen.getByText('局域网 192.168.1.42')).toBeTruthy();
+    expect(screen.getByText('可定位 · 可调音量 · 封面/元数据 · 可直连 · FLAC / WAV / MP3')).toBeTruthy();
+    expect(screen.getByText('1 台数播 · 2 个入口')).toBeTruthy();
+  });
+
+  it('shows wildcard DLNA format support without hiding the device capability', async () => {
+    installEchoBridge(hqStatus('available'), hqSettings, connectStatus, [{
+      ...dlnaDevice,
+      id: 'dlna:uuid-streamer-2',
+      name: 'Universal Streamer',
+      capabilities: {
+        ...dlnaDevice.capabilities,
+        supportedMimeTypes: ['*/*'],
+      },
+    }]);
+    render(<ConnectPage />);
+
+    await screen.findByText('Universal Streamer');
+    expect(screen.getByText('可定位 · 可调音量 · 封面/元数据 · 可直连 · 全格式接收')).toBeTruthy();
+  });
+
+  it('shows the active DLNA streamer and cover handoff in the now-playing panel', async () => {
+    installEchoBridge(hqStatus('available'), hqSettings, dlnaConnectStatus, [dlnaDevice, hqPlayerDevice]);
+    render(<ConnectPage />);
+
+    await screen.findByText('Living Room Streamer');
+    expect(screen.getByText('DLNA / UPnP · Living Room Streamer')).toBeTruthy();
+    expect(screen.getByText('Silent Angel · N130 · v2 · 局域网 192.168.1.42')).toBeTruthy();
+    expect(screen.getByText('封面 URL 已发送 · 投送握手 86ms · 状态轮询约 3s')).toBeTruthy();
+    expect(screen.getByText(/GET cover 200 1234B/u)).toBeTruthy();
   });
 
   it('connects local HQPlayer with the default desktop endpoint instead of requiring a typed port', async () => {

@@ -5501,7 +5501,13 @@ export class LibraryStore {
       };
     }
 
-    const totalRow = this.getRow('SELECT COUNT(*) AS total FROM album_tracks WHERE album_id = ?', albumId);
+    const totalRow = this.getRow(
+      `SELECT COUNT(*) AS total
+       FROM album_tracks
+       INNER JOIN tracks ON tracks.id = album_tracks.track_id
+       WHERE album_tracks.album_id = ? AND tracks.missing = 0`,
+      albumId,
+    );
     const rows = this.allRows(
       `SELECT
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,

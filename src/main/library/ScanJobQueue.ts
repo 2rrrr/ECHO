@@ -25,7 +25,7 @@ import type { FileScanner } from './workers/FileScanner';
 import type { MetadataReader } from './workers/MetadataReader';
 import { getNcmConverter } from './NcmConverter';
 import { FileIdentityService, QUICK_HASH_VERSION, type FileIdentityObservation } from './FileIdentityService';
-import { createCueTrackPath, readEmbeddedCueSheet, resolveCueTrack } from '../audio/CueSheet';
+import { createCueTrackPath, readCueSheet, readEmbeddedCueSheet, resolveCueTrack } from '../audio/CueSheet';
 import { preloadSearchIndexRomanizer } from './SearchIndexTokens';
 
 type ParsedScanItem = {
@@ -59,6 +59,11 @@ type IdentityUpdateItem = {
   identity: FileIdentityObservation | null;
 };
 
+type SidecarCueExpansion = {
+  trackFiles: ScannedAudioFile[];
+  audioPaths: string[];
+};
+
 type ScanJobQueueOptions = {
   coverCacheDir: string;
   metadataConcurrency?: number;
@@ -85,6 +90,7 @@ const maxScanErrorMessageLength = 512;
 const maxLocalScanPathCount = 1000;
 const temporaryExtensions = new Set(['.tmp', '.temp', '.part', '.crdownload', '.download', '.swp']);
 const ignoredTemporaryNames = new Set(['.ds_store', 'thumbs.db']);
+const cueAwareScannableAudioExtensions = [...SCANNABLE_AUDIO_EXTENSIONS, '.cue'];
 
 const classifyScanError = (message: string): string => {
   if (message.includes(': metadata')) {
@@ -884,6 +890,7 @@ export class ScanJobQueue {
 
     try {
       for await (const file of this.fileScanner.scanFolder(folder.path, {
+        audioExtensions: cueAwareScannableAudioExtensions,
         onFileSystemError,
         getDirectorySnapshot: (directoryPath) => directorySnapshots.get(this.pathCompareValue(resolve(directoryPath))) ?? null,
         onDirectorySnapshot: (snapshot) => {
@@ -892,7 +899,7 @@ export class ScanJobQueue {
       })) {
         this.throwIfCancelled(jobId);
         try {
-          files.push(...this.expandEmbeddedCueTracks(await this.normalizeScannedFile(file, folder.id)));
+          files.push(await this.normalizeScannedFile(file, folder.id));
         } catch (error) {
           errors.push(`${file.path}: ncm: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
         }
@@ -911,7 +918,7 @@ export class ScanJobQueue {
     }
 
     return {
-      files,
+      files: this.expandCueTracks(files, folder, errors),
       inaccessibleDirectories: Array.from(inaccessibleDirectories),
       protectedPaths: Array.from(protectedPaths),
       directorySnapshots: updatedSnapshots,
@@ -938,18 +945,18 @@ export class ScanJobQueue {
           continue;
         }
 
-        files.push(...this.expandEmbeddedCueTracks({
+        files.push({
           path: filePath,
           folderId: folder.id,
           sizeBytes: fileStat.size,
           mtimeMs: Math.round(fileStat.mtimeMs),
-        }));
+        });
       } catch {
         continue;
       }
     }
 
-    return files;
+    return this.expandCueTracks(files, folder, []);
   }
 
   private isLocalRescanCandidate(filePath: string): boolean {
@@ -966,7 +973,7 @@ export class ScanJobQueue {
       return false;
     }
 
-    return SCANNABLE_AUDIO_EXTENSIONS.has(extension);
+    return SCANNABLE_AUDIO_EXTENSIONS.has(extension) || extension === '.cue';
   }
 
   private shouldRescanStoredTrack(mode: LibraryScanMode, state: StoredTrackCoverState): boolean {
@@ -1201,6 +1208,82 @@ export class ScanJobQueue {
       ...file,
       path: createCueTrackPath(file.path, track.trackNumber),
     }));
+  }
+
+  private expandCueTracks(files: ScannedAudioFile[], folder: LibraryFolder, errors: string[]): ScannedAudioFile[] {
+    const sidecarTrackFilesByCuePath = new Map<string, ScannedAudioFile[]>();
+    const suppressedAudioPaths = new Set<string>();
+
+    for (const file of files) {
+      if (extname(file.path).toLowerCase() !== '.cue') {
+        continue;
+      }
+
+      try {
+        const expansion = this.expandSidecarCueTracks(file, folder);
+        if (expansion.trackFiles.length <= 1) {
+          continue;
+        }
+
+        sidecarTrackFilesByCuePath.set(resolve(file.path), expansion.trackFiles);
+        for (const audioPath of expansion.audioPaths) {
+          suppressedAudioPaths.add(this.pathCompareValue(resolve(audioPath)));
+        }
+      } catch (error) {
+        errors.push(`${file.path}: cue: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
+      }
+    }
+
+    const expanded: ScannedAudioFile[] = [];
+    for (const file of files) {
+      const normalizedPath = resolve(file.path);
+      const sidecarTracks = sidecarTrackFilesByCuePath.get(normalizedPath);
+      if (sidecarTracks) {
+        expanded.push(...sidecarTracks);
+        continue;
+      }
+
+      if (extname(file.path).toLowerCase() === '.cue' || suppressedAudioPaths.has(this.pathCompareValue(normalizedPath))) {
+        continue;
+      }
+
+      expanded.push(...this.expandEmbeddedCueTracks(file));
+    }
+
+    return expanded;
+  }
+
+  private expandSidecarCueTracks(cueFile: ScannedAudioFile, folder: LibraryFolder): SidecarCueExpansion {
+    const sheet = readCueSheet(cueFile.path);
+    const audioPaths = new Set<string>();
+    const trackFiles = sheet.tracks.flatMap((track) => {
+      const audioPath = resolve(track.audioPath);
+      if (!this.isPathInsideFolder(folder.path, audioPath)) {
+        return [];
+      }
+
+      try {
+        const audioStat = statSync(audioPath);
+        if (!audioStat.isFile()) {
+          return [];
+        }
+
+        audioPaths.add(audioPath);
+        return [{
+          path: createCueTrackPath(cueFile.path, track.trackNumber),
+          folderId: cueFile.folderId,
+          sizeBytes: cueFile.sizeBytes + audioStat.size,
+          mtimeMs: Math.max(cueFile.mtimeMs, Math.round(audioStat.mtimeMs)),
+        }];
+      } catch {
+        return [];
+      }
+    });
+
+    return {
+      trackFiles,
+      audioPaths: Array.from(audioPaths),
+    };
   }
 
   private resolvePhysicalAudioPath(filePath: string): string {

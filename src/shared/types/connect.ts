@@ -29,6 +29,17 @@ export type ConnectDeviceCapabilities = {
   requiresTranscode: boolean;
 };
 
+export type ConnectDeviceDiscovery = {
+  deviceType: string | null;
+  descriptionUrl: string | null;
+  presentationUrl: string | null;
+  modelName: string | null;
+  modelNumber: string | null;
+  modelDescription: string | null;
+  serialNumber: string | null;
+  udn: string | null;
+};
+
 export type ConnectDevice = {
   id: string;
   name: string;
@@ -40,6 +51,7 @@ export type ConnectDevice = {
   state: ConnectDeviceState;
   lastSeenAt: string | null;
   unsupportedReason: string | null;
+  discovery?: ConnectDeviceDiscovery;
 };
 
 export type ConnectMetadata = {
@@ -49,6 +61,20 @@ export type ConnectMetadata = {
   albumArtist: string | null;
   durationSeconds: number;
   coverHttpUrl: string;
+};
+
+export type ConnectHttpDebugEvent = {
+  id: string;
+  at: string;
+  remoteAddress: string | null;
+  method: string;
+  path: string;
+  kind: 'audio' | 'cover' | 'transcode' | 'unknown';
+  statusCode: number | null;
+  bytes: number | null;
+  range: string | null;
+  userAgent: string | null;
+  message: string | null;
 };
 
 export type ConnectSessionStatus = {
@@ -62,6 +88,7 @@ export type ConnectSessionStatus = {
   latencyMs: number | null;
   error: string | null;
   updatedAt: string;
+  httpEvents?: ConnectHttpDebugEvent[];
 };
 
 export type ConnectReceiverState = 'disabled' | 'idle' | 'ready' | 'loading' | 'playing' | 'paused' | 'stopped' | 'error';

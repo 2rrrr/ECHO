@@ -671,6 +671,8 @@ export type TranslationKey =
   | 'audioDrawer.option.fixedVolumeDescription'
   | 'audioDrawer.option.lowLoadPlaybackMode'
   | 'audioDrawer.option.lowLoadPlaybackModeDescription'
+  | 'audioDrawer.option.lowLoadPlaybackEnhancements'
+  | 'audioDrawer.option.lowLoadPlaybackEnhancementsDescription'
   | 'audioDrawer.option.showAsioPanelSettings'
   | 'audioDrawer.option.showAsioPanelSettingsDescription'
   | 'audioDrawer.option.alsaShared'
@@ -2705,6 +2707,8 @@ const zhCN: TranslationMap = {
   'audioDrawer.option.fixedVolumeDescription': '开启后会将 ECHO 音量控制锁定为 100%；ReplayGain 仍会独立生效。',
   'audioDrawer.option.lowLoadPlaybackMode': '低负载播放模式',
   'audioDrawer.option.lowLoadPlaybackModeDescription': '打开后播放期间禁用实时频谱、频繁播放页刷新、ReplayGain/BPM 重分析、逐字歌词高频刷新、自动歌词深搜、封面/艺人图抓取和 MV 预加载。',
+  'audioDrawer.option.lowLoadPlaybackEnhancements': '低负载增强保护',
+  'audioDrawer.option.lowLoadPlaybackEnhancementsDescription': '默认关闭。仅在低负载播放模式开启时生效，会进一步降低轮询、桌面歌词、诊断和后台库任务负载。',
   'audioDrawer.option.showAsioPanelSettings': '是否显示 ASIO 面板设置',
   'audioDrawer.option.showAsioPanelSettingsDescription': '默认关闭。开启后才在 ASIO 设备下显示“打开 ASIO 面板”按钮。',
   'audioDrawer.option.alsaShared': 'ALSA',
@@ -5015,6 +5019,8 @@ const zhTW: TranslationMap = {
   'audioDrawer.option.fixedVolumeDescription': '開啟後會將 ECHO 音量控制鎖定為 100%；ReplayGain 仍會獨立生效。',
   'audioDrawer.option.lowLoadPlaybackMode': '低負載播放模式',
   'audioDrawer.option.lowLoadPlaybackModeDescription': '開啟後播放期間停用即時頻譜、頻繁播放頁刷新、ReplayGain/BPM 重新分析、逐字歌詞高頻刷新、自動歌詞深搜、封面/藝人圖抓取和 MV 預載。',
+  'audioDrawer.option.lowLoadPlaybackEnhancements': '低負載增強保護',
+  'audioDrawer.option.lowLoadPlaybackEnhancementsDescription': '預設關閉。僅在低負載播放模式開啟時生效，會進一步降低輪詢、桌面歌詞、診斷和後台曲庫任務負載。',
   'audioDrawer.option.showAsioPanelSettings': '是否顯示 ASIO 面板設定',
   'audioDrawer.option.showAsioPanelSettingsDescription': '預設關閉。開啟後才會在 ASIO 裝置下顯示「開啟 ASIO 面板」按鈕。',
   'audioDrawer.option.alsaShared': 'ALSA',
@@ -6852,6 +6858,8 @@ const jaJP: TranslationMap = {
   'audioDrawer.option.fixedVolumeDescription': '有効にすると、ECHO の音量操作を 100% に固定します。ReplayGain は引き続き独立して有効です。',
   'audioDrawer.option.lowLoadPlaybackMode': '低負荷再生モード',
   'audioDrawer.option.lowLoadPlaybackModeDescription': '再生中のリアルタイムスペクトラム、頻繁な再生画面更新、ReplayGain/BPM 再解析、単語単位歌詞の高頻度更新、自動歌詞ディープ検索、カバー/アーティスト画像取得、MV プリロードを停止します。',
+  'audioDrawer.option.lowLoadPlaybackEnhancements': '低負荷強化保護',
+  'audioDrawer.option.lowLoadPlaybackEnhancementsDescription': '既定ではオフです。低負荷再生モードがオンの時だけ、ポーリング、デスクトップ歌詞、診断、バックグラウンドライブラリ処理をさらに抑えます。',
   'audioDrawer.option.showAsioPanelSettings': 'ASIO パネル設定を表示する',
   'audioDrawer.option.showAsioPanelSettingsDescription': '既定ではオフです。オンにすると ASIO デバイスの下に「ASIO パネルを開く」ボタンを表示します。',
   'audioDrawer.option.alsaShared': 'ALSA',
@@ -8760,6 +8768,8 @@ const enUS: TranslationMap = {
   'audioDrawer.option.fixedVolumeDescription': 'When enabled, ECHO volume control is locked at 100%; ReplayGain still applies independently.',
   'audioDrawer.option.lowLoadPlaybackMode': 'Low-Load Playback Mode',
   'audioDrawer.option.lowLoadPlaybackModeDescription': 'Disables real-time spectrum, frequent playback page refreshes, ReplayGain/BPM re-analysis, high-frequency word lyrics updates, automatic deep lyric search, cover/artist image fetching, and MV preload while playing.',
+  'audioDrawer.option.lowLoadPlaybackEnhancements': 'Enhanced Low-Load Protection',
+  'audioDrawer.option.lowLoadPlaybackEnhancementsDescription': 'Off by default. Only applies with Low-Load Playback Mode enabled, further reducing polling, desktop lyrics, diagnostics, and background library work.',
   'audioDrawer.option.showAsioPanelSettings': 'Show ASIO panel settings',
   'audioDrawer.option.showAsioPanelSettingsDescription': 'Off by default. When enabled, ASIO devices show an Open ASIO Panel button.',
   'audioDrawer.option.alsaShared': 'ALSA',

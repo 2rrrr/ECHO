@@ -60,6 +60,21 @@ let playbackStartGeneration = 0;
 
 const playbackCancellationErrorMessage = 'audio_session_run_cancelled';
 
+const setRemotePlaybackActive = (active: boolean): void => {
+  if (!active) {
+    getRemoteSourceService().setPlaybackActive(false);
+    return;
+  }
+
+  const settings = getAppSettings();
+  if (settings.lowLoadPlaybackModeEnabled === true && settings.lowLoadPlaybackEnhancementsEnabled === true) {
+    getRemoteSourceService().setPlaybackActive(true, { lowLoadEnhanced: true });
+    return;
+  }
+
+  getRemoteSourceService().setPlaybackActive(true);
+};
+
 const beginPlaybackStartRun = (): number => {
   playbackStartGeneration += 1;
   return playbackStartGeneration;
@@ -606,13 +621,6 @@ const normalizeGaplessOptions = (value: unknown): PlaybackStartRequest['gapless'
     enabled: input.enabled === true,
     nextItem: input.nextItem ? normalizeMediaItem(input.nextItem) : null,
     nextProbe: normalizeProbeHint(input.nextProbe),
-    upcomingItems: Array.isArray(input.upcomingItems) ? input.upcomingItems.slice(0, 3).map(normalizeMediaItem) : [],
-    upcomingProbes: Array.isArray(input.upcomingProbes)
-      ? input.upcomingProbes
-          .slice(0, 3)
-          .map(normalizeProbeHint)
-          .filter((probe): probe is NonNullable<ReturnType<typeof normalizeProbeHint>> => Boolean(probe))
-      : [],
   };
 };
 
@@ -636,7 +644,7 @@ const resolveMediaItemForPlayback = async (
   const item = request.item;
   let durationSeconds = item.duration && item.duration > 0 ? item.duration : null;
   if (item.mediaType === 'remote' && !durationSeconds) {
-    getRemoteSourceService().setPlaybackActive(true);
+    setRemotePlaybackActive(true);
     const refreshed = await getRemoteSourceService().refreshTrackMetadata(item.trackId);
     durationSeconds = refreshed?.duration && refreshed.duration > 0 ? refreshed.duration : null;
   }
@@ -938,25 +946,6 @@ const resolveGaplessRequest = async (
   }
 
   const prepared = await resolveMediaItemForPlayback({ item: gapless.nextItem });
-  const following = await Promise.all(
-    (gapless.upcomingItems ?? [])
-      .filter((item) => !(item.mediaType === 'streaming' && item.provider === 'spotify'))
-      .slice(0, 3)
-      .map(async (item, index) => {
-        const preparedItem = await resolveMediaItemForPlayback({ item });
-        return {
-          filePath: preparedItem.filePath,
-          inputHeaders: preparedItem.inputHeaders,
-          trackId: item.trackId,
-          replayGain: createReplayGainHintForMediaItem(item),
-          probe: createProbeHintForMediaItem(item, {
-            ...(gapless.upcomingProbes?.[index] ?? {}),
-            ...preparedItem.probe,
-          }),
-        };
-      }),
-  );
-
   return {
     enabled: true,
     next: {
@@ -969,7 +958,7 @@ const resolveGaplessRequest = async (
         ...prepared.probe,
       }),
     },
-    following,
+    following: [],
   };
 };
 
@@ -1128,7 +1117,7 @@ const recoverActiveMediaPlaybackFromExpiredUrl = async (
     const recoveredStatus = toPlaybackStatus();
     if (request.item.mediaType === 'remote' && recoveredStatus.durationMs > 0) {
       getRemoteSourceService().backfillDuration(request.item.trackId, recoveredStatus.durationMs / 1000);
-      getRemoteSourceService().setPlaybackActive(true);
+      setRemotePlaybackActive(true);
     }
     void syncSmtcStatus();
     reportPlaybackAudioRecovery(error, 'play-media-item-expired-url-retry', {
@@ -1452,7 +1441,7 @@ export const registerPlaybackIpc = (): void => {
           getRemoteSourceService().backfillDuration(item.trackId, status.durationMs / 1000);
         }
         if (item.mediaType === 'remote') {
-          getRemoteSourceService().setPlaybackActive(true);
+          setRemotePlaybackActive(true);
         }
         setActiveMediaPlayback(request);
         void syncSmtcStatus();
@@ -1502,7 +1491,7 @@ export const registerPlaybackIpc = (): void => {
             getRemoteSourceService().backfillDuration(item.trackId, status.durationMs / 1000);
           }
           if (item.mediaType === 'remote') {
-            getRemoteSourceService().setPlaybackActive(true);
+            setRemotePlaybackActive(true);
           }
           setActiveMediaPlayback(request);
           void syncSmtcStatus();
@@ -1558,7 +1547,7 @@ export const registerPlaybackIpc = (): void => {
     clearActiveMediaPlayback();
     beginPlaybackStartRun();
     getAudioSession().stop();
-    getRemoteSourceService().setPlaybackActive(false);
+    setRemotePlaybackActive(false);
     getPlaybackMemoryStore().clear();
     try {
       getPlaybackSessionStore().clearResume();
