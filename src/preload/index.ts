@@ -2025,6 +2025,8 @@ const echoApi: EchoApi = {
     importPackage: () => ipcRenderer.invoke(IpcChannels.PluginsImportPackage),
     runCommand: (request) => ipcRenderer.invoke(IpcChannels.PluginsRunCommand, request),
     queryMetadata: (request) => ipcRenderer.invoke(IpcChannels.PluginsQueryMetadata, request),
+    querySources: (request) => ipcRenderer.invoke(IpcChannels.PluginsQuerySources, request),
+    resolveSourcePlayback: (request) => ipcRenderer.invoke(IpcChannels.PluginsResolveSourcePlayback, request),
     getLogs: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsGetLogs, pluginId),
   },
   accounts: {

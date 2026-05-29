@@ -7,6 +7,7 @@ export const pluginPermissions = [
   'playback:control',
   'library:read',
   'library:write',
+  'sources:provide',
   'settings:read',
   'settings:write',
   'network',
@@ -54,6 +55,13 @@ export const pluginPermissionDescriptors: Record<PluginPermission, PluginPermiss
     description: '预留给未来曲库写入能力；v1 不提供实际写入 API。',
     risk: 'high',
     availability: 'reserved',
+  },
+  'sources:provide': {
+    permission: 'sources:provide',
+    label: '提供自定义音源',
+    description: '可注册用户自定义音源候选，并在用户触发播放时返回显式音频 URL。',
+    risk: 'medium',
+    availability: 'active',
   },
   'settings:read': {
     permission: 'settings:read',
@@ -103,10 +111,17 @@ export type PluginMetadataProviderContribution = {
   description?: string;
 };
 
+export type PluginSourceProviderContribution = {
+  id: string;
+  title: string;
+  description?: string;
+};
+
 export type PluginManifestContributes = {
   commands?: PluginCommandContribution[];
   panels?: PluginPanelContribution[];
   metadataProviders?: PluginMetadataProviderContribution[];
+  sourceProviders?: PluginSourceProviderContribution[];
   settings?: Array<{
     id: string;
     title: string;
@@ -226,6 +241,70 @@ export type PluginMetadataLookupResult = {
   }>;
 };
 
+export type PluginSourceSearchRequest = {
+  query: string;
+  page?: number;
+  pageSize?: number;
+  provider?: {
+    pluginId: string;
+    providerId: string;
+  };
+};
+
+export type PluginSourceTrack = {
+  providerTrackId: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  albumArtist?: string;
+  duration?: number | null;
+  coverUrl?: string | null;
+  webUrl?: string | null;
+  playable?: boolean;
+  unavailableReason?: string | null;
+  source?: string;
+};
+
+export type PluginSourceSearchProviderResult = {
+  tracks?: PluginSourceTrack[];
+  total?: number | null;
+  hasMore?: boolean;
+};
+
+export type PluginSourceProvider = PluginSourceProviderContribution & {
+  pluginId: string;
+};
+
+export type PluginSourceSearchResult = {
+  providers: PluginSourceProvider[];
+  tracks: Array<PluginSourceTrack & {
+    pluginId: string;
+    providerId: string;
+  }>;
+};
+
+export type PluginSourcePlaybackRequest = {
+  pluginId: string;
+  providerId: string;
+  providerTrackId: string;
+};
+
+export type PluginSourcePlaybackResult = {
+  pluginId: string;
+  providerId: string;
+  providerTrackId: string;
+  url: string;
+  expiresAt: string | null;
+  mimeType: string | null;
+  bitrate: number | null;
+  sampleRate: number | null;
+  bitDepth: number | null;
+  codec: string | null;
+  headers: Record<string, string>;
+  requiresProxy: boolean;
+  supportsRange: boolean;
+};
+
 export const pluginPanelBridgeChannel = 'echo:plugin-panel';
 export const pluginPanelBridgeVersion = 1;
 
@@ -303,6 +382,7 @@ export type PluginSecuritySummary = {
   sandboxedPanel: boolean;
   commandCount: number;
   metadataProviderCount: number;
+  sourceProviderCount: number;
 };
 
 export type PluginCommand = PluginCommandContribution & {
@@ -328,6 +408,7 @@ export type PluginSummary = {
   contributes: PluginManifestContributes;
   commands: PluginCommand[];
   metadataProviders: PluginMetadataProvider[];
+  sourceProviders: PluginSourceProvider[];
 };
 
 export type PluginListResult = {
@@ -346,7 +427,7 @@ export type PluginRunCommandRequest = {
   args?: unknown[];
 };
 
-export type PluginCreateExampleKind = 'playback-panel' | 'command-tool' | 'library-script';
+export type PluginCreateExampleKind = 'playback-panel' | 'command-tool' | 'library-script' | 'source-provider';
 
 export type PluginCreateExampleResult = {
   pluginId: string;

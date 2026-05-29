@@ -15,6 +15,7 @@ describe('plugin manifest validation', () => {
         commands: [{ id: 'Show_Status', title: '显示状态', description: '读取当前播放状态' }],
         panels: [{ id: 'Main', title: '主面板', path: 'panel.html' }],
         metadataProviders: [{ id: 'Online_Tags', title: '在线标签', description: '补充曲目信息' }],
+        sourceProviders: [{ id: 'Direct_Url', title: '直连音源', description: '用户自定义 URL' }],
         settings: [{ id: 'Mode', title: '模式' }],
       },
     }, 'echo.tools');
@@ -28,6 +29,7 @@ describe('plugin manifest validation', () => {
     expect(manifest.contributes?.commands?.[0]).toMatchObject({ id: 'show_status', title: '显示状态' });
     expect(manifest.contributes?.panels?.[0]).toMatchObject({ id: 'main', path: 'panel.html' });
     expect(manifest.contributes?.metadataProviders?.[0]).toMatchObject({ id: 'online_tags', title: '在线标签' });
+    expect(manifest.contributes?.sourceProviders?.[0]).toMatchObject({ id: 'direct_url', title: '直连音源' });
     expect(manifest.contributes?.settings?.[0]).toMatchObject({ id: 'mode', title: '模式' });
   });
 

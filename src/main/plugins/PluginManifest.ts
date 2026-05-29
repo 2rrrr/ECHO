@@ -8,6 +8,7 @@ import {
   type PluginMetadataProviderContribution,
   type PluginPanelContribution,
   type PluginPermission,
+  type PluginSourceProviderContribution,
 } from '../../shared/types/plugins';
 
 type PluginSettingContribution = NonNullable<PluginManifestContributes['settings']>[number];
@@ -147,6 +148,23 @@ const normalizeMetadataProvider = (value: unknown): PluginMetadataProviderContri
   }
 };
 
+const normalizeSourceProvider = (value: unknown): PluginSourceProviderContribution | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Partial<PluginSourceProviderContribution>;
+  try {
+    return {
+      id: normalizePluginId(input.id),
+      title: asText(input.title, 'source provider title', 80),
+      description: typeof input.description === 'string' && input.description.trim() ? input.description.trim().slice(0, 180) : undefined,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const normalizeContributes = (value: unknown): PluginManifestContributes => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -160,6 +178,11 @@ const normalizeContributes = (value: unknown): PluginManifestContributes => {
       ? input.metadataProviders
           .map(normalizeMetadataProvider)
           .filter((item): item is PluginMetadataProviderContribution => Boolean(item))
+      : [],
+    sourceProviders: Array.isArray(input.sourceProviders)
+      ? input.sourceProviders
+          .map(normalizeSourceProvider)
+          .filter((item): item is PluginSourceProviderContribution => Boolean(item))
       : [],
     settings: Array.isArray(input.settings)
       ? input.settings

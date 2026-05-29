@@ -12,6 +12,7 @@ const providerDisplayNames: Record<StreamingProviderName, string> = {
   spotify: 'Spotify',
   tidal: 'TIDAL',
   m3u8: 'M3U8',
+  plugin: '插件音源',
 };
 
 const defaultDescriptor = (provider: StreamingProvider): StreamingProviderDescriptor => ({
@@ -63,7 +64,7 @@ export class StreamingProviderRegistry {
         supportsDownload: false,
         supportsLyrics: false,
         supportsMv: false,
-        requiresAccount: name !== 'mock' && name !== 'm3u8',
+        requiresAccount: name !== 'mock' && name !== 'm3u8' && name !== 'plugin',
       };
     });
   }

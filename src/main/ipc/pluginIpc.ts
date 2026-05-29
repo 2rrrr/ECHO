@@ -1,6 +1,13 @@
 import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { PluginCreateExampleKind, PluginEnableRequest, PluginMetadataLookupRequest, PluginRunCommandRequest } from '../../shared/types/plugins';
+import type {
+  PluginCreateExampleKind,
+  PluginEnableRequest,
+  PluginMetadataLookupRequest,
+  PluginRunCommandRequest,
+  PluginSourcePlaybackRequest,
+  PluginSourceSearchRequest,
+} from '../../shared/types/plugins';
 import { getPluginService } from '../plugins/PluginService';
 
 const requireText = (value: unknown, field: string): string => {
@@ -10,7 +17,7 @@ const requireText = (value: unknown, field: string): string => {
   return value.trim();
 };
 
-const exampleKinds = new Set<PluginCreateExampleKind>(['playback-panel', 'command-tool', 'library-script']);
+const exampleKinds = new Set<PluginCreateExampleKind>(['playback-panel', 'command-tool', 'library-script', 'source-provider']);
 
 export const registerPluginIpc = (): void => {
   const service = getPluginService();
@@ -47,6 +54,18 @@ export const registerPluginIpc = (): void => {
       throw new Error('plugin metadata request must be an object');
     }
     return service.queryMetadata(request as PluginMetadataLookupRequest);
+  });
+  ipcMain.handle(IpcChannels.PluginsQuerySources, (_event, request: unknown) => {
+    if (!request || typeof request !== 'object' || Array.isArray(request)) {
+      throw new Error('plugin source search request must be an object');
+    }
+    return service.querySources(request as PluginSourceSearchRequest);
+  });
+  ipcMain.handle(IpcChannels.PluginsResolveSourcePlayback, (_event, request: unknown) => {
+    if (!request || typeof request !== 'object' || Array.isArray(request)) {
+      throw new Error('plugin source playback request must be an object');
+    }
+    return service.resolveSourcePlayback(request as PluginSourcePlaybackRequest);
   });
   ipcMain.handle(IpcChannels.PluginsGetLogs, (_event, pluginId: unknown) =>
     service.getLogs(typeof pluginId === 'string' && pluginId.trim() ? pluginId.trim() : undefined),

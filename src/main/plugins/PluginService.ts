@@ -32,6 +32,13 @@ import type {
   PluginPermission,
   PluginRunCommandRequest,
   PluginSecuritySummary,
+  PluginSourcePlaybackRequest,
+  PluginSourcePlaybackResult,
+  PluginSourceProvider,
+  PluginSourceSearchProviderResult,
+  PluginSourceSearchRequest,
+  PluginSourceSearchResult,
+  PluginSourceTrack,
   PluginSummary,
 } from '../../shared/types/plugins';
 import { getAppSettings, setAppSettings } from '../app/appSettings';
@@ -66,11 +73,20 @@ type RuntimeMetadataProvider = {
   handler: (request: PluginMetadataLookupRequest) => unknown;
 };
 
+type RuntimeSourceProvider = {
+  id: string;
+  title: string;
+  description?: string;
+  search: (request: PluginSourceSearchRequest) => unknown;
+  resolvePlayback?: (request: PluginSourcePlaybackRequest) => unknown;
+};
+
 type RuntimeRecord = {
   manifest: PluginManifest;
   directory: string;
   commands: Map<string, RuntimeCommand>;
   metadataProviders: Map<string, RuntimeMetadataProvider>;
+  sourceProviders: Map<string, RuntimeSourceProvider>;
   eventHandlers: Map<string, Set<(payload: unknown) => unknown>>;
   statusTimer: ReturnType<typeof setTimeout> | null;
   pendingStatus: AudioStatus | null;
@@ -97,6 +113,8 @@ const maxLogMessageLength = 1_000;
 const maxEventHandlersPerPlugin = 24;
 const maxMetadataProvidersPerPlugin = 8;
 const maxMetadataCandidatesPerProvider = 5;
+const maxSourceProvidersPerPlugin = 4;
+const maxSourceTracksPerProvider = 25;
 const playbackStatusThrottleMs = 500;
 const maxPluginLibraryPageSize = 100;
 const defaultPluginLibraryPageSize = 50;
@@ -109,6 +127,10 @@ const maxPluginCommandArgsBytes = 64 * 1024;
 const maxPluginCommandResultBytes = 256 * 1024;
 const maxPluginMetadataRequestBytes = 32 * 1024;
 const maxPluginMetadataResultBytes = 64 * 1024;
+const maxPluginSourceSearchRequestBytes = 32 * 1024;
+const maxPluginSourceSearchResultBytes = 128 * 1024;
+const maxPluginSourcePlaybackRequestBytes = 16 * 1024;
+const maxPluginSourcePlaybackResultBytes = 32 * 1024;
 const pluginCrashLoopWindowMs = 10 * 60 * 1_000;
 const pluginCrashLoopLimit = 3;
 const pluginPackageType = 'echo-next-plugin-package';
@@ -145,6 +167,18 @@ const metadataTextFieldMaxLengths: Partial<Record<keyof PluginMetadataCandidate,
   genre: 80,
   source: 80,
   sourceUrl: 500,
+};
+
+const sourceTrackTextFieldMaxLengths: Partial<Record<keyof PluginSourceTrack, number>> = {
+  providerTrackId: 180,
+  title: 180,
+  artist: 180,
+  album: 180,
+  albumArtist: 180,
+  coverUrl: 1_000,
+  webUrl: 1_000,
+  unavailableReason: 240,
+  source: 80,
 };
 
 const exampleTemplates: Record<PluginCreateExampleKind, { id: string; name: string; manifest: PluginManifest; script: string; panel?: string }> = {
@@ -252,6 +286,48 @@ const exampleTemplates: Record<PluginCreateExampleKind, { id: string; name: stri
       "echo.commands.register('count-library', { title: '统计曲库数量' }, async () => {",
       '  const summary = await echo.library.getSummary();',
       "  await echo.ui.notify(`当前曲库约 ${summary.trackCount || 0} 首。`);",
+      '});',
+    ].join('\n'),
+  },
+  'source-provider': {
+    id: 'echo.source-provider',
+    name: '自定义音源示例',
+    manifest: {
+      id: 'echo.source-provider',
+      name: '自定义音源示例',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: ['sources:provide'],
+      contributes: {
+        sourceProviders: [{ id: 'direct-url', title: 'Direct URL Demo' }],
+      },
+    },
+    script: [
+      'const demoTracks = [',
+      '  {',
+      "    providerTrackId: 'demo-stream',",
+      "    title: 'Demo stream',",
+      "    artist: 'Local plugin',",
+      "    album: 'Custom source',",
+      '    duration: null,',
+      '    playable: true,',
+      "    source: 'Direct URL Demo',",
+      "    url: 'https://example.com/audio/demo.mp3'",
+      '  }',
+      '];',
+      '',
+      "echo.sources.registerProvider('direct-url', { title: 'Direct URL Demo' }, {",
+      '  search: async ({ query }) => ({',
+      '    tracks: demoTracks',
+      '      .filter((track) => !query || `${track.title} ${track.artist}`.toLowerCase().includes(query.toLowerCase()))',
+      '      .map(({ url, ...track }) => track)',
+      '  }),',
+      '  resolvePlayback: async ({ providerTrackId }) => {',
+      '    const track = demoTracks.find((item) => item.providerTrackId === providerTrackId);',
+      "    if (!track) throw new Error('plugin_source_track_not_found');",
+      '    return { url: track.url, mimeType: "audio/mpeg", supportsRange: true };',
+      '  }',
       '});',
     ].join('\n'),
   },
@@ -469,6 +545,145 @@ const normalizePluginMetadataProviderResult = (value: unknown): PluginMetadataPr
         .slice(0, maxMetadataCandidatesPerProvider)
     : [];
   return { candidates };
+};
+
+const normalizePluginSourceSearchProvider = (value: unknown): PluginSourceSearchRequest['provider'] => {
+  const input = isRecord(value) ? value : {};
+  const pluginId = boundedText(input.pluginId, 120);
+  const providerId = boundedText(input.providerId, 120);
+  return pluginId && providerId ? { pluginId, providerId } : undefined;
+};
+
+const normalizePluginSourceSearchRequest = (value: unknown): PluginSourceSearchRequest => {
+  const input = isRecord(value) ? value : {};
+  const provider = normalizePluginSourceSearchProvider(input.provider);
+  return {
+    query: boundedText(input.query, 180) ?? '',
+    page: normalizePositiveInteger(input.page, 1, 10_000),
+    pageSize: normalizePositiveInteger(input.pageSize, 20, maxSourceTracksPerProvider),
+    ...(provider ? { provider } : {}),
+  };
+};
+
+const normalizePluginSourceTrack = (value: unknown): PluginSourceTrack | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const providerTrackId = boundedText(value.providerTrackId, sourceTrackTextFieldMaxLengths.providerTrackId ?? 180);
+  const title = boundedText(value.title, sourceTrackTextFieldMaxLengths.title ?? 180);
+  if (!providerTrackId || !title) {
+    return null;
+  }
+
+  const track: PluginSourceTrack = { providerTrackId, title };
+  for (const [field, maxLength] of Object.entries(sourceTrackTextFieldMaxLengths) as Array<[keyof PluginSourceTrack, number]>) {
+    if (field === 'providerTrackId' || field === 'title') {
+      continue;
+    }
+    const text = boundedText(value[field], maxLength);
+    if (text) {
+      track[field] = text as never;
+    }
+  }
+
+  if (value.duration === null) {
+    track.duration = null;
+  } else {
+    const duration = boundedPositiveNumber(value.duration, 24 * 60 * 60);
+    if (duration) {
+      track.duration = duration;
+    }
+  }
+  if (typeof value.playable === 'boolean') {
+    track.playable = value.playable;
+  }
+
+  return track;
+};
+
+const normalizePluginSourceSearchResult = (value: unknown): PluginSourceSearchProviderResult => {
+  const input = isRecord(value) ? value : {};
+  const tracks = Array.isArray(input.tracks)
+    ? input.tracks
+        .map(normalizePluginSourceTrack)
+        .filter((item): item is PluginSourceTrack => Boolean(item))
+        .slice(0, maxSourceTracksPerProvider)
+    : [];
+  const total = input.total === null ? null : boundedInteger(input.total, 1_000_000) ?? null;
+  return {
+    tracks,
+    total,
+    hasMore: typeof input.hasMore === 'boolean' ? input.hasMore : false,
+  };
+};
+
+const normalizePluginHeaders = (value: unknown): Record<string, string> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const headers: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(value).slice(0, 24)) {
+    const key = boundedText(rawKey, 80);
+    const headerValue = boundedText(rawValue, 500);
+    if (key && headerValue && /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/u.test(key)) {
+      headers[key] = headerValue;
+    }
+  }
+  return headers;
+};
+
+const normalizePluginPlaybackUrl = (value: unknown): string => {
+  const url = boundedText(value, 2_000);
+  if (!url) {
+    throw new Error('plugin_source_playback_url_invalid');
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('plugin_source_playback_url_invalid');
+    }
+    return parsed.toString();
+  } catch {
+    throw new Error('plugin_source_playback_url_invalid');
+  }
+};
+
+const normalizePluginSourcePlaybackRequest = (value: unknown): PluginSourcePlaybackRequest => {
+  const input = isRecord(value) ? value : {};
+  const pluginId = boundedText(input.pluginId, 120);
+  const providerId = boundedText(input.providerId, 120);
+  const providerTrackId = boundedText(input.providerTrackId, 180);
+  if (!pluginId || !providerId || !providerTrackId) {
+    throw new Error('plugin_source_playback_request_invalid');
+  }
+  return { pluginId, providerId, providerTrackId };
+};
+
+const normalizePluginSourcePlaybackResult = (
+  value: unknown,
+  request: PluginSourcePlaybackRequest,
+): PluginSourcePlaybackResult => {
+  const input = isRecord(value) ? value : {};
+  const bitrate = boundedInteger(input.bitrate, 2_000_000) ?? null;
+  const sampleRate = boundedInteger(input.sampleRate, 768_000) ?? null;
+  const bitDepth = boundedInteger(input.bitDepth, 64) ?? null;
+  return {
+    pluginId: request.pluginId,
+    providerId: request.providerId,
+    providerTrackId: request.providerTrackId,
+    url: normalizePluginPlaybackUrl(input.url),
+    expiresAt: boundedText(input.expiresAt, 80) ?? null,
+    mimeType: boundedText(input.mimeType, 120) ?? null,
+    bitrate,
+    sampleRate,
+    bitDepth,
+    codec: boundedText(input.codec, 80) ?? null,
+    headers: normalizePluginHeaders(input.headers),
+    requiresProxy: Boolean(input.requiresProxy),
+    supportsRange: input.supportsRange !== false,
+  };
 };
 
 const timeout = <T>(promise: Promise<T>, timeoutMs: number, errorCode: string): Promise<T> =>
@@ -787,6 +1002,88 @@ export class PluginService {
     return { providers, candidates };
   }
 
+  async querySources(request: PluginSourceSearchRequest): Promise<PluginSourceSearchResult> {
+    this.scan();
+    const safeRequest = normalizePluginSourceSearchRequest(request);
+    assertJsonByteLimit(safeRequest, maxPluginSourceSearchRequestBytes, 'plugin_source_search_request_too_large');
+
+    const providers: PluginSourceProvider[] = [];
+    const tracks: PluginSourceSearchResult['tracks'] = [];
+
+    for (const record of this.records.values()) {
+      if (!record.enabled || !record.manifest) {
+        continue;
+      }
+      if (safeRequest.provider && safeRequest.provider.pluginId !== record.manifest.id) {
+        continue;
+      }
+
+      const runtime = await this.ensureRuntime(record.manifest.id);
+      for (const provider of runtime.sourceProviders.values()) {
+        if (safeRequest.provider && safeRequest.provider.providerId !== provider.id) {
+          continue;
+        }
+        providers.push({
+          id: provider.id,
+          title: provider.title,
+          description: provider.description,
+          pluginId: record.manifest.id,
+        });
+        try {
+          const rawResult = await timeout(
+            Promise.resolve(provider.search(jsonClone(safeRequest))),
+            metadataProviderTimeoutMs,
+            'plugin_source_provider_timeout',
+          );
+          assertJsonByteLimit(rawResult, maxPluginSourceSearchResultBytes, 'plugin_source_search_result_too_large');
+          const result = normalizePluginSourceSearchResult(rawResult);
+          for (const track of result.tracks ?? []) {
+            tracks.push({
+              ...track,
+              pluginId: record.manifest.id,
+              providerId: provider.id,
+            });
+          }
+        } catch (error) {
+          this.recordPluginErrorActivity(record.manifest.id);
+          this.log(record.manifest.id, 'error', `音源 provider 失败：${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+
+    return { providers, tracks };
+  }
+
+  async resolveSourcePlayback(request: PluginSourcePlaybackRequest): Promise<PluginSourcePlaybackResult> {
+    this.scan();
+    const safeRequest = normalizePluginSourcePlaybackRequest(request);
+    assertJsonByteLimit(safeRequest, maxPluginSourcePlaybackRequestBytes, 'plugin_source_playback_request_too_large');
+    const record = this.requireRecord(safeRequest.pluginId);
+    if (!record.enabled || !record.manifest) {
+      throw new Error('plugin_not_enabled');
+    }
+
+    const runtime = await this.ensureRuntime(record.manifest.id);
+    const provider = runtime.sourceProviders.get(safeRequest.providerId);
+    if (!provider?.resolvePlayback) {
+      throw new Error('plugin_source_provider_not_playable');
+    }
+
+    try {
+      const rawResult = await timeout(
+        Promise.resolve(provider.resolvePlayback(jsonClone(safeRequest))),
+        metadataProviderTimeoutMs,
+        'plugin_source_provider_timeout',
+      );
+      assertJsonByteLimit(rawResult, maxPluginSourcePlaybackResultBytes, 'plugin_source_playback_result_too_large');
+      return normalizePluginSourcePlaybackResult(rawResult, safeRequest);
+    } catch (error) {
+      this.recordPluginErrorActivity(record.manifest.id);
+      this.log(record.manifest.id, 'error', `音源解析失败：${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
   getLogs(pluginId?: string): PluginLogEntry[] {
     return this.logs.filter((entry) => !pluginId || entry.pluginId === pluginId);
   }
@@ -918,6 +1215,7 @@ export class PluginService {
       directory: record.directory,
       commands: new Map(),
       metadataProviders: new Map(),
+      sourceProviders: new Map(),
       eventHandlers: new Map(),
       statusTimer: null,
       pendingStatus: null,
@@ -980,6 +1278,39 @@ export class PluginService {
             title: isRecord(options) && typeof options.title === 'string' && options.title.trim() ? options.title.trim() : id,
             description: isRecord(options) && typeof options.description === 'string' && options.description.trim() ? options.description.trim() : undefined,
             handler: actualHandler,
+          });
+        },
+      }),
+      sources: Object.freeze({
+        registerProvider: (
+          providerId: string,
+          options: { title?: unknown; description?: unknown } | {
+            search?: unknown;
+            resolvePlayback?: unknown;
+          },
+          handlers?: {
+            search?: unknown;
+            resolvePlayback?: unknown;
+          },
+        ): void => {
+          requirePermission('sources:provide');
+          const optionsRecord: Record<string, unknown> = isRecord(options) ? options : {};
+          const actualHandlers = handlers ?? ('search' in optionsRecord || 'resolvePlayback' in optionsRecord ? optionsRecord : {});
+          const search = isRecord(actualHandlers) ? actualHandlers.search : undefined;
+          const resolvePlayback = isRecord(actualHandlers) ? actualHandlers.resolvePlayback : undefined;
+          if (typeof providerId !== 'string' || !providerId.trim() || typeof search !== 'function') {
+            throw new Error('plugin_source_provider_invalid');
+          }
+          if (runtime.sourceProviders.size >= maxSourceProvidersPerPlugin) {
+            throw new Error('plugin_source_provider_limit');
+          }
+          const id = providerId.trim();
+          runtime.sourceProviders.set(id, {
+            id,
+            title: typeof optionsRecord.title === 'string' && optionsRecord.title.trim() ? optionsRecord.title.trim() : id,
+            description: typeof optionsRecord.description === 'string' && optionsRecord.description.trim() ? optionsRecord.description.trim() : undefined,
+            search: search as (request: PluginSourceSearchRequest) => unknown,
+            resolvePlayback: typeof resolvePlayback === 'function' ? resolvePlayback as (request: PluginSourcePlaybackRequest) => unknown : undefined,
           });
         },
       }),
@@ -1165,6 +1496,15 @@ export class PluginService {
         pluginId: manifest?.id ?? basename(record.directory),
       })) : []),
     ];
+    const sourceProviders: PluginSourceProvider[] = [
+      ...(contributes.sourceProviders ?? []).map((provider) => ({ ...provider, pluginId: manifest?.id ?? basename(record.directory) })),
+      ...(runtime ? [...runtime.sourceProviders.values()].map((provider) => ({
+        id: provider.id,
+        title: provider.title,
+        description: provider.description,
+        pluginId: manifest?.id ?? basename(record.directory),
+      })) : []),
+    ];
 
     return {
       id: manifest?.id ?? basename(record.directory),
@@ -1185,6 +1525,7 @@ export class PluginService {
       contributes,
       commands: commands.filter((command, index, list) => list.findIndex((item) => item.id === command.id) === index),
       metadataProviders: metadataProviders.filter((provider, index, list) => list.findIndex((item) => item.id === provider.id && item.pluginId === provider.pluginId) === index),
+      sourceProviders: sourceProviders.filter((provider, index, list) => list.findIndex((item) => item.id === provider.id && item.pluginId === provider.pluginId) === index),
     };
   }
 
@@ -1192,6 +1533,8 @@ export class PluginService {
     const requestedPermissions = record.manifest?.permissions ?? [];
     const manifestProviderCount = record.manifest?.contributes?.metadataProviders?.length ?? 0;
     const runtimeProviderCount = record.manifest ? this.runtimes.get(record.manifest.id)?.metadataProviders.size ?? 0 : 0;
+    const manifestSourceProviderCount = record.manifest?.contributes?.sourceProviders?.length ?? 0;
+    const runtimeSourceProviderCount = record.manifest ? this.runtimes.get(record.manifest.id)?.sourceProviders.size ?? 0 : 0;
     return {
       requestedPermissionCount: requestedPermissions.length,
       trustedPermissionCount: record.trustedPermissions.length,
@@ -1204,6 +1547,7 @@ export class PluginService {
       sandboxedPanel: Boolean(record.manifest?.panel),
       commandCount: commands.filter((command, index, list) => list.findIndex((item) => item.id === command.id) === index).length,
       metadataProviderCount: Math.max(manifestProviderCount, runtimeProviderCount),
+      sourceProviderCount: Math.max(manifestSourceProviderCount, runtimeSourceProviderCount),
     };
   }
 

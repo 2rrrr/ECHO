@@ -7,6 +7,8 @@ type EchoPluginPermission =
   | 'library:read'
   /** Reserved in v1: declared for forward compatibility, but no write API is exposed. */
   | 'library:write'
+  /** Active: register custom source providers that return bounded track candidates and explicit audio URLs. */
+  | 'sources:provide'
   /** Active: read an application settings snapshot. */
   | 'settings:read'
   /** Active high-risk permission: write a small settings patch, not a full settings object. */
@@ -110,6 +112,65 @@ type EchoPluginMetadataProviderOptions = {
   description?: string;
 };
 
+type EchoPluginSourceSearchRequest = {
+  query: string;
+  page?: number;
+  pageSize?: number;
+  provider?: {
+    pluginId: string;
+    providerId: string;
+  };
+};
+
+type EchoPluginSourceTrack = {
+  providerTrackId: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  albumArtist?: string;
+  duration?: number | null;
+  coverUrl?: string | null;
+  webUrl?: string | null;
+  playable?: boolean;
+  unavailableReason?: string | null;
+  source?: string;
+};
+
+type EchoPluginSourceSearchResult = {
+  tracks?: EchoPluginSourceTrack[];
+  total?: number | null;
+  hasMore?: boolean;
+};
+
+type EchoPluginSourcePlaybackRequest = {
+  pluginId: string;
+  providerId: string;
+  providerTrackId: string;
+};
+
+type EchoPluginSourcePlaybackResult = {
+  url: string;
+  expiresAt?: string | null;
+  mimeType?: string | null;
+  bitrate?: number | null;
+  sampleRate?: number | null;
+  bitDepth?: number | null;
+  codec?: string | null;
+  headers?: Record<string, string>;
+  requiresProxy?: boolean;
+  supportsRange?: boolean;
+};
+
+type EchoPluginSourceProviderOptions = {
+  title?: string;
+  description?: string;
+};
+
+type EchoPluginSourceProviderHandlers = {
+  search(request: EchoPluginSourceSearchRequest): EchoPluginSourceSearchResult | Promise<EchoPluginSourceSearchResult>;
+  resolvePlayback?(request: EchoPluginSourcePlaybackRequest): EchoPluginSourcePlaybackResult | Promise<EchoPluginSourcePlaybackResult>;
+};
+
 type EchoPluginTrackQuery = {
   page?: number;
   pageSize?: number;
@@ -141,6 +202,7 @@ type EchoPluginCommandOptions = {
  * - commands time out after 2 seconds
  * - async event handlers that exceed 2 seconds are logged as timeouts
  * - metadata providers return candidates only; the host decides whether and how to apply them
+ * - source providers return bounded track candidates; playback must resolve to explicit http/https audio URLs
  * - plugins do not get Node, Electron, SQLite, app DOM, decoder, DSP, or output access
  */
 type EchoPluginApi = {
@@ -156,6 +218,10 @@ type EchoPluginApi = {
   metadata: {
     registerProvider(providerId: string, handler: (request: EchoPluginMetadataLookupRequest) => EchoPluginMetadataProviderResult | Promise<EchoPluginMetadataProviderResult>): void;
     registerProvider(providerId: string, options: EchoPluginMetadataProviderOptions, handler: (request: EchoPluginMetadataLookupRequest) => EchoPluginMetadataProviderResult | Promise<EchoPluginMetadataProviderResult>): void;
+  };
+  sources: {
+    registerProvider(providerId: string, handlers: EchoPluginSourceProviderHandlers): void;
+    registerProvider(providerId: string, options: EchoPluginSourceProviderOptions, handlers: EchoPluginSourceProviderHandlers): void;
   };
   playback: {
     getStatus(): Promise<EchoPlaybackStatus>;

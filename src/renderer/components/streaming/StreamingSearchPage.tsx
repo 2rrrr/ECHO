@@ -55,8 +55,8 @@ const defaultCover = `data:image/svg+xml;utf8,${encodeURIComponent(
 )}`;
 
 const hiddenProviderTabs = new Set<StreamingProviderName>(['mock', 'm3u8']);
-const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'soundcloud', 'youtube', 'tidal', 'spotify', 'bilibili'];
-const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'tidal', 'bilibili', 'youtube']);
+const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'plugin', 'soundcloud', 'youtube', 'tidal', 'spotify', 'bilibili'];
+const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'tidal', 'bilibili', 'youtube', 'plugin']);
 const favoriteProviders = new Set<StreamingProviderName>(['bilibili', 'youtube', 'soundcloud']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
 const providerCacheTtlMs = 30_000;
@@ -370,6 +370,12 @@ export const StreamingSearchPage = (): JSX.Element => {
       setActiveTab('track');
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (provider === 'plugin' && activeTab !== 'track') {
+      setActiveTab('track');
+    }
+  }, [activeTab, provider]);
 
   useEffect(() => {
     resultRef.current = result;

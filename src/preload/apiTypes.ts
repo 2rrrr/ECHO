@@ -182,6 +182,10 @@ import type {
   PluginMetadataLookupRequest,
   PluginMetadataLookupResult,
   PluginRunCommandRequest,
+  PluginSourcePlaybackRequest,
+  PluginSourcePlaybackResult,
+  PluginSourceSearchRequest,
+  PluginSourceSearchResult,
   PluginSummary,
 } from '../shared/types/plugins';
 import type { SmtcCommand, SmtcDiagnostics, SmtcLyricsProgress } from '../shared/types/smtc';
@@ -704,6 +708,8 @@ export type EchoApi = {
     importPackage: () => Promise<PluginImportPackageResult | null>;
     runCommand: (request: PluginRunCommandRequest) => Promise<unknown>;
     queryMetadata: (request: PluginMetadataLookupRequest) => Promise<PluginMetadataLookupResult>;
+    querySources: (request: PluginSourceSearchRequest) => Promise<PluginSourceSearchResult>;
+    resolveSourcePlayback: (request: PluginSourcePlaybackRequest) => Promise<PluginSourcePlaybackResult>;
     getLogs: (pluginId?: string) => Promise<PluginLogEntry[]>;
   };
   accounts: {

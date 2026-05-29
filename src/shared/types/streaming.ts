@@ -1,4 +1,4 @@
-export type StreamingProviderName = 'mock' | 'netease' | 'qqmusic' | 'bilibili' | 'youtube' | 'soundcloud' | 'spotify' | 'tidal' | 'm3u8';
+export type StreamingProviderName = 'mock' | 'netease' | 'qqmusic' | 'bilibili' | 'youtube' | 'soundcloud' | 'spotify' | 'tidal' | 'm3u8' | 'plugin';
 export type StreamingFavoriteProviderName = Extract<StreamingProviderName, 'bilibili' | 'youtube' | 'soundcloud'>;
 
 export type StreamingMediaType = 'track' | 'album' | 'artist' | 'playlist' | 'mv';
@@ -18,6 +18,7 @@ export const streamingProviderNames: StreamingProviderName[] = [
   'spotify',
   'tidal',
   'm3u8',
+  'plugin',
 ];
 
 export const streamingStableKey = (provider: StreamingProviderName, providerTrackId: string): string =>

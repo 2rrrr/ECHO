@@ -505,4 +505,111 @@ describe('PluginService', () => {
     });
     expect(service.getLogs('echo.metadata-timeout').some((entry) => entry.message.includes('plugin_metadata_provider_timeout'))).toBe(true);
   });
+
+  it('registers bounded custom source providers and resolves explicit playback URLs', async () => {
+    const manifest: PluginManifest = {
+      id: 'echo.source-provider',
+      name: 'Source Provider',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: ['sources:provide'],
+      contributes: {
+        sourceProviders: [{ id: 'direct', title: 'Direct URL' }],
+      },
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.sources.registerProvider('direct', { title: 'Direct URL' }, {",
+      '  search: async ({ query }) => ({',
+      '    total: 1,',
+      '    tracks: [{',
+      "      providerTrackId: 'song-1',",
+      "      title: `${query} Result`,",
+      "      artist: 'Plugin Artist',",
+      "      album: 'Plugin Album',",
+      '      duration: 180,',
+      '      playable: true,',
+      "      ignored: 'nope'",
+      '    }]',
+      '  }),',
+      '  resolvePlayback: async ({ providerTrackId }) => ({',
+      '    url: `https://example.com/${providerTrackId}.mp3`,',
+      "    mimeType: 'audio/mpeg',",
+      '    bitrate: 999999999,',
+      '    headers: { Range: "bytes=0-", "Bad Header": "nope" },',
+      '    supportsRange: true',
+      '  })',
+      '});',
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.source-provider', trustedPermissions: ['sources:provide'] });
+
+    const result = await service.querySources({ query: 'Song', pageSize: 1000 });
+
+    expect(result.providers).toEqual([{ id: 'direct', title: 'Direct URL', pluginId: 'echo.source-provider' }]);
+    expect(result.tracks).toEqual([{
+      providerTrackId: 'song-1',
+      title: 'Song Result',
+      artist: 'Plugin Artist',
+      album: 'Plugin Album',
+      duration: 180,
+      playable: true,
+      pluginId: 'echo.source-provider',
+      providerId: 'direct',
+    }]);
+    await expect(service.resolveSourcePlayback({
+      pluginId: 'echo.source-provider',
+      providerId: 'direct',
+      providerTrackId: 'song-1',
+    })).resolves.toMatchObject({
+      pluginId: 'echo.source-provider',
+      providerId: 'direct',
+      providerTrackId: 'song-1',
+      url: 'https://example.com/song-1.mp3',
+      mimeType: 'audio/mpeg',
+      bitrate: 2000000,
+      headers: { Range: 'bytes=0-' },
+      supportsRange: true,
+    });
+    expect(service.list().plugins[0].security.sourceProviderCount).toBe(1);
+  });
+
+  it('requires source permission and rejects unsafe source playback URLs', async () => {
+    const deniedManifest: PluginManifest = {
+      id: 'echo.source-denied',
+      name: 'Source Denied',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: [],
+    };
+    writePlugin(pluginRoot, deniedManifest, [
+      "echo.sources.registerProvider('denied', { search: () => ({ tracks: [{ providerTrackId: 'x', title: 'Nope' }] }) });",
+    ].join('\n'));
+    service.enable({ pluginId: 'echo.source-denied', trustedPermissions: [] });
+    await expect(service.querySources({ query: 'Song' })).resolves.toEqual({ providers: [], tracks: [] });
+    expect(service.getLogs('echo.source-denied').some((entry) => entry.message.includes('plugin_permission_denied:sources:provide'))).toBe(true);
+
+    const unsafeManifest: PluginManifest = {
+      id: 'echo.source-unsafe',
+      name: 'Source Unsafe',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: ['sources:provide'],
+    };
+    writePlugin(pluginRoot, unsafeManifest, [
+      "echo.sources.registerProvider('unsafe', {",
+      "  search: () => ({ tracks: [{ providerTrackId: 'file', title: 'File URL', playable: true }] }),",
+      "  resolvePlayback: () => ({ url: 'file:///C:/Music/song.flac' })",
+      '});',
+    ].join('\n'));
+    service.enable({ pluginId: 'echo.source-unsafe', trustedPermissions: ['sources:provide'] });
+
+    await expect(service.resolveSourcePlayback({
+      pluginId: 'echo.source-unsafe',
+      providerId: 'unsafe',
+      providerTrackId: 'file',
+    })).rejects.toThrow('plugin_source_playback_url_invalid');
+  });
 });

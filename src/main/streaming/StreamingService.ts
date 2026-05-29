@@ -46,6 +46,7 @@ import { SoundCloudStreamingProvider } from './providers/SoundCloudStreamingProv
 import { SpotifyStreamingProvider } from './providers/SpotifyStreamingProvider';
 import { TidalStreamingProvider } from './providers/TidalStreamingProvider';
 import { M3u8StreamingProvider } from './providers/M3u8StreamingProvider';
+import { PluginStreamingProvider } from './providers/PluginStreamingProvider';
 import { buildM3u8StreamingPlaylistDetail } from './M3u8Playlist';
 
 const searchTtlMs = 5 * 60 * 1000;
@@ -590,13 +591,13 @@ export class StreamingService {
     }
 
     const sqliteHit = this.cacheStore.getApiCache<StreamingSearchResult>(key);
-    if (sqliteHit) {
+    if (normalized.provider !== 'plugin' && sqliteHit) {
       this.memoryCache.set(key, sqliteHit, searchTtlMs);
       return { ...sqliteHit, cached: true };
     }
 
     const staleSqliteHit = this.cacheStore.getApiCache<StreamingSearchResult>(key, { allowExpired: true });
-    if (staleSqliteHit) {
+    if (normalized.provider !== 'plugin' && staleSqliteHit) {
       void this.refreshSearchCache(normalized, key);
       return { ...staleSqliteHit, cached: true };
     }
@@ -1037,8 +1038,10 @@ export class StreamingService {
       ...result,
       tracks: result.tracks.map((track) => this.normalizeTrack(result.provider, track)),
     };
-    this.cacheStore.upsertTracks(normalizedResult.tracks);
-    this.cacheStore.setApiCache(request.provider, 'search', key, normalizedResult, expiresAtFromTtl(searchTtlMs));
+    if (request.provider !== 'plugin') {
+      this.cacheStore.upsertTracks(normalizedResult.tracks);
+      this.cacheStore.setApiCache(request.provider, 'search', key, normalizedResult, expiresAtFromTtl(searchTtlMs));
+    }
     return this.memoryCache.set(key, normalizedResult, searchTtlMs);
   }
 
@@ -1103,6 +1106,7 @@ export const createStreamingService = (database: EchoDatabase): StreamingService
   registry.register(new SpotifyStreamingProvider());
   registry.register(new TidalStreamingProvider());
   registry.register(new M3u8StreamingProvider());
+  registry.register(new PluginStreamingProvider());
   return new StreamingService(
     registry,
     new StreamingCacheStore(database, (playlistId) => backupPlaylistIfEnabled(database, playlistId, 'streaming-refresh', getAppSettings)),

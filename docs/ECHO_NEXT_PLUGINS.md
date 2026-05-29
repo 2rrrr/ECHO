@@ -50,6 +50,9 @@ plugins/
     "metadataProviders": [
       { "id": "tags", "title": "标签补全" }
     ],
+    "sourceProviders": [
+      { "id": "direct-url", "title": "自定义音源" }
+    ],
     "panels": [
       { "id": "main", "title": "插件面板", "path": "panel.html" }
     ]
@@ -67,6 +70,7 @@ plugins/
 - `permissions`：插件请求的权限，启用时由用户确认。
 - `contributes.commands`：插件声明或运行时注册的命令。
 - `contributes.metadataProviders`：插件声明的元数据候选来源。v1 只返回候选，不自动写库。
+- `contributes.sourceProviders`：插件声明的自定义音源来源。v1 只返回搜索候选，并在用户触发播放时解析显式音频 URL。
 - `contributes.panels`：插件声明的面板入口。
 
 ## 权限
@@ -76,6 +80,7 @@ plugins/
 - `playback:read`：读取播放状态。已开放。
 - `playback:control`：控制播放、暂停、停止、跳转。已开放。
 - `library:read`：分页读取曲库摘要和公开曲目字段。已开放。
+- `sources:provide`：注册自定义音源 provider，返回候选曲目和显式音频 URL。已开放。
 - `settings:read`：读取应用设置快照。已开放。
 - `settings:write`：写入小型设置 patch。高风险，插件不应该写整份 settings。
 - `library:write`：预留给未来曲库写入能力。v1 不提供实际写入 API。
@@ -107,6 +112,7 @@ echo.commands.register('show-status', { title: '显示播放状态' }, async () 
 - `echo.events.on(eventName, handler)`：监听宿主事件。当前常用事件是 `playback:status`，播放状态最多 2Hz 合并推送。
 - `echo.commands.register(commandId, options, handler)`：注册插件命令。命令有超时和 payload 大小保护，失败会记录日志。
 - `echo.metadata.registerProvider(providerId, options, handler)`：注册元数据 provider。需要 `library:read`，只返回候选，不直接写曲库。
+- `echo.sources.registerProvider(providerId, options, handlers)`：注册自定义音源 provider。需要 `sources:provide`，搜索只返回候选，播放解析只接受 `http` / `https` 音频 URL。
 - `echo.playback.getStatus()`：需要 `playback:read`。
 - `echo.playback.play()` / `pause()` / `stop()` / `seek(seconds)`：需要 `playback:control`。
 - `echo.library.getSummary()` / `getTracks(query)`：需要 `library:read`。`getTracks` 默认返回轻量字段，单页最大 100 首。
@@ -175,6 +181,49 @@ echo.metadata.registerProvider('tags', { title: '标签补全' }, async ({ track
 - 宿主可以传入 `provider: { pluginId, providerId }` 只查询一个来源；插件侧只需要处理 `track`。
 - 不返回封面二进制、不写入源文件、不直接改 SQLite。
 
+## Source Provider
+
+Source Provider 用来做用户自定义音源。它和内置流媒体 provider 的边界不同：插件只提供搜索候选和按需解析的显式音频 URL，宿主负责裁剪结果、超时、日志和后续播放决策。插件不会进入远程源扫描、SQLite 写入、解码器、DSP 或输出热路径。启用带 `sources:provide` 权限的插件后，流媒体页会出现“插件音源”来源；只有用户切到这个来源搜索或播放时才会调用插件。
+
+```js
+const tracks = [{
+  providerTrackId: 'demo-stream',
+  title: 'Demo stream',
+  artist: 'Local plugin',
+  album: 'Custom source',
+  playable: true,
+  url: 'https://example.com/audio/demo.mp3'
+}];
+
+echo.sources.registerProvider('direct-url', { title: 'Direct URL Demo' }, {
+  search: async ({ query }) => ({
+    tracks: tracks
+      .filter((track) => !query || `${track.title} ${track.artist}`.toLowerCase().includes(query.toLowerCase()))
+      .map(({ url, ...track }) => track)
+  }),
+  resolvePlayback: async ({ providerTrackId }) => {
+    const track = tracks.find((item) => item.providerTrackId === providerTrackId);
+    if (!track) throw new Error('plugin_source_track_not_found');
+    return {
+      url: track.url,
+      mimeType: 'audio/mpeg',
+      supportsRange: true
+    };
+  }
+});
+```
+
+限制：
+
+- 注册 provider 需要 `sources:provide`。
+- 单插件最多注册 4 个 source provider。
+- 单个 provider 单次最多返回 25 个候选。
+- provider 超过 2.5 秒会记录 `plugin_source_provider_timeout`。
+- 搜索请求最大 32 KB，搜索返回最大 128 KB，播放解析请求最大 16 KB，播放解析返回最大 32 KB。
+- `providerTrackId` 和 `title` 是候选必填字段；`artist`、`album`、`albumArtist`、`duration`、`coverUrl`、`webUrl`、`playable`、`unavailableReason`、`source` 是可选字段。
+- 播放解析只接受 `http` / `https` URL；本地文件、任意文件系统访问、Node、Electron、SQLite、原生音频 host 不开放给插件。
+- 插件不应该把短时高频轮询放进 `search` 或 `resolvePlayback`；这些接口只在用户搜索或播放时调用。
+
 ## 配额和保护
 
 - 插件启动脚本同步执行最多 1 秒。
@@ -184,17 +233,19 @@ echo.metadata.registerProvider('tags', { title: '标签补全' }, async ({ track
 - 异步事件 handler 超过 2 秒会记录 `plugin_event_handler_timeout`。同步死循环仍无法被 Promise 超时打断，插件代码必须避免重 CPU 同步任务。
 - 单个事件类型最多注册 24 个 handler。
 - 单插件最多注册 8 个 metadata provider，单 provider 每次最多返回 5 个候选。
+- 单插件最多注册 4 个 source provider，单 provider 每次最多返回 25 个候选。
 - 单条日志最多保留 1000 个字符，宿主最多保留最近 160 条日志。
 - 单个 storage value 最大 64 KB，单插件 storage 总量最大 256 KB。
 - `settings.set(patch)` payload 最大 32 KB。
 
 ## 示例模板
 
-插件页可以创建三类示例：
+插件页可以创建四类示例：
 
 - 播放状态小面板：监听播放状态，并把最近状态写入插件存储。
 - 命令工具：注册一个手动执行的命令。
 - 曲库批量整理脚本：读取曲库摘要，作为整理脚本起点。
+- 自定义音源：注册一个直接 URL 音源 provider，展示搜索候选和播放解析的最小形状。
 
 这些模板只使用公开 API。推荐先复制模板，再逐步改 `plugin.js`。
 
@@ -211,8 +262,9 @@ echo.metadata.registerProvider('tags', { title: '标签补全' }, async ({ track
 
 - 插件页可以导出 `.echo-plugin.json` 插件包。导出只包含 manifest 和根目录下允许的源码、面板、文档文件，不包含 `plugin-storage.json`、启停状态或用户运行数据。
 - 导入插件包会创建新的插件目录；如果目标插件 id 已存在，会拒绝覆盖，避免误伤本地插件。
-- 插件详情会展示“安全边界”和“这个插件干了什么”：已信任权限、高风险权限、预留权限、受限权限、面板是否沙盒隔离、命令数量、命令执行次数、事件接收次数、storage 写入次数、settings 写入次数和错误次数。
+- 插件详情会展示“安全边界”和“这个插件干了什么”：已信任权限、高风险权限、预留权限、受限权限、面板是否沙盒隔离、命令数量、provider 数量、命令执行次数、事件接收次数、storage 写入次数、settings 写入次数和错误次数。
 - metadata provider 只作为候选来源显示，不代表这些候选已经写入曲库。
+- source provider 只作为自定义音源候选显示；是否进入播放仍由宿主和用户动作决定。
 - 插件连续启动失败会被宿主自动隔离，用户修复文件后可以手动重新启用。
 
 ## 面板状态
@@ -261,6 +313,7 @@ window.addEventListener('message', (event) => {
 - 播放状态事件会合并推送，避免高频事件拖慢播放。
 - 插件命令和事件 handler 有超时保护，失败会记录日志。
 - Metadata Provider 只返回候选，由宿主裁剪字段并决定是否采用；插件不直接写库。
+- Source Provider 只返回候选和显式音频 URL；宿主仍保留播放决策，不允许插件进入输出、解码、DSP 或远程同步链路。
 - 曲库列表 API 有分页和字段裁剪，避免大曲库一次性跨进程传输。
 - 插件 storage、命令 payload、命令返回值和 settings patch 都有大小限制，避免坏插件写出过大的 JSON。
 - 只启用你信任的本地插件；高风险权限应保持最小化。
@@ -278,6 +331,15 @@ window.addEventListener('message', (event) => {
 - `plugin_metadata_request_too_large`：metadata 查询请求超过 32 KB。
 - `plugin_metadata_result_too_large`：metadata provider 返回值超过 64 KB。
 - `plugin_metadata_provider_timeout`：metadata provider 超过 2.5 秒。
+- `plugin_source_provider_invalid`：source provider 注册参数不合法。
+- `plugin_source_provider_limit`：同一插件注册了过多 source provider。
+- `plugin_source_search_request_too_large`：source provider 搜索请求超过 32 KB。
+- `plugin_source_search_result_too_large`：source provider 搜索返回超过 128 KB。
+- `plugin_source_playback_request_too_large`：source provider 播放解析请求超过 16 KB。
+- `plugin_source_playback_result_too_large`：source provider 播放解析返回超过 32 KB。
+- `plugin_source_provider_timeout`：source provider 超过 2.5 秒。
+- `plugin_source_provider_not_playable`：source provider 没有提供播放解析。
+- `plugin_source_playback_url_invalid`：source provider 返回了非 `http` / `https` 播放 URL。
 - `plugin_not_enabled`：插件未启用或已被禁用。
 - `plugin_event_not_supported:*`：插件监听了未开放的事件。
 - `plugin_event_handler_limit`：同一插件注册了过多事件 handler。

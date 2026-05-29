@@ -1413,6 +1413,8 @@ describe('preload SMTC API', () => {
     await exposedApi!.plugins.importPackage();
     await exposedApi!.plugins.runCommand({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
     await exposedApi!.plugins.queryMetadata({ track: { title: 'Song' } });
+    await exposedApi!.plugins.querySources({ query: 'Song' });
+    await exposedApi!.plugins.resolveSourcePlayback({ pluginId: 'echo.source-provider', providerId: 'direct-url', providerTrackId: 'demo-stream' });
     await exposedApi!.plugins.getLogs('echo.playback-panel');
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsList);
@@ -1431,6 +1433,12 @@ describe('preload SMTC API', () => {
       commandId: 'show-status',
     });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsQueryMetadata, { track: { title: 'Song' } });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsQuerySources, { query: 'Song' });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsResolveSourcePlayback, {
+      pluginId: 'echo.source-provider',
+      providerId: 'direct-url',
+      providerTrackId: 'demo-stream',
+    });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsGetLogs, 'echo.playback-panel');
   });
 

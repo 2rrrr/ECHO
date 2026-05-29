@@ -17,6 +17,8 @@ const serviceMock = {
   importPluginPackage: vi.fn(async () => ({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel', importedFileCount: 2 })),
   runCommand: vi.fn(async () => ({ ok: true })),
   queryMetadata: vi.fn(async () => ({ providers: [], candidates: [] })),
+  querySources: vi.fn(async () => ({ providers: [], tracks: [] })),
+  resolveSourcePlayback: vi.fn(async () => ({ url: 'https://example.com/audio.mp3' })),
   getLogs: vi.fn(() => []),
 };
 
@@ -51,6 +53,8 @@ describe('plugin IPC', () => {
     expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsList, expect.any(Function));
     expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsRunCommand, expect.any(Function));
     expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsQueryMetadata, expect.any(Function));
+    expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsQuerySources, expect.any(Function));
+    expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsResolveSourcePlayback, expect.any(Function));
     expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsImportPackage, expect.any(Function));
   });
 
@@ -64,6 +68,12 @@ describe('plugin IPC', () => {
     await expect(handlers[IpcChannels.PluginsImportPackage]!(null)).resolves.toMatchObject({ pluginId: 'echo.playback-panel' });
     await expect(handlers[IpcChannels.PluginsRunCommand]!(null, { pluginId: 'echo.playback-panel', commandId: 'show-status' })).resolves.toEqual({ ok: true });
     await expect(handlers[IpcChannels.PluginsQueryMetadata]!(null, { track: { title: 'Song' } })).resolves.toEqual({ providers: [], candidates: [] });
+    await expect(handlers[IpcChannels.PluginsQuerySources]!(null, { query: 'Song' })).resolves.toEqual({ providers: [], tracks: [] });
+    await expect(handlers[IpcChannels.PluginsResolveSourcePlayback]!(null, {
+      pluginId: 'echo.source-provider',
+      providerId: 'direct-url',
+      providerTrackId: 'demo-stream',
+    })).resolves.toEqual({ url: 'https://example.com/audio.mp3' });
     expect(handlers[IpcChannels.PluginsGetLogs]!(null, 'echo.playback-panel')).toEqual([]);
 
     expect(serviceMock.createExample).toHaveBeenCalledWith('playback-panel');
@@ -72,6 +82,12 @@ describe('plugin IPC', () => {
     expect(serviceMock.importPluginPackage).toHaveBeenCalledTimes(1);
     expect(serviceMock.runCommand).toHaveBeenCalledWith({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
     expect(serviceMock.queryMetadata).toHaveBeenCalledWith({ track: { title: 'Song' } });
+    expect(serviceMock.querySources).toHaveBeenCalledWith({ query: 'Song' });
+    expect(serviceMock.resolveSourcePlayback).toHaveBeenCalledWith({
+      pluginId: 'echo.source-provider',
+      providerId: 'direct-url',
+      providerTrackId: 'demo-stream',
+    });
   });
 
   it('rejects malformed plugin IPC payloads before reaching the service', () => {
@@ -81,5 +97,7 @@ describe('plugin IPC', () => {
     expect(() => handlers[IpcChannels.PluginsExportPackage]!(null, '')).toThrow('pluginId must be a non-empty string');
     expect(() => handlers[IpcChannels.PluginsRunCommand]!(null, null)).toThrow('plugin command request must be an object');
     expect(() => handlers[IpcChannels.PluginsQueryMetadata]!(null, null)).toThrow('plugin metadata request must be an object');
+    expect(() => handlers[IpcChannels.PluginsQuerySources]!(null, null)).toThrow('plugin source search request must be an object');
+    expect(() => handlers[IpcChannels.PluginsResolveSourcePlayback]!(null, null)).toThrow('plugin source playback request must be an object');
   });
 });

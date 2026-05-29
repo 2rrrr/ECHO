@@ -86,6 +86,8 @@ export const IpcChannels = {
   PluginsImportPackage: 'plugins:import-package',
   PluginsRunCommand: 'plugins:run-command',
   PluginsQueryMetadata: 'plugins:query-metadata',
+  PluginsQuerySources: 'plugins:query-sources',
+  PluginsResolveSourcePlayback: 'plugins:resolve-source-playback',
   PluginsGetLogs: 'plugins:get-logs',
   AccountGetStatuses: 'account:get-statuses',
   AccountGetStatus: 'account:get-status',
