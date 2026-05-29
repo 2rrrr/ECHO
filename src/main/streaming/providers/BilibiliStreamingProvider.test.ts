@@ -144,6 +144,50 @@ describe('BilibiliStreamingProvider', () => {
     });
   });
 
+  it('retries public Bilibili favorite imports without cookies when the API rejects the signed request', async () => {
+    const fetchRunner = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ code: -400, message: '请求错误' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: {
+            info: {
+              title: 'coop哥',
+              media_count: 1,
+              upper: { name: 'Moekotori' },
+            },
+            has_more: false,
+            medias: [
+              {
+                bvid: 'BV16J411w7xW',
+                title: 'Favorite Video',
+                cover: '//i0.hdslb.com/bfs/archive/fav.jpg',
+                duration: 98,
+                upper: { name: 'Favorite UP' },
+              },
+            ],
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const result = await new BilibiliStreamingProvider().getPlaylist({
+      providerPlaylistId: 'https://space.bilibili.com/25265128/favlist?fid=2433003328&ftype=create',
+      page: 1,
+      pageSize: 100,
+    });
+
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('ps=20');
+    expect(fetchRunner).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchRunner.mock.calls[0][1]?.headers).get('cookie')).toBe('SESSDATA=secret; bili_jct=csrf');
+    expect(new Headers(fetchRunner.mock.calls[1][1]?.headers).get('cookie')).toBeNull();
+    expect(result).toMatchObject({
+      providerPlaylistId: '2433003328',
+      title: 'coop哥',
+      total: 1,
+    });
+  });
+
   it('falls back to yt-dlp bilisearch when the Bilibili API returns 412', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('blocked', { status: 412 })));
     let capturedArgs: string[] = [];

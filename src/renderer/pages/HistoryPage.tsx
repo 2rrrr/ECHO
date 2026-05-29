@@ -15,6 +15,7 @@ import type {
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 import { openArtistDetailByName } from '../utils/artistNavigation';
+import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 
 const pageSize = 50;
 const historyPageCacheStorageKey = 'echo-next.history-page-cache.v1';
@@ -417,19 +418,13 @@ export const HistoryPage = (): JSX.Element => {
   const [page, setPage] = useState(initialHistoryData.page);
   const [total, setTotal] = useState(initialHistoryData.total);
   const [hasMore, setHasMore] = useState(initialHistoryData.hasMore);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
   const [filter, setFilter] = useState<HistoryFilter>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const statsRefreshTimerRef = useRef<number | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
 
   const clearStatsRefreshTimer = useCallback((): void => {
     if (statsRefreshTimerRef.current !== null) {
@@ -731,7 +726,7 @@ export const HistoryPage = (): JSX.Element => {
       <section className="history-toolbar" aria-label="历史筛选">
         <label className="history-search">
           <Search size={17} />
-          <input type="search" placeholder="搜索标题、艺术家、专辑或路径" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+          <input type="search" placeholder="搜索标题、艺术家、专辑或路径" {...searchInputProps} />
         </label>
         <div className="history-filter-tabs">
           {(Object.keys(filterLabels) as HistoryFilter[]).map((value) => (

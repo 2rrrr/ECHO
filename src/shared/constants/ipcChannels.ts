@@ -341,6 +341,7 @@ export const IpcChannels = {
   StreamingSetTrackLiked: 'streaming:setTrackLiked',
   StreamingGetFavorites: 'streaming:getFavorites',
   StreamingSetFavorite: 'streaming:setFavorite',
+  StreamingRenameFavoriteCollection: 'streaming:renameFavoriteCollection',
   StreamingRefreshNeteaseDailyRecommend: 'streaming:refreshNeteaseDailyRecommend',
   LyricsGetForTrack: 'lyrics:get-for-track',
   LyricsGetForSnapshot: 'lyrics:get-for-snapshot',

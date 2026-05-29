@@ -11,6 +11,7 @@ import {
   recordDiagnosticException,
 } from './ExceptionRecorder';
 import {
+  collectStartupPersistentStateSnapshot,
   createStartupDiagnosticsTracker,
   createSafeModePowerShellTailArgs,
   getSafeModeStartupLogPath,
@@ -49,8 +50,12 @@ afterEach(() => {
 describe('createStartupDiagnosticsTracker', () => {
   it('records ordered startup stages with elapsed time and slow flags', () => {
     const messages: string[] = [];
+    const levels: Array<'info' | 'warn' | undefined> = [];
     const times = [1000, 1250, 3500, 3600];
-    const tracker = createStartupDiagnosticsTracker(() => times.shift() ?? 3600, (message) => messages.push(message));
+    const tracker = createStartupDiagnosticsTracker(() => times.shift() ?? 3600, (message, level) => {
+      messages.push(message);
+      levels.push(level);
+    });
 
     const first = tracker.mark('main:module-loaded');
     const second = tracker.mark('data-protection:startup:complete', { databasePath: 'D:\\Music\\echo.sqlite' });
@@ -62,6 +67,32 @@ describe('createStartupDiagnosticsTracker', () => {
     expect(third).toMatchObject({ index: 3, stage: 'startup:ready', elapsedMs: 2600, deltaMs: 100, slow: false });
     expect(tracker.snapshot()).toHaveLength(3);
     expect(messages[1]).toContain('SLOW');
+    expect(levels).toEqual(['info', 'warn', 'info']);
+  });
+
+  it('captures persistent state files without exposing raw paths', () => {
+    const userDataPath = makeTempUserData();
+    writeFileSync(join(userDataPath, 'echo-settings.json'), '{"safeModeEnabled":false}\n', 'utf8');
+    writeFileSync(join(userDataPath, 'accounts.json'), '{"providers":[]}\n', 'utf8');
+
+    const snapshot = collectStartupPersistentStateSnapshot({
+      ...safeModeContext,
+      userDataPath,
+      appPath: 'G:\\ECHO-main',
+      execPath: 'G:\\ECHO-main\\ECHO NEXT.exe',
+    }, () => Date.now());
+
+    expect(snapshot.userData).toEqual({ basename: expect.stringContaining('echo-safe-mode-'), pathHash: expect.any(String) });
+    expect(snapshot.appPath).toEqual({ basename: 'ECHO-main', pathHash: expect.any(String) });
+    expect(snapshot.execPath).toEqual({ basename: 'ECHO NEXT.exe', pathHash: expect.any(String) });
+    expect(snapshot.files.find((file) => file.name === 'echo-settings.json')).toMatchObject({
+      exists: true,
+      sizeBytes: expect.any(Number),
+      modifiedAgeMs: expect.any(Number),
+    });
+    expect(snapshot.files.find((file) => file.name === 'echo-library.sqlite')).toMatchObject({
+      exists: false,
+    });
   });
 });
 

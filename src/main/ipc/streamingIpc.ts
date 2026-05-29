@@ -191,6 +191,14 @@ const normalizeFavoriteSetRequest = (value: unknown): { track: StreamingTrack; f
   };
 };
 
+const normalizeFavoriteCollectionRenameRequest = (value: unknown): { collectionId: string; name: string } => {
+  const input = requireObject(value, 'streaming favorite collection rename request');
+  return {
+    collectionId: requireText(input.collectionId, 'collectionId'),
+    name: requireText(input.name, 'favorite collection name'),
+  };
+};
+
 const normalizePlaybackRequest = (value: unknown): StreamingPlaybackRequest => {
   const input = requireObject(value, 'streaming playback request');
   const quality = input.quality;
@@ -276,6 +284,14 @@ export const registerStreamingIpc = (): void => {
       return getStreamingService().setFavorite(input.track, input.favorite);
     } catch (error) {
       throw friendlyError(error, 'Streaming favorite update failed.');
+    }
+  });
+  ipcMain.handle(IpcChannels.StreamingRenameFavoriteCollection, async (_event, request: unknown) => {
+    try {
+      const input = normalizeFavoriteCollectionRenameRequest(request);
+      return getStreamingService().renameFavoriteCollection(input.collectionId, input.name);
+    } catch (error) {
+      throw friendlyError(error, 'Streaming favorite collection rename failed.');
     }
   });
   ipcMain.handle(IpcChannels.StreamingSearch, async (_event, request: unknown) => {

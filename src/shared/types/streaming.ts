@@ -220,6 +220,7 @@ export type StreamingPlaylistImportResult = {
 export type StreamingFavoritesImportResult = {
   provider: StreamingFavoriteProviderName;
   providerPlaylistId: string;
+  collectionId: string;
   playlistName: string;
   importedCount: number;
   addedCount: number;
@@ -269,10 +270,27 @@ export type StreamingFavoriteTrack = {
   updatedAt: string;
 };
 
+export type StreamingFavoriteCollection = {
+  id: string;
+  provider: StreamingFavoriteProviderName;
+  providerPlaylistId: string;
+  name: string;
+  sourceName: string | null;
+  tracks: StreamingFavoriteTrack[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StreamingFavoritesSnapshot = {
   version: 1;
   updatedAt: string;
   providers: Record<StreamingFavoriteProviderName, StreamingFavoriteTrack[]>;
+  collections: StreamingFavoriteCollection[];
+};
+
+export type StreamingFavoriteCollectionRenameResult = {
+  collection: StreamingFavoriteCollection;
+  snapshot: StreamingFavoritesSnapshot;
 };
 
 export type StreamingFavoriteSetRequest = {

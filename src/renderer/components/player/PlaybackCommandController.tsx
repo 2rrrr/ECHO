@@ -21,6 +21,7 @@ import {
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
 import { isActiveConnectPlaybackStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
+import { isImeComposingKeyEvent } from '../../utils/imeInput';
 import { shouldSuppressAudioHostError } from './audioErrorFormat';
 import { bindMediaSessionActions, clearMediaSession } from './mediaSession';
 
@@ -674,7 +675,7 @@ export const PlaybackCommandController = (): null => {
     };
 
     const handleLocalShortcutKeyDown = (event: KeyboardEvent): void => {
-      if (event.repeat || isShortcutTextTarget(event)) {
+      if (event.repeat || isImeComposingKeyEvent(event) || isShortcutTextTarget(event)) {
         return;
       }
 

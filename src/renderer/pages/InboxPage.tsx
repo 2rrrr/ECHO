@@ -13,6 +13,7 @@ import type {
 } from '../../shared/types/library';
 import { getLibraryBridge } from '../utils/echoBridge';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 
 const pageSize = 60;
 
@@ -165,8 +166,12 @@ export const InboxPage = (): JSX.Element => {
   const [folderId, setFolderId] = useState<string | null>(null);
   const [album, setAlbum] = useState<string | null>(null);
   const [artist, setArtist] = useState<string | null>(null);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const {
+    search,
+    searchInputProps,
+    setSearch,
+    setSearchInput,
+  } = useImeAwareDebouncedSearch(220);
   const [pageData, setPageData] = useState<LibraryInboxTrackPage>(() => emptyInboxPage('latest', 'all'));
   const [items, setItems] = useState<LibraryInboxTrackItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -177,11 +182,6 @@ export const InboxPage = (): JSX.Element => {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 220);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
 
   const loadInbox = useCallback(
     async (nextPage: number, mode: 'replace' | 'append'): Promise<void> => {
@@ -620,10 +620,9 @@ export const InboxPage = (): JSX.Element => {
           <Search size={16} />
           <input
             aria-label="搜索新歌收件箱"
-            onChange={(event) => setSearchInput(event.target.value)}
             placeholder="搜索标题、艺人、专辑、路径"
             type="search"
-            value={searchInput}
+            {...searchInputProps}
           />
         </label>
 

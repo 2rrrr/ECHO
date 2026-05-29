@@ -82,16 +82,18 @@ const safeDecodeUriComponent = (value: string): string => {
 
 const hasCjkOrKana = (value: string): boolean => /[\u3040-\u30ff\u3400-\u9fff]/u.test(value);
 
-const looksLikeEncodedBlob = (value: string): boolean =>
-  value.length >= 16 &&
-  /^[A-Za-z0-9+/=_-]+$/u.test(value) &&
-  /[+/=_-]/u.test(value) &&
-  !hasCjkOrKana(value) &&
-  (value.endsWith('=') ||
-    (value.length >= 24 &&
-      [...value].filter((char) => /\d/u.test(char)).length >= 3 &&
-      [...value].filter((char) => /[A-Z]/u.test(char)).length >= 3 &&
-      [...value].filter((char) => /[a-z]/u.test(char)).length >= 3));
+const looksLikeEncodedBlob = (value: string): boolean => {
+  const candidate = value.replace(/^\.+/u, '');
+  return candidate.length >= 16 &&
+  /^[A-Za-z0-9+/=_-]+$/u.test(candidate) &&
+  /[+/=_-]/u.test(candidate) &&
+  !hasCjkOrKana(candidate) &&
+  (candidate.endsWith('=') ||
+    (candidate.length >= 24 &&
+      [...candidate].filter((char) => /\d/u.test(char)).length >= 3 &&
+      [...candidate].filter((char) => /[A-Z]/u.test(char)).length >= 3 &&
+      [...candidate].filter((char) => /[a-z]/u.test(char)).length >= 3));
+};
 
 const cleanMetadataText = (value: string | null | undefined): string | null => {
   const trimmed = trimText(value);
@@ -136,7 +138,8 @@ export const titleFromUri = (uri: string | null | undefined): string | null => {
 
     const pathTitle = decodeURIComponent(basename(url.pathname));
     const withoutExtension = pathTitle.replace(/\.[a-z0-9]{2,5}$/iu, '').trim();
-    if (withoutExtension && !noisyUriBasenames.has(withoutExtension.toLowerCase()) && !/^[a-f0-9_-]{12,}$/iu.test(withoutExtension)) {
+    const isHiddenOpaqueBasename = withoutExtension.startsWith('.') && looksLikeEncodedBlob(withoutExtension);
+    if (withoutExtension && !isHiddenOpaqueBasename && !noisyUriBasenames.has(withoutExtension.toLowerCase()) && !/^[a-f0-9_-]{12,}$/iu.test(withoutExtension)) {
       return pathTitle;
     }
 

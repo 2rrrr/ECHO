@@ -159,6 +159,37 @@ afterEach(() => {
 });
 
 describe('LikedPage', () => {
+  it('keeps liked media local-only and hides provider shortcuts', async () => {
+    const getLikedTracks = vi.fn().mockResolvedValue(page([]));
+    const getLikedAlbums = vi.fn().mockResolvedValue(page([]));
+    installLibrary(getLikedTracks, getLikedAlbums);
+
+    renderLikedPage();
+
+    await waitFor(() =>
+      expect(getLikedTracks).toHaveBeenCalledWith({ page: 1, pageSize: 100, search: '', sort: 'recent', sourceProvider: 'local' }),
+    );
+    await waitFor(() =>
+      expect(getLikedAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 100, search: '', sort: 'recent', sourceProvider: 'local' }),
+    );
+    expect(screen.queryByRole('button', { name: /网易云喜欢/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /QQ 喜欢/ })).toBeNull();
+  });
+
+  it('clears only local liked tracks from the liked page', async () => {
+    const getLikedTracks = vi.fn().mockResolvedValue(page([playlistItem('track-1', { mediaId: 'track-1', track: track('track-1') })]));
+    const getLikedAlbums = vi.fn().mockResolvedValue(page([]));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    installLibrary(getLikedTracks, getLikedAlbums);
+
+    renderLikedPage();
+
+    await screen.findByText('1 liked tracks');
+    fireEvent.click(screen.getByRole('button', { name: /清空/ }));
+
+    await waitFor(() => expect(window.echo.library.clearLikedTracks).toHaveBeenCalledWith({ sourceProvider: 'local' }));
+  });
+
   it('loads more liked albums from the page surface sentinel', async () => {
     const getLikedTracks = vi.fn().mockResolvedValue(page([]));
     const getLikedAlbums = vi
@@ -202,7 +233,7 @@ describe('LikedPage', () => {
     fireEvent.scroll(pageSurface);
 
     await waitFor(() => expect(getLikedAlbums).toHaveBeenCalledTimes(2));
-    expect(getLikedAlbums).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 100, search: '', sort: 'recent' });
+    expect(getLikedAlbums).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 100, search: '', sort: 'recent', sourceProvider: 'local' });
     expect(screen.getByText('Album 2')).toBeTruthy();
   });
 
@@ -220,60 +251,7 @@ describe('LikedPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load liked tracks' }));
 
     await waitFor(() => expect(getLikedTracks).toHaveBeenCalledTimes(2));
-    expect(getLikedTracks).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 100, search: '', sort: 'recent' });
+    expect(getLikedTracks).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 100, search: '', sort: 'recent', sourceProvider: 'local' });
     expect(screen.getByText('2 liked tracks')).toBeTruthy();
-  });
-
-  it('opens NetEase liked songs as a separate source', async () => {
-    const getLikedTracks = vi.fn().mockResolvedValue(page([]));
-    const getLikedAlbums = vi.fn().mockResolvedValue(page([]));
-    const syncLikedSongs = vi.fn().mockResolvedValue({
-      playlistId: 'liked',
-      importedCount: 1,
-      addedCount: 1,
-      providers: [{ provider: 'netease', success: true, importedCount: 1, addedCount: 1, total: 1 }],
-      syncedAt: '2026-05-16T00:00:00.000Z',
-    });
-    installLibrary(getLikedTracks, getLikedAlbums, syncLikedSongs);
-
-    renderLikedPage();
-
-    fireEvent.click(await screen.findByRole('button', { name: /网易云喜欢/ }));
-
-    await waitFor(() => expect(syncLikedSongs).toHaveBeenCalledWith('netease'));
-    await waitFor(() =>
-      expect(getLikedTracks).toHaveBeenCalledWith(expect.objectContaining({ sourceProvider: 'netease' })),
-    );
-  });
-
-  it('unlikes streaming tracks through their provider from the liked page', async () => {
-    const getLikedTracks = vi.fn().mockResolvedValue(page([
-      playlistItem('stream-item-1', {
-        mediaType: 'stream_track',
-        mediaId: 'streaming:netease:1983779468',
-        sourceProvider: 'netease',
-        sourceItemId: '1983779468',
-        titleSnapshot: 'Remote Liked',
-        artistSnapshot: 'Cloud Artist',
-        albumSnapshot: 'Cloud Album',
-        durationSnapshot: 180,
-      }),
-    ]));
-    const getLikedAlbums = vi.fn().mockResolvedValue(page([]));
-    const setTrackLiked = vi.fn().mockResolvedValue({ liked: false });
-    installLibrary(getLikedTracks, getLikedAlbums, undefined, setTrackLiked);
-
-    renderLikedPage();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Unlike Remote Liked' }));
-
-    await waitFor(() =>
-      expect(setTrackLiked).toHaveBeenCalledWith({
-        provider: 'netease',
-        providerTrackId: '1983779468',
-        liked: false,
-      }),
-    );
-    expect(window.echo.library.unlikeTrack).not.toHaveBeenCalled();
   });
 });

@@ -1451,8 +1451,8 @@ const echoApi: EchoApi = {
     likeAlbum: (albumId) => ipcRenderer.invoke(IpcChannels.LibraryLikeAlbum, albumId),
     unlikeAlbum: (albumId) => ipcRenderer.invoke(IpcChannels.LibraryUnlikeAlbum, albumId),
     toggleAlbumLiked: (albumId) => ipcRenderer.invoke(IpcChannels.LibraryToggleAlbumLiked, albumId),
-    clearLikedTracks: () => ipcRenderer.invoke(IpcChannels.LibraryClearLikedTracks),
-    clearLikedAlbums: () => ipcRenderer.invoke(IpcChannels.LibraryClearLikedAlbums),
+    clearLikedTracks: (query) => ipcRenderer.invoke(IpcChannels.LibraryClearLikedTracks, query),
+    clearLikedAlbums: (query) => ipcRenderer.invoke(IpcChannels.LibraryClearLikedAlbums, query),
     getAlbums: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbums, query),
     getAlbum: (albumId) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbum, albumId),
     getAlbumOnlineInfo: (albumId, options) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumOnlineInfo, albumId, options),
@@ -1823,6 +1823,7 @@ const echoApi: EchoApi = {
     setTrackLiked: (request) => ipcRenderer.invoke(IpcChannels.StreamingSetTrackLiked, request),
     getFavorites: () => ipcRenderer.invoke(IpcChannels.StreamingGetFavorites),
     setFavorite: (request) => ipcRenderer.invoke(IpcChannels.StreamingSetFavorite, request),
+    renameFavoriteCollection: (request) => ipcRenderer.invoke(IpcChannels.StreamingRenameFavoriteCollection, request),
     refreshNeteaseDailyRecommend: () => ipcRenderer.invoke(IpcChannels.StreamingRefreshNeteaseDailyRecommend),
   },
   lyrics: {

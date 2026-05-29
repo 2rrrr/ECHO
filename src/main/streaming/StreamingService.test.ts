@@ -77,15 +77,15 @@ const emptyQqSearchResult = (): StreamingSearchResult => ({
   mvs: [],
 });
 
-const favoriteTrack = (providerTrackId: string): StreamingTrack => ({
-  id: `streaming:youtube:${providerTrackId}`,
-  provider: 'youtube',
+const favoriteTrack = (providerTrackId: string, provider: StreamingTrack['provider'] = 'youtube'): StreamingTrack => ({
+  id: `streaming:${provider}:${providerTrackId}`,
+  provider,
   providerTrackId,
-  stableKey: `streaming:youtube:${providerTrackId}`,
+  stableKey: `streaming:${provider}:${providerTrackId}`,
   title: `Video ${providerTrackId}`,
   artist: 'Video Artist',
   artists: [],
-  album: 'YouTube',
+  album: provider === 'bilibili' ? 'Bilibili' : 'YouTube',
   albumId: null,
   albumArtist: 'Video Artist',
   duration: 120,
@@ -401,11 +401,71 @@ describe('StreamingService playlist imports', () => {
       expect(result).toMatchObject({
         provider: 'youtube',
         providerPlaylistId: 'PL123',
+        collectionId: 'streaming-favorites:youtube:PL123',
         playlistName: 'YouTube Favorites',
         importedCount: 2,
         addedCount: 2,
       });
-      expect(result.snapshot.providers.youtube.map((item) => item.providerTrackId)).toEqual(['video-1', 'video-2']);
+      expect(result.snapshot.providers.youtube).toEqual([]);
+      expect(result.snapshot.collections[0]).toMatchObject({
+        id: 'streaming-favorites:youtube:PL123',
+        provider: 'youtube',
+        providerPlaylistId: 'PL123',
+        name: 'YouTube Favorites',
+      });
+      expect(result.snapshot.collections[0].tracks.map((item) => item.providerTrackId)).toEqual(['video-1', 'video-2']);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps Bilibili favlist URLs intact for provider requests and stores the canonical media id', async () => {
+    const favlistUrl = 'https://space.bilibili.com/25265128/favlist?fid=2433003328&ftype=create';
+    const registry = new StreamingProviderRegistry();
+    const getPlaylist = vi.fn(async (input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> => ({
+      id: 'streaming:bilibili:playlist:2433003328',
+      provider: 'bilibili',
+      providerPlaylistId: '2433003328',
+      title: 'coop哥',
+      description: null,
+      creator: 'Moekotori',
+      coverUrl: null,
+      coverThumb: null,
+      trackCount: 1,
+      tracks: [favoriteTrack('BV16J411w7xW', 'bilibili')],
+      page: 1,
+      pageSize: 50,
+      total: 1,
+      hasMore: false,
+    }));
+    registry.register({
+      name: 'bilibili',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      getPlaylist,
+      resolvePlayback: vi.fn(),
+    });
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-streaming-favorites-service-'));
+    try {
+      const favoritesStore = new StreamingFavoritesStore(join(tempRoot, 'streaming-favorites.json'));
+      const service = new StreamingService(registry, fakeCacheStore(), undefined, undefined, undefined, favoritesStore);
+
+      const result = await service.importFavoritesFromUrl(favlistUrl);
+
+      expect(getPlaylist).toHaveBeenCalledWith({ providerPlaylistId: favlistUrl, page: 1, pageSize: 100 });
+      expect(result).toMatchObject({
+        provider: 'bilibili',
+        providerPlaylistId: '2433003328',
+        collectionId: 'streaming-favorites:bilibili:2433003328',
+        playlistName: 'coop哥',
+        importedCount: 1,
+        addedCount: 1,
+      });
+      expect(result.snapshot.collections[0]).toMatchObject({
+        provider: 'bilibili',
+        providerPlaylistId: '2433003328',
+        name: 'coop哥',
+      });
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

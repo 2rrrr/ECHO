@@ -471,6 +471,28 @@ describe('TsMetadataReader parser fallbacks', () => {
     expect(realNumberTitle.fields.title).toBe('05410-(ん)');
   });
 
+  it('does not treat filename track numbers as artist names', async () => {
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      format: {
+        duration: 180,
+        codec: 'WAV',
+      },
+    }));
+
+    const reader = new TsMetadataReader();
+    const pureNumber = await reader.read('D:\\Music\\02 - Amicae carae meae.wav');
+    const indexedArtist = await reader.read('D:\\Music\\02. \u9234\u6728\u3053\u306e\u307f - Delighting.wav');
+    const compactIndexedArtist = await reader.read('D:\\Music\\001-\u5bb5\u5d0e\u594f (\u6960\u6728\u3068\u3082\u308a) - \u6094\u3084\u3080\u3068\u66f8\u3044\u3066\u30df\u30e9\u30a4.wav');
+
+    expect(pureNumber.fields.artist).toBe('Unknown Artist');
+    expect(pureNumber.fieldSources.artist).toBe('unknown');
+    expect(pureNumber.fields.title).toBe('Amicae carae meae');
+    expect(indexedArtist.fields.artist).toBe('\u9234\u6728\u3053\u306e\u307f');
+    expect(indexedArtist.fields.title).toBe('Delighting');
+    expect(compactIndexedArtist.fields.artist).toBe('\u5bb5\u5d0e\u594f (\u6960\u6728\u3068\u3082\u308a)');
+    expect(compactIndexedArtist.fields.title).toBe('\u6094\u3084\u3080\u3068\u66f8\u3044\u3066\u30df\u30e9\u30a4');
+  });
+
   it('uses native container tags when common metadata mapping is sparse', async () => {
     parseFileMock.mockResolvedValue(emptyMetadata({
       native: {

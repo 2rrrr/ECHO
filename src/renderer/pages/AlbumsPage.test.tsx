@@ -83,6 +83,12 @@ const installLibrary = (
       getScanStatus: vi.fn(),
       cancelScan: vi.fn(),
       getDiagnostics: vi.fn(),
+      openTrackInFolder: vi.fn(),
+      openPathInFolder: vi.fn(),
+      loadEmbeddedTrackTags: vi.fn(),
+      updateAlbumTags: vi.fn(),
+      deleteAlbumFiles: vi.fn(),
+      searchNetworkTagCandidates: vi.fn(),
     },
     playback: {
       getStatus: vi.fn(),
@@ -323,6 +329,24 @@ describe('AlbumsPage', () => {
     expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
   });
 
+  it('refresh button reloads page 1 without rebuilding album grouping', async () => {
+    const getAlbums = vi
+      .fn()
+      .mockResolvedValueOnce(page([album('stale')], { page: 1, total: 1, hasMore: false }))
+      .mockResolvedValueOnce(page([], { page: 1, total: 0, hasMore: false }));
+    const refreshAlbumGrouping = vi.fn();
+    installLibrary(getAlbums);
+    window.echo!.library.refreshAlbumGrouping = refreshAlbumGrouping;
+
+    renderAlbumsPage();
+    await screen.findByText('Album stale');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
+    expect(refreshAlbumGrouping).not.toHaveBeenCalled();
+    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
+  });
+
   it('preserved library:changed refreshes a scrolled album wall without pulling it back to the top', async () => {
     const getAlbums = vi
       .fn()
@@ -443,6 +467,8 @@ describe('AlbumsPage', () => {
       coverUrl: null,
       coverMimeType: null,
     }));
+    await screen.findByText('Renamed Album');
+    expect(getAlbums).toHaveBeenCalledTimes(1);
   });
 
   it('loads album fields from embedded tags through a representative album track', async () => {
@@ -478,13 +504,31 @@ describe('AlbumsPage', () => {
     await screen.findByText('Album 1');
     fireEvent.contextMenu(screen.getByText('Album 1'));
     fireEvent.click(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u }));
-    fireEvent.click(screen.getByRole('button', { name: /从内嵌标签加载|Load embedded tags/u }));
+    fireEvent.click(screen.getByRole('button', { name: /嵌入|embedded/u }));
 
     await waitFor(() => expect(loadEmbeddedTrackTags).toHaveBeenCalledWith('track-1'));
     expect((screen.getByLabelText(/^(专辑|Album)$/u) as HTMLInputElement).value).toBe('Embedded Album');
     expect((screen.getByLabelText(/^(专辑艺术家|Album artist)$/u) as HTMLInputElement).value).toBe('Embedded Album Artist');
     expect((screen.getByLabelText(/^(年份|Year)$/u) as HTMLInputElement).value).toBe('2024');
     expect((screen.getByLabelText(/^(流派|Genre)$/u) as HTMLInputElement).value).toBe('Jazz');
+  });
+
+  it('opens the album tag editor representative track in Explorer', async () => {
+    const getAlbums = vi.fn().mockResolvedValue(page([album('1')]));
+    const getAlbumTracks = vi.fn().mockResolvedValue(trackPage([track('track-1')]));
+    const openTrackInFolder = vi.fn().mockResolvedValue(undefined);
+    installLibrary(getAlbums, vi.fn(), getAlbumTracks);
+    window.echo.library.openTrackInFolder = openTrackInFolder;
+
+    renderAlbumsPage();
+
+    await screen.findByText('Album 1');
+    fireEvent.contextMenu(screen.getByText('Album 1'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u }));
+    fireEvent.click(screen.getByRole('button', { name: /资源管理器|Explorer|folder/u }));
+
+    await waitFor(() => expect(getAlbumTracks).toHaveBeenCalledWith('1', { page: 1, pageSize: 1 }));
+    expect(openTrackInFolder).toHaveBeenCalledWith('track-1');
   });
 
   it('applies network album candidates and submits the network cover url', async () => {
@@ -495,7 +539,7 @@ describe('AlbumsPage', () => {
       {
         id: 'candidate-1',
         provider: 'mock',
-        confidence: 0.95,
+        confidence: 0.6,
         title: 'Ignored Track Title',
         artist: 'Ignored Artist',
         album: 'Network Album',
@@ -521,10 +565,8 @@ describe('AlbumsPage', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u }));
     fireEvent.click(screen.getByRole('button', { name: /从网络加载|Load from network/u }));
 
-    await screen.findByText('Network Album');
-    expect(searchNetworkTagCandidates).toHaveBeenCalledWith('track-1');
-    fireEvent.click(screen.getByText('Network Album'));
-    fireEvent.click(screen.getByRole('button', { name: /应用到表单|Apply to form/u }));
+    await waitFor(() => expect(searchNetworkTagCandidates).toHaveBeenCalledWith('track-1'));
+    await waitFor(() => expect((screen.getByLabelText(/^(专辑|Album)$/u) as HTMLInputElement).value).toBe('Network Album'));
     fireEvent.click(screen.getByRole('button', { name: /保存标签|Save tags/u }));
 
     await waitFor(() => expect(updateAlbumTags).toHaveBeenCalledWith({
@@ -556,6 +598,28 @@ describe('AlbumsPage', () => {
     await screen.findByText('Album 1');
     fireEvent.contextMenu(screen.getByText('Album 1'));
     fireEvent.click(screen.getByRole('menuitem', { name: /删除专辑|Delete album/u }));
+
+    await waitFor(() => expect(deleteAlbumFiles).toHaveBeenCalledWith('1'));
+    expect(String(confirm.mock.calls[0]?.[0] ?? '')).toMatch(/2 首歌曲|2 tracks/u);
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
+  });
+
+  it('deletes an album from the tag editor after confirmation and reloads the wall', async () => {
+    const getAlbums = vi
+      .fn()
+      .mockResolvedValueOnce(page([album('1', { trackCount: 2 })]))
+      .mockResolvedValueOnce(page([]));
+    const deleteAlbumFiles = vi.fn().mockResolvedValue(undefined);
+    installLibrary(getAlbums);
+    window.echo.library.deleteAlbumFiles = deleteAlbumFiles;
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderAlbumsPage();
+
+    await screen.findByText('Album 1');
+    fireEvent.contextMenu(screen.getByText('Album 1'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u }));
+    fireEvent.click(screen.getByRole('button', { name: /删除专辑|Delete album/u }));
 
     await waitFor(() => expect(deleteAlbumFiles).toHaveBeenCalledWith('1'));
     expect(String(confirm.mock.calls[0]?.[0] ?? '')).toMatch(/2 首歌曲|2 tracks/u);

@@ -51,6 +51,7 @@ import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useI18n } from '../i18n/I18nProvider';
 import { resolvePlaylistForTrackAdd } from '../utils/appPrompt';
 import { getRemoteSourcesBridge } from '../utils/echoBridge';
+import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import type { TranslationKey } from '../i18n/locales';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 
@@ -444,8 +445,7 @@ export const FoldersPage = (): JSX.Element => {
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const { search, searchInputProps } = useImeAwareDebouncedSearch(220);
   const [sort, setSort] = useState<LibrarySort>('default');
   const localizedSortOptions = useMemo(
     () => sortOptions.map((option) => ({ value: option.value, label: t(option.labelKey) })),
@@ -587,14 +587,6 @@ export const FoldersPage = (): JSX.Element => {
     [selectedRemote],
   );
   const activeTracks = mode === 'remote' ? remoteTracks : tracks;
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearch(searchInput.trim());
-    }, 220);
-
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
 
   useEffect(() => subscribeLibraryScanStatuses(setScanStatuses), []);
 
@@ -2000,7 +1992,7 @@ export const FoldersPage = (): JSX.Element => {
         <section className="folder-track-toolbar" aria-label={t('folders.filters.label')}>
           <label className="search-box">
             <Search size={18} aria-hidden="true" />
-            <input type="search" placeholder={t('folders.filters.searchPlaceholder')} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+            <input type="search" placeholder={t('folders.filters.searchPlaceholder')} {...searchInputProps} />
           </label>
           {mode === 'remote' ? (
             <button className="folder-toggle" type="button" disabled={!selectedRemoteSource || isLoadingRemoteDirectory} onClick={() => void loadRemoteDirectory(selectedRemote)}>

@@ -176,6 +176,65 @@ describe('LibraryStore track metadata safety', () => {
     expect(store.getArtistTracks(numericArtist.id, { pageSize: 10 }).items.map((track) => track.title)).toEqual(['Numeric Slash Song']);
   });
 
+  it('filters filename track numbers out of the artist index', () => {
+    const store = makeStore();
+    const folder = store.addFolder('D:\\Music');
+    const suzuki = '\u9234\u6728\u3053\u306e\u307f';
+    const kanade = '\u5bb5\u5d0e\u594f (\u6960\u6728\u3068\u3082\u308a)';
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\02 - Track Number Only.wav', {
+      id: 'track-number-only',
+      title: 'Track Number Only',
+      artist: '02',
+      album: 'Number Album',
+      albumArtist: '02',
+      fieldSources: {
+        artist: 'filename_fallback',
+        albumArtist: 'artist_fallback',
+      },
+    }));
+    store.upsertTrack(baseTrack(folder.id, `D:\\Music\\02. ${suzuki} - Delighting.wav`, {
+      id: 'track-indexed-dotted',
+      title: 'Delighting',
+      artist: `02. ${suzuki}`,
+      album: 'Indexed Album',
+      albumArtist: `02. ${suzuki}`,
+      fieldSources: {
+        artist: 'filename_fallback',
+        albumArtist: 'artist_fallback',
+      },
+    }));
+    store.upsertTrack(baseTrack(folder.id, `D:\\Music\\001-${kanade} - Mirai.wav`, {
+      id: 'track-indexed-compact',
+      title: 'Mirai',
+      artist: `001-${kanade}`,
+      album: 'Compact Album',
+      albumArtist: `001-${kanade}`,
+      fieldSources: {
+        artist: 'filename_fallback',
+        albumArtist: 'artist_fallback',
+      },
+    }));
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\164 - Amanojaku.flac', {
+      id: 'track-numeric-real',
+      title: 'Amanojaku',
+      artist: '164/GUMI',
+      album: 'Real Numeric Artist',
+      albumArtist: '164/GUMI',
+    }));
+    store.refreshAlbums(new AlbumService(), '2026-01-01T00:00:00.000Z');
+    store.refreshArtists();
+
+    const artistNames = store.getArtists({ pageSize: 20 }).items.map((artist) => artist.name);
+    const suzukiArtist = store.getArtists({ search: suzuki, pageSize: 1 }).items[0];
+
+    expect(artistNames).not.toContain('02');
+    expect(artistNames).not.toContain(`02. ${suzuki}`);
+    expect(artistNames).not.toContain(`001-${kanade}`);
+    expect(artistNames).toEqual(expect.arrayContaining([suzuki, kanade, '164', 'GUMI']));
+    expect(store.getArtistTracks(suzukiArtist.id, { pageSize: 10 }).items.map((track) => track.title)).toEqual(['Delighting']);
+  });
+
   it('counts only available tracks when paging album detail tracks', () => {
     const store = makeStore();
     const folder = store.addFolder('D:\\Music');

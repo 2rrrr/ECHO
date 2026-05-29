@@ -48,6 +48,7 @@ const installLibrary = (
     library: {
       getArtists,
       enqueueMissingArtistImages: vi.fn(),
+      refreshAlbumGrouping: vi.fn(),
       refreshArtistImage: vi.fn(),
       refreshVisibleArtistImages: vi.fn(),
       getArtistImageStatus: vi.fn(),
@@ -308,6 +309,25 @@ describe('ArtistsPage', () => {
     expect(pageSurface.scrollTop).toBe(640);
   });
 
+  it('refresh button reloads page 1 without rebuilding album grouping', async () => {
+    const getArtists = vi
+      .fn()
+      .mockResolvedValueOnce(page([artist('stale')], { page: 1, total: 1, hasMore: false }))
+      .mockResolvedValueOnce(page([artist('fresh')], { page: 1, total: 1, hasMore: false }));
+    const refreshAlbumGrouping = vi.fn();
+    installLibrary(getArtists);
+    window.echo!.library.refreshAlbumGrouping = refreshAlbumGrouping;
+
+    renderArtistsPage();
+    await screen.findByText('Artist stale');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(2));
+    expect(refreshAlbumGrouping).not.toHaveBeenCalled();
+    expect(getArtists).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 96, search: '', sort: 'default', sourceProvider: 'local' });
+    expect(screen.getByText('Artist fresh')).toBeTruthy();
+  });
+
   it('opens artist detail on click and returns with Back', async () => {
     const getArtists = vi.fn().mockResolvedValue(page([artist('1')]));
     installLibrary(getArtists);
@@ -392,7 +412,7 @@ describe('ArtistsPage', () => {
   });
 
   it('renders album artwork when the artist wall artwork setting is enabled', async () => {
-    const getArtists = vi.fn().mockResolvedValue(page([artist('1', { coverId: 'cover-1', coverThumb: 'echo-cover://album/cover-1' })]));
+    const getArtists = vi.fn().mockResolvedValue(page([artist('1', { coverId: 'cover-1', coverThumb: 'echo-cover://album/cover-1', coverSource: 'embedded' })]));
     installLibrary(getArtists, vi.fn().mockResolvedValue({ artistWallAlbumArtwork: true }));
 
     renderArtistsPage();
@@ -405,17 +425,34 @@ describe('ArtistsPage', () => {
     expect(screen.queryByText('AR')).toBeNull();
   });
 
+  it('keeps the letter avatar when artist wall artwork only has the default cover', async () => {
+    const getArtists = vi.fn().mockResolvedValue(page([artist('1', {
+      coverId: 'cover-1',
+      coverThumb: 'echo-cover://album/cover-1',
+      coverSource: 'default',
+    })]));
+    installLibrary(getArtists, vi.fn().mockResolvedValue({ artistWallAlbumArtwork: true }));
+
+    renderArtistsPage();
+
+    await screen.findByText('Artist 1');
+    expect(screen.getByText('AR')).toBeTruthy();
+    expect(document.querySelector('.artist-avatar img')).toBeNull();
+  });
+
   it('uses album artwork only for artists whose avatar lookup failed when fallback is enabled', async () => {
     const getArtists = vi.fn().mockResolvedValue(
       page([
         artist('1', {
           coverId: 'cover-1',
           coverThumb: 'echo-cover://album/cover-1',
+          coverSource: 'embedded',
           avatarStatus: 'not_found',
         }),
         artist('2', {
           coverId: 'cover-2',
           coverThumb: 'echo-cover://album/cover-2',
+          coverSource: 'embedded',
           avatarStatus: null,
         }),
         artist('3', {

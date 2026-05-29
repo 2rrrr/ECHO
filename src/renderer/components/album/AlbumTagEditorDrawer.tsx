@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, CloudDownload, Disc3, ImagePlus, RefreshCw, Save, Tag, X } from 'lucide-react';
+import { Check, CloudDownload, Disc3, FolderOpen, ImagePlus, RefreshCw, Save, Tag, Trash2, X } from 'lucide-react';
 import type { EditableAlbumTags, LibraryAlbum, NetworkTagCandidate, TrackCoverSelection } from '../../../shared/types/library';
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
@@ -13,6 +13,8 @@ type AlbumTagEditorDrawerProps = {
   error: string | null;
   onClose: () => void;
   onSave: (album: LibraryAlbum, tags: EditableAlbumTags, coverPath: string | null, coverUrl: string | null, coverMimeType: string | null) => void;
+  onOpenInFolder: (album: LibraryAlbum) => Promise<void>;
+  onDeleteAlbum: (album: LibraryAlbum) => Promise<void>;
 };
 
 type AlbumTagFormState = {
@@ -70,8 +72,19 @@ const fieldValue = (value: string | number | null | undefined, t: Translate): st
   return String(value);
 };
 
-const allNetworkFieldsSelected = (selection: NetworkFieldSelection): boolean => networkFieldLabels.every((field) => selection[field.key]);
-const someNetworkFieldsSelected = (selection: NetworkFieldSelection): boolean => networkFieldLabels.some((field) => selection[field.key]);
+const canApplyNetworkField = (candidate: NetworkTagCandidate, key: keyof NetworkFieldSelection): boolean =>
+  key === 'cover' ? Boolean(candidate.coverUrl) : hasCandidateText(candidateFieldValue(candidate, key));
+
+const allNetworkFieldsSelected = (selection: NetworkFieldSelection, candidate: NetworkTagCandidate | null): boolean => {
+  if (!candidate) {
+    return false;
+  }
+
+  const applicableFields = networkFieldLabels.filter((field) => canApplyNetworkField(candidate, field.key));
+  return applicableFields.length > 0 && applicableFields.every((field) => selection[field.key]);
+};
+const someNetworkFieldsSelected = (selection: NetworkFieldSelection, candidate: NetworkTagCandidate | null): boolean =>
+  Boolean(candidate && networkFieldLabels.some((field) => canApplyNetworkField(candidate, field.key) && selection[field.key]));
 
 const validatePositiveInteger = (value: string, label: string, t: Translate): string | null => {
   const trimmed = value.trim();
@@ -110,18 +123,13 @@ const candidateFieldValue = (candidate: NetworkTagCandidate, key: keyof AlbumTag
   }
 };
 
-const defaultNetworkFieldSelection = (
-  form: AlbumTagFormState,
-  album: Pick<LibraryAlbum, 'coverThumb'>,
-  candidate: NetworkTagCandidate,
-): NetworkFieldSelection => {
-  const highConfidence = candidate.confidence >= 0.93;
+const defaultNetworkFieldSelection = (candidate: NetworkTagCandidate): NetworkFieldSelection => {
   return {
-    album: hasCandidateText(candidate.album) && (!hasFormValue(form.album) || highConfidence),
-    albumArtist: hasCandidateText(candidate.albumArtist) && (!hasFormValue(form.albumArtist) || highConfidence),
-    year: candidate.year !== null && (!hasFormValue(form.year) || highConfidence),
-    genre: hasCandidateText(candidate.genre) && (!hasFormValue(form.genre) || highConfidence),
-    cover: Boolean(candidate.coverUrl) && (!album.coverThumb || highConfidence),
+    album: canApplyNetworkField(candidate, 'album'),
+    albumArtist: canApplyNetworkField(candidate, 'albumArtist'),
+    year: canApplyNetworkField(candidate, 'year'),
+    genre: canApplyNetworkField(candidate, 'genre'),
+    cover: canApplyNetworkField(candidate, 'cover'),
   };
 };
 
@@ -137,7 +145,7 @@ const applyNetworkCandidateToForm = (
   genre: fields.genre && candidate.genre ? candidate.genre : form.genre,
 });
 
-export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, onSave }: AlbumTagEditorDrawerProps): JSX.Element | null => {
+export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, onSave, onOpenInFolder, onDeleteAlbum }: AlbumTagEditorDrawerProps): JSX.Element | null => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const [form, setForm] = useState<AlbumTagFormState>(() => stateFromAlbum(album));
   const [selectedCover, setSelectedCover] = useState<TrackCoverSelection | null>(null);
@@ -293,6 +301,24 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
     }
   };
 
+  const handleOpenInFolder = async (): Promise<void> => {
+    try {
+      setLocalError(null);
+      await onOpenInFolder(album);
+    } catch (openError) {
+      setLocalError(openError instanceof Error ? openError.message : String(openError));
+    }
+  };
+
+  const handleDeleteAlbum = async (): Promise<void> => {
+    try {
+      setLocalError(null);
+      await onDeleteAlbum(album);
+    } catch (deleteError) {
+      setLocalError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+    }
+  };
+
   const handleSearchNetwork = async (): Promise<void> => {
     const library = window.echo?.library;
 
@@ -311,7 +337,11 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
       const trackId = await getRepresentativeTrackId();
       const candidates = await library.searchNetworkTagCandidates(trackId);
       setNetworkCandidates(candidates);
-      setNetworkMessage(candidates.length ? null : t('albumTagEditor.message.noNetworkTags'));
+      if (candidates[0]) {
+        applyNetworkCandidate(candidates[0], defaultNetworkFieldSelection(candidates[0]));
+      } else {
+        setNetworkMessage(t('albumTagEditor.message.noNetworkTags'));
+      }
     } catch (searchError) {
       setNetworkCandidates([]);
       setNetworkMessage(null);
@@ -321,9 +351,27 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
     }
   };
 
-  const handleSelectNetworkCandidate = (candidate: NetworkTagCandidate): void => {
+  const applyNetworkCandidate = (candidate: NetworkTagCandidate, selection: NetworkFieldSelection): void => {
     setSelectedNetworkCandidate(candidate);
-    setNetworkFieldSelection(defaultNetworkFieldSelection(form, album, candidate));
+    setNetworkFieldSelection(selection);
+    setForm((current) => applyNetworkCandidateToForm(current, candidate, selection));
+
+    if (selection.cover && candidate.coverUrl) {
+      setPendingNetworkCover({
+        url: candidate.coverUrl,
+        mimeType: candidate.coverMimeType ?? null,
+        previewUrl: candidate.coverPreviewUrl ?? candidate.coverUrl,
+      });
+      setSelectedCover(null);
+      setLoadedCoverThumb(null);
+    }
+
+    setNetworkMessage(t('albumTagEditor.message.appliedNetwork'));
+    setShowDiscardConfirm(false);
+  };
+
+  const handleSelectNetworkCandidate = (candidate: NetworkTagCandidate): void => {
+    applyNetworkCandidate(candidate, defaultNetworkFieldSelection(candidate));
   };
 
   const handleToggleNetworkField = (field: keyof NetworkFieldSelection): void => {
@@ -332,11 +380,11 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
 
   const handleToggleAllNetworkFields = (): void => {
     setNetworkFieldSelection((current) => {
-      const nextChecked = !allNetworkFieldsSelected(current);
+      const nextChecked = !allNetworkFieldsSelected(current, selectedNetworkCandidate);
       return networkFieldLabels.reduce(
         (next, field) => ({
           ...next,
-          [field.key]: nextChecked,
+          [field.key]: selectedNetworkCandidate && canApplyNetworkField(selectedNetworkCandidate, field.key) ? nextChecked : false,
         }),
         emptyNetworkSelection(),
       );
@@ -348,20 +396,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
       return;
     }
 
-    setForm((current) => applyNetworkCandidateToForm(current, selectedNetworkCandidate, networkFieldSelection));
-
-    if (networkFieldSelection.cover && selectedNetworkCandidate.coverUrl) {
-      setPendingNetworkCover({
-        url: selectedNetworkCandidate.coverUrl,
-        mimeType: selectedNetworkCandidate.coverMimeType ?? null,
-        previewUrl: selectedNetworkCandidate.coverPreviewUrl ?? selectedNetworkCandidate.coverUrl,
-      });
-      setSelectedCover(null);
-      setLoadedCoverThumb(null);
-    }
-
-    setNetworkMessage(t('albumTagEditor.message.appliedNetwork'));
-    setShowDiscardConfirm(false);
+    applyNetworkCandidate(selectedNetworkCandidate, networkFieldSelection);
   };
 
   const handleSubmit = (event: FormEvent): void => {
@@ -389,7 +424,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
   const editor = (
     <div className="tag-editor-root" data-open={isOpen}>
       <button className="tag-editor-scrim" type="button" aria-label={t('albumTagEditor.action.close')} onClick={requestClose} />
-      <form className="tag-editor-drawer" onSubmit={handleSubmit}>
+      <form className="tag-editor-drawer album-tag-editor-drawer" onSubmit={handleSubmit}>
         <div className="tag-editor-scroll">
           <header className="tag-editor-header">
           <div>
@@ -434,6 +469,14 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
               <button type="button" onClick={() => void handleSearchNetwork()} disabled={isBusy}>
                 <CloudDownload size={17} />
                 {isSearchingNetwork ? t('albumTagEditor.action.searching') : t('albumTagEditor.action.loadNetwork')}
+              </button>
+              <button type="button" onClick={() => void handleOpenInFolder()} disabled={isBusy}>
+                <FolderOpen size={17} />
+                {t('albumTagEditor.action.openInExplorer')}
+              </button>
+              <button type="button" data-danger="true" onClick={() => void handleDeleteAlbum()} disabled={isBusy}>
+                <Trash2 size={17} />
+                {t('albumTagEditor.action.deleteAlbum')}
               </button>
             </div>
           </div>
@@ -523,11 +566,11 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
                       <input
                         ref={(node) => {
                           if (node) {
-                            node.indeterminate = someNetworkFieldsSelected(networkFieldSelection) && !allNetworkFieldsSelected(networkFieldSelection);
+                            node.indeterminate = someNetworkFieldsSelected(networkFieldSelection, selectedNetworkCandidate) && !allNetworkFieldsSelected(networkFieldSelection, selectedNetworkCandidate);
                           }
                         }}
                         type="checkbox"
-                        checked={allNetworkFieldsSelected(networkFieldSelection)}
+                        checked={allNetworkFieldsSelected(networkFieldSelection, selectedNetworkCandidate)}
                         onChange={handleToggleAllNetworkFields}
                       />
                       <span>{t('albumTagEditor.network.selectAll')}</span>
@@ -543,7 +586,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
                     {networkFieldLabels.map((field) => {
                       const candidateValue = field.key === 'cover' ? (selectedNetworkCandidate.coverUrl ? t('albumTagEditor.value.networkCover') : '') : candidateFieldValue(selectedNetworkCandidate, field.key);
                       const currentValue = field.key === 'cover' ? (previewCover ? t('albumTagEditor.value.existingCover') : '') : form[field.key];
-                      const canApply = field.key === 'cover' ? Boolean(selectedNetworkCandidate.coverUrl) : hasFormValue(candidateValue);
+                      const canApply = canApplyNetworkField(selectedNetworkCandidate, field.key);
                       return (
                         <label key={field.key} className="tag-editor-compare-row" data-disabled={!canApply}>
                           <span>
@@ -562,7 +605,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
                     })}
                   </div>
 
-                  <button type="button" onClick={handleApplyNetworkCandidate} disabled={isSaving || !someNetworkFieldsSelected(networkFieldSelection)}>
+                  <button type="button" onClick={handleApplyNetworkCandidate} disabled={isSaving || !someNetworkFieldsSelected(networkFieldSelection, selectedNetworkCandidate)}>
                     <Check size={17} />
                     {t('albumTagEditor.action.applyToForm')}
                   </button>

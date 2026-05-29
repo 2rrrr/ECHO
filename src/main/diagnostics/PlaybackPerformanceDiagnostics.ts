@@ -39,6 +39,7 @@ export type PlaybackPerformanceSnapshot = {
 const recentStepTtlMs = 15_000;
 const maxBreadcrumbs = 20;
 const breadcrumbTtlMs = 30_000;
+const slowPlaybackStepWarnThresholdMs = 750;
 let activeContext: PlaybackPerformanceContext | null = null;
 let lastCompletedStep: PlaybackPerformanceCompletedStep | null = null;
 let pendingBackgroundTask: string | null = null;
@@ -50,12 +51,20 @@ const formatDetails = (details: Record<string, unknown>): string => {
 };
 
 const logStep = (context: PlaybackPerformanceContext, durationMs: number): void => {
-  console.info(
-    `[playback-perf] ${context.operation}:${context.phase} ${Math.max(0, Math.round(durationMs))}ms${formatDetails({
-      trackId: context.trackId,
-      outputMode: context.outputMode,
-    })}`,
-  );
+  const roundedDurationMs = Math.max(0, Math.round(durationMs));
+  const details = formatDetails({
+    trackId: context.trackId,
+    outputMode: context.outputMode,
+  });
+  const baseMessage = `[playback-perf] ${context.operation}:${context.phase} ${roundedDurationMs}ms${details}`;
+  if (roundedDurationMs >= slowPlaybackStepWarnThresholdMs) {
+    console.warn(
+      `${baseMessage} SLOW probableCause=slow_playback_phase actionHint=check this phase, nearby performance stalls, and playbackBreadcrumbs`,
+    );
+    return;
+  }
+
+  console.info(baseMessage);
 };
 
 export const markPlaybackBreadcrumb = (

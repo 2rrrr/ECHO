@@ -6,15 +6,18 @@ import { ArtistDetailView } from '../components/artist/ArtistDetailView';
 import { artistMark } from '../components/artist/artistVisual';
 import { LibrarySourceSwitch } from '../components/library/LibrarySourceSwitch';
 import { RemoteSourceFilter } from '../components/library/RemoteSourceFilter';
+import { DeferredWallImage, useScrollImagePause } from '../components/ui/DeferredWallImage';
 import { InfiniteScrollSentinel, readPageScrollTop, writePageScrollTop } from '../components/ui/InfiniteScrollSentinel';
 import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../components/ui/MediaWallScrollSpacer';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import type { DetailReturnTarget } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent, consumePendingArtistDetailNavigation } from '../utils/artistNavigation';
+import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 96;
+const priorityArtistWallImageCount = 32;
 const maxPreservedRefreshPageSize = 500;
 const preserveScrollThresholdPx = 80;
 const isPreserveScrollLibraryEvent = (event: Event): boolean =>
@@ -52,8 +55,7 @@ export const ArtistsPage = (): JSX.Element => {
   const { t } = useI18n();
   const [artists, setArtists] = useState<LibraryArtist[]>([]);
   const [total, setTotal] = useState(0);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
   const [sort, setSort] = useState<LibrarySort>('default');
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => readStoredLibrarySourceMode());
   const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
@@ -77,6 +79,7 @@ export const ArtistsPage = (): JSX.Element => {
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
   const requestedArtistImageIdsRef = useRef(new Set<string>());
+  const pauseDeferredArtistImages = useScrollImagePause(pageRootRef);
   const { wallRef: artistWallRef, spacerHeight } = useMediaWallScrollSpacer<HTMLElement>({
     itemCount: artists.length,
     totalCount: total,
@@ -85,14 +88,6 @@ export const ArtistsPage = (): JSX.Element => {
     rowGap: 30,
     estimatedItemHeight: 174,
   });
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearch(searchInput.trim());
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
 
   useEffect(() => {
     if (!isSortOpen) {
@@ -474,8 +469,7 @@ export const ArtistsPage = (): JSX.Element => {
           <input
             type="search"
             placeholder={t('library.artists.searchPlaceholder')}
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
+            {...searchInputProps}
           />
         </label>
 
@@ -532,8 +526,9 @@ export const ArtistsPage = (): JSX.Element => {
 
       <div ref={pageRootRef} className="media-wall-scroll-shell page-scroll-container">
         <section ref={artistWallRef} className="artist-wall" aria-label={t('library.artists.listAria')}>
-          {artists.map((artist) => {
+          {artists.map((artist, index) => {
             const avatarImageUrl = artist.avatarUrl ?? artist.avatarThumbUrl ?? null;
+            const coverImageUrl = artist.coverSource === 'default' ? null : artist.coverThumb;
             const shouldShowAvatar = Boolean(
               avatarImageUrl && failedAvatarUrls[artist.id] !== avatarImageUrl,
             );
@@ -544,10 +539,10 @@ export const ArtistsPage = (): JSX.Element => {
             const shouldShowCover = Boolean(
               !shouldShowAvatar
                 && (artistWallAlbumArtwork || (artistWallAlbumFallbackForMissingAvatars && shouldUseMissingAvatarFallback))
-                && artist.coverThumb
-                && failedCoverUrls[artist.id] !== artist.coverThumb,
+                && coverImageUrl
+                && failedCoverUrls[artist.id] !== coverImageUrl,
             );
-            const imageUrl = shouldShowAvatar ? avatarImageUrl : shouldShowCover ? artist.coverThumb : null;
+            const imageUrl = shouldShowAvatar ? avatarImageUrl : shouldShowCover ? coverImageUrl : null;
             const avatarSrcSet = shouldShowAvatar && artist.avatarThumbUrl && artist.avatarUrl && artist.avatarThumbUrl !== artist.avatarUrl
               ? `${artist.avatarThumbUrl} 192w, ${artist.avatarUrl} 1024w`
               : undefined;
@@ -564,12 +559,14 @@ export const ArtistsPage = (): JSX.Element => {
               >
                 <div className="artist-avatar" data-cover={Boolean(imageUrl)} data-visual={shouldShowAvatar ? 'avatar' : shouldShowCover ? 'cover' : 'letter'} aria-hidden="true">
                   {imageUrl ? (
-                    <img
+                    <DeferredWallImage
                       alt=""
                       decoding="async"
                       draggable={false}
                       height={384}
                       loading="lazy"
+                      paused={pauseDeferredArtistImages}
+                      priority={index < priorityArtistWallImageCount}
                       sizes="124px"
                       src={imageUrl}
                       srcSet={avatarSrcSet}

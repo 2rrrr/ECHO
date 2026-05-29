@@ -6,6 +6,7 @@ import { BPM_CONFIDENCE_THRESHOLD } from '../../shared/constants/audioAnalysis';
 import type { BpmAnalysisResult } from '../../shared/types/library';
 import type {
   StreamingLyricsResult,
+  StreamingFavoriteCollectionRenameResult,
   StreamingFavoritesImportResult,
   StreamingFavoriteProviderName,
   StreamingFavoriteSetResult,
@@ -304,7 +305,7 @@ const favoritePlaylistIdFromParsedUrl = (url: URL, depth = 0): StreamingFavorite
   if (host.includes('bilibili.com')) {
     const id = findParam('fid', 'media_id', 'mediaId') ?? combinedPath.match(/favlist\/(\d+)/iu)?.[1] ?? null;
     if (id) {
-      return { provider: 'bilibili', providerPlaylistId: id };
+      return { provider: 'bilibili', providerPlaylistId: url.toString() };
     }
   }
 
@@ -513,6 +514,10 @@ export class StreamingService {
     return this.favoritesStore.setFavorite(this.normalizeTrack(track.provider, track), favorite);
   }
 
+  renameFavoriteCollection(collectionId: string, name: string): StreamingFavoriteCollectionRenameResult {
+    return this.favoritesStore.renameCollection(collectionId, name);
+  }
+
   async importFavoritesFromUrl(url: string): Promise<StreamingFavoritesImportResult> {
     const target = resolveFavoritePlaylistIdFromUrl(url);
     const provider = this.registry.get(target.provider);
@@ -521,12 +526,11 @@ export class StreamingService {
     }
 
     let page = 1;
-    let importedCount = 0;
-    let addedCount = 0;
     let playlistName = 'Streaming Favorites';
-    let snapshot = this.favoritesStore.getSnapshot();
+    let providerPlaylistId = target.providerPlaylistId;
+    const importedTracks: StreamingTrack[] = [];
 
-    while (importedCount < maxFavoritesImportTracks) {
+    while (importedTracks.length < maxFavoritesImportTracks) {
       const detail = await this.callProviderWithTimeout(
         provider,
         () =>
@@ -539,11 +543,9 @@ export class StreamingService {
         playbackProviderTimeoutMs,
       );
       const normalizedTracks = detail.tracks.map((track) => this.normalizeTrack(detail.provider, track));
-      const result = this.favoritesStore.importTracks(normalizedTracks);
       playlistName = detail.title;
-      importedCount += result.importedCount;
-      addedCount += result.addedCount;
-      snapshot = result.snapshot;
+      providerPlaylistId = detail.providerPlaylistId;
+      importedTracks.push(...normalizedTracks.slice(0, Math.max(0, maxFavoritesImportTracks - importedTracks.length)));
 
       if (!detail.hasMore || normalizedTracks.length === 0) {
         break;
@@ -551,14 +553,16 @@ export class StreamingService {
 
       page += 1;
     }
+    const result = this.favoritesStore.importCollection(target.provider, providerPlaylistId, playlistName, importedTracks);
 
     return {
       provider: target.provider,
-      providerPlaylistId: target.providerPlaylistId,
+      providerPlaylistId,
+      collectionId: result.collection.id,
       playlistName,
-      importedCount,
-      addedCount,
-      snapshot,
+      importedCount: result.importedCount,
+      addedCount: result.addedCount,
+      snapshot: result.snapshot,
     };
   }
 

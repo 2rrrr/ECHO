@@ -167,6 +167,7 @@ import {
   getPluginsBridge,
   getSmtcBridge,
 } from '../utils/echoBridge';
+import { isImeComposingKeyEvent } from '../utils/imeInput';
 
 const automixTemporarilyDisabled = true;
 
@@ -5392,7 +5393,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleSettingsSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (event.key !== 'Enter' || settingsSearchResults.length === 0) {
+    if (isImeComposingKeyEvent(event) || event.key !== 'Enter' || settingsSearchResults.length === 0) {
       return;
     }
 
@@ -6996,7 +6997,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleDownloadUnlockKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (event.key === 'Enter') {
+    if (!isImeComposingKeyEvent(event) && event.key === 'Enter') {
       handleDownloadFeatureUnlock();
     }
   };
@@ -7292,6 +7293,10 @@ export const SettingsPage = (): JSX.Element => {
     document.body.dataset.echoShortcutRecording = 'true';
 
     const handleShortcutKeyDown = (event: KeyboardEvent): void => {
+      if (isImeComposingKeyEvent(event)) {
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
 

@@ -8,19 +8,25 @@ import { AlbumDetailView } from '../components/album/AlbumDetailView';
 import { AlbumTagEditorDrawer } from '../components/album/AlbumTagEditorDrawer';
 import { LibrarySourceSwitch } from '../components/library/LibrarySourceSwitch';
 import { RemoteSourceFilter } from '../components/library/RemoteSourceFilter';
+import { DeferredWallImage, useScrollImagePause } from '../components/ui/DeferredWallImage';
 import { InfiniteScrollSentinel, readPageScrollTop, writePageScrollTop } from '../components/ui/InfiniteScrollSentinel';
 import { likedAlbumsChangedEvent, likedChangedEvent } from '../hooks/useLikedMedia';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation, type DetailReturnTarget } from '../utils/albumNavigation';
+import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 60;
+const priorityAlbumWallImageCount = 24;
 const maxPreservedRefreshPageSize = 500;
 const preserveScrollThresholdPx = 80;
 const isPreserveScrollLibraryEvent = (event: Event): boolean =>
   event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && event.detail.preserveScroll === true;
+const dispatchPreservedLibraryChange = (): void => {
+  window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
+};
 const albumSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
   { value: 'default', labelKey: 'library.sort.default' },
   { value: 'titleAsc', labelKey: 'library.albums.sort.titleAsc' },
@@ -51,8 +57,7 @@ export const AlbumsPage = (): JSX.Element => {
   const { appendTracksToQueue, playTrack, replaceQueue } = usePlaybackQueue();
   const [albums, setAlbums] = useState<LibraryAlbum[]>([]);
   const [total, setTotal] = useState(0);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
   const [sort, setSort] = useState<LibrarySort>('default');
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => readStoredLibrarySourceMode());
   const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
@@ -77,14 +82,7 @@ export const AlbumsPage = (): JSX.Element => {
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
   const tagEditorCloseTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearch(searchInput.trim());
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
+  const pauseDeferredAlbumImages = useScrollImagePause(pageRootRef);
 
   useEffect(() => {
     if (!isSortOpen) {
@@ -338,6 +336,55 @@ export const AlbumsPage = (): JSX.Element => {
     setAlbumMenu({ album, position: { x: event.clientX, y: event.clientY } });
   }, []);
 
+  const openAlbumInFolder = useCallback(
+    async (album: LibraryAlbum): Promise<void> => {
+      const library = window.echo?.library;
+
+      if (!library) {
+        throw new Error(t('library.albums.error.desktopBridge'));
+      }
+
+      const result = await library.getAlbumTracks(album.id, { page: 1, pageSize: 1 });
+      const track = result.items[0];
+      if (!track) {
+        throw new Error(t('albumTagEditor.error.noReadableTrack'));
+      }
+
+      if (library.openTrackInFolder) {
+        await library.openTrackInFolder(track.id);
+        return;
+      }
+
+      if (library.openPathInFolder) {
+        await library.openPathInFolder(track.path);
+        return;
+      }
+
+      throw new Error(t('albumTagEditor.error.openFolderUnsupported'));
+    },
+    [t],
+  );
+
+  const deleteAlbumFiles = useCallback(
+    async (album: LibraryAlbum): Promise<boolean> => {
+      const library = window.echo?.library;
+
+      if (!library?.deleteAlbumFiles) {
+        throw new Error(t('library.albums.error.desktopBridge'));
+      }
+
+      if (!window.confirm(t('library.albums.confirm.deleteAlbumFiles', { title: album.title, count: album.trackCount }))) {
+        return false;
+      }
+
+      await library.deleteAlbumFiles(album.id);
+      setAlbums((current) => current.filter((item) => item.id !== album.id));
+      dispatchPreservedLibraryChange();
+      return true;
+    },
+    [t],
+  );
+
   const handleAlbumMenuAction = useCallback(
     async (action: AlbumMenuAction, album: LibraryAlbum, playlistTarget?: LibraryPlaylist): Promise<void> => {
       const library = window.echo?.library;
@@ -426,19 +473,33 @@ export const AlbumsPage = (): JSX.Element => {
             }
             return;
           case 'delete-album':
-            if (!window.confirm(t('library.albums.confirm.deleteAlbumFiles', { title: album.title, count: album.trackCount }))) {
-              return;
-            }
-            await library.deleteAlbumFiles(album.id);
-            setAlbums((current) => current.filter((item) => item.id !== album.id));
-            window.dispatchEvent(new Event('library:changed'));
+            await deleteAlbumFiles(album);
             return;
         }
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [appendTracksToQueue, getAllAlbumTracks, likedAlbumIds, playAlbum, t],
+    [appendTracksToQueue, deleteAlbumFiles, getAllAlbumTracks, likedAlbumIds, playAlbum, t],
+  );
+
+  const handleDeleteEditingAlbum = useCallback(
+    async (album: LibraryAlbum): Promise<void> => {
+      setIsSavingTags(true);
+      setTagEditorError(null);
+
+      try {
+        const deleted = await deleteAlbumFiles(album);
+        if (deleted) {
+          closeTagEditor();
+        }
+      } catch (deleteError) {
+        setTagEditorError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+      } finally {
+        setIsSavingTags(false);
+      }
+    },
+    [closeTagEditor, deleteAlbumFiles],
   );
 
   const handleSaveAlbumTags = useCallback(
@@ -462,7 +523,6 @@ export const AlbumsPage = (): JSX.Element => {
       try {
         const updatedAlbum = await library.updateAlbumTags({ albumId: album.id, tags, coverPath, coverUrl, coverMimeType });
         setAlbums((current) => current.map((item) => (item.id === album.id ? updatedAlbum : item)));
-        window.dispatchEvent(new Event('library:changed'));
         closeTagEditor();
       } catch (saveError) {
         setTagEditorError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -537,8 +597,7 @@ export const AlbumsPage = (): JSX.Element => {
           <input
             type="search"
             placeholder={t('library.albums.searchPlaceholder')}
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
+            {...searchInputProps}
           />
         </label>
 
@@ -582,7 +641,7 @@ export const AlbumsPage = (): JSX.Element => {
 
       <div ref={pageRootRef} className="media-wall-scroll-shell page-scroll-container">
         <section className="album-wall" aria-label={t('library.albums.listAria')}>
-          {albums.map((album) => {
+          {albums.map((album, index) => {
             const shouldShowCover = Boolean(album.coverThumb && failedCoverUrls[album.id] !== album.coverThumb);
 
             return (
@@ -597,12 +656,14 @@ export const AlbumsPage = (): JSX.Element => {
               >
                 <div className="album-cover" data-empty={!shouldShowCover} aria-hidden="true">
                   {shouldShowCover ? (
-                    <img
+                    <DeferredWallImage
                       alt=""
                       decoding="async"
                       draggable={false}
                       height={320}
                       loading="lazy"
+                      paused={pauseDeferredAlbumImages}
+                      priority={index < priorityAlbumWallImageCount}
                       src={album.coverThumb!}
                       width={320}
                       onError={() => handleAlbumCoverError(album)}
@@ -647,6 +708,8 @@ export const AlbumsPage = (): JSX.Element => {
         isSaving={isSavingTags}
         error={tagEditorError}
         onClose={closeTagEditor}
+        onDeleteAlbum={handleDeleteEditingAlbum}
+        onOpenInFolder={openAlbumInFolder}
         onSave={(album, tags, coverPath, coverUrl, coverMimeType) => void handleSaveAlbumTags(album, tags, coverPath, coverUrl, coverMimeType)}
       />
     </div>

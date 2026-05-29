@@ -102,6 +102,42 @@ describe('StreamingFavoritesStore', () => {
     });
   });
 
+  it('imports playlist links as named collections without changing default provider favorites', () => {
+    const store = makeStore();
+    store.setFavorite(makeTrack({ providerTrackId: 'default-video', stableKey: 'streaming:youtube:default-video' }), true);
+
+    const imported = store.importCollection('youtube', 'PL123', 'YouTube Favorites', [
+      makeTrack({ providerTrackId: 'abc123', stableKey: 'streaming:youtube:abc123' }),
+      makeTrack({ providerTrackId: 'new-video', stableKey: 'streaming:youtube:new-video', title: 'New Video' }),
+    ]);
+
+    expect(imported.importedCount).toBe(2);
+    expect(imported.addedCount).toBe(2);
+    expect(imported.snapshot.providers.youtube.map((item) => item.providerTrackId)).toEqual(['default-video']);
+    expect(imported.collection).toMatchObject({
+      id: 'streaming-favorites:youtube:PL123',
+      provider: 'youtube',
+      providerPlaylistId: 'PL123',
+      name: 'YouTube Favorites',
+      sourceName: 'YouTube Favorites',
+    });
+    expect(imported.collection.tracks.map((item) => item.providerTrackId)).toEqual(['abc123', 'new-video']);
+  });
+
+  it('renames imported favorite collections and preserves the custom name on refresh', () => {
+    const store = makeStore();
+    const imported = store.importCollection('youtube', 'PL123', 'YouTube Favorites', [makeTrack()]);
+    const renamed = store.renameCollection(imported.collection.id, 'Night Picks');
+    const refreshed = store.importCollection('youtube', 'PL123', 'Remote Title Changed', [makeTrack({ title: 'Updated Song' })]);
+
+    expect(renamed.collection.name).toBe('Night Picks');
+    expect(refreshed.collection).toMatchObject({
+      name: 'Night Picks',
+      sourceName: 'Remote Title Changed',
+    });
+    expect(refreshed.collection.tracks[0].title).toBe('Updated Song');
+  });
+
   it('rejects providers outside local streaming favorites', () => {
     const store = makeStore();
 

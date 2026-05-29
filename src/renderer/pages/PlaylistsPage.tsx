@@ -4,7 +4,7 @@ import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, He
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
-import type { StreamingAudioQuality, StreamingFavoriteProviderName, StreamingFavoritesSnapshot, StreamingFavoriteTrack, StreamingProviderName } from '../../shared/types/streaming';
+import type { StreamingAudioQuality, StreamingFavoriteCollection, StreamingFavoriteProviderName, StreamingFavoritesSnapshot, StreamingFavoriteTrack, StreamingProviderName } from '../../shared/types/streaming';
 import { TrackList } from '../components/library/TrackList';
 import { TrackContextMenu, type TrackMenuAction } from '../components/library/TrackContextMenu';
 import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
@@ -45,6 +45,7 @@ const emptyStreamingFavoritesSnapshot = (): StreamingFavoritesSnapshot => ({
     youtube: [],
     soundcloud: [],
   },
+  collections: [],
 });
 const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
 const playlistItemDragMime = 'application/x-echo-playlist-item-id';
@@ -214,6 +215,12 @@ const streamingProviderFromTrack = (track: LibraryTrack): StreamingProviderName 
     ? track.provider
     : null;
 
+const defaultFavoriteSelectionId = 'provider:youtube';
+const favoriteProviderSelectionId = (provider: StreamingFavoriteProviderName): string => `provider:${provider}`;
+const favoriteCollectionSelectionId = (collectionId: string): string => `collection:${collectionId}`;
+const favoriteProviderFromSelectionId = (selectionId: string): StreamingFavoriteProviderName =>
+  streamingFavoriteProviders.find((item) => favoriteProviderSelectionId(item.value) === selectionId)?.value ?? 'youtube';
+
 const emptyItemsPage = (): LibraryPage<LibraryPlaylistItem> => ({
   items: [],
   page: 1,
@@ -326,7 +333,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [streamingFavorites, setStreamingFavorites] = useState<StreamingFavoritesSnapshot>(() => emptyStreamingFavoritesSnapshot());
-  const [selectedFavoriteProvider, setSelectedFavoriteProvider] = useState<StreamingFavoriteProviderName>('youtube');
+  const [selectedFavoriteListId, setSelectedFavoriteListId] = useState<string>(defaultFavoriteSelectionId);
   const [itemsPage, setItemsPage] = useState<LibraryPage<LibraryPlaylistItem>>(emptyItemsPage());
   const [isLoading, setIsLoading] = useState(false);
   const [playlistUrl, setPlaylistUrl] = useState('');
@@ -387,7 +394,15 @@ export const PlaylistsPage = (): JSX.Element => {
     () => itemsPage.items.map((item) => itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined)),
     [isSelectedPlaylistRemote, itemsPage.items, streamingQuality],
   );
-  const favoriteItems = streamingFavorites.providers[selectedFavoriteProvider] ?? [];
+  const selectedFavoriteCollection = useMemo(
+    () =>
+      (streamingFavorites.collections ?? []).find((collection) => favoriteCollectionSelectionId(collection.id) === selectedFavoriteListId) ?? null,
+    [selectedFavoriteListId, streamingFavorites.collections],
+  );
+  const selectedFavoriteProvider = selectedFavoriteCollection?.provider ?? favoriteProviderFromSelectionId(selectedFavoriteListId);
+  const selectedFavoriteProviderLabel = streamingFavoriteProviders.find((item) => item.value === selectedFavoriteProvider)?.label ?? selectedFavoriteProvider;
+  const selectedFavoriteListName = selectedFavoriteCollection?.name ?? `${selectedFavoriteProviderLabel} 收藏`;
+  const favoriteItems = selectedFavoriteCollection?.tracks ?? streamingFavorites.providers[selectedFavoriteProvider] ?? [];
   const favoriteDisplayTracks = useMemo(
     () => favoriteItems.map((item) => favoriteToTrack(item, streamingQuality)),
     [favoriteItems, streamingQuality],
@@ -459,10 +474,10 @@ export const PlaylistsPage = (): JSX.Element => {
     () => ({
       type: 'manual' as const,
       label: playlistPanelView === 'streamingFavorites'
-        ? `Streaming Favorites: ${streamingFavoriteProviders.find((item) => item.value === selectedFavoriteProvider)?.label ?? selectedFavoriteProvider}`
+        ? `Streaming Favorites: ${selectedFavoriteListName}`
         : selectedPlaylist ? `Playlist: ${selectedPlaylist.name}` : 'Playlist',
     }),
-    [playlistPanelView, selectedFavoriteProvider, selectedPlaylist],
+    [playlistPanelView, selectedFavoriteListName, selectedPlaylist],
   );
 
   const handleStreamingQualityChange = useCallback(
@@ -635,6 +650,16 @@ export const PlaylistsPage = (): JSX.Element => {
     window.addEventListener('streaming:favorites-changed', handleFavoritesChanged);
     return () => window.removeEventListener('streaming:favorites-changed', handleFavoritesChanged);
   }, []);
+
+  useEffect(() => {
+    if (!selectedFavoriteListId.startsWith('collection:')) {
+      return;
+    }
+
+    if (!(streamingFavorites.collections ?? []).some((collection) => favoriteCollectionSelectionId(collection.id) === selectedFavoriteListId)) {
+      setSelectedFavoriteListId(defaultFavoriteSelectionId);
+    }
+  }, [selectedFavoriteListId, streamingFavorites.collections]);
 
   useEffect(() => {
     if (selectedPlaylist) {
@@ -1222,8 +1247,8 @@ export const PlaylistsPage = (): JSX.Element => {
       const result = await streaming.importFavoritesFromUrl(url);
       setFavoriteImportUrl('');
       setStreamingFavorites(result.snapshot);
-      setSelectedFavoriteProvider(result.provider);
-      setStatusMessage(`已导入收藏：${result.playlistName}，新增 ${result.addedCount} / 读取 ${result.importedCount} 首`);
+      setSelectedFavoriteListId(favoriteCollectionSelectionId(result.collectionId));
+      setStatusMessage(`已导入收藏表：${result.playlistName}，新增 ${result.addedCount} / 读取 ${result.importedCount} 首`);
       window.dispatchEvent(new CustomEvent('streaming:favorites-changed', { detail: result.snapshot }));
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : String(importError));
@@ -1253,6 +1278,31 @@ export const PlaylistsPage = (): JSX.Element => {
       setStatusMessage(null);
     } finally {
       setIsExportingFavorites(false);
+    }
+  };
+
+  const handleRenameFavoriteCollection = async (): Promise<void> => {
+    const streaming = window.echo?.streaming;
+    const collection = selectedFavoriteCollection;
+    if (!streaming?.renameFavoriteCollection || !collection) {
+      return;
+    }
+
+    const name = window.prompt('重命名收藏表', collection.name);
+    if (!name?.trim() || name.trim() === collection.name) {
+      return;
+    }
+
+    try {
+      setError(null);
+      const result = await streaming.renameFavoriteCollection({ collectionId: collection.id, name: name.trim() });
+      setStreamingFavorites(result.snapshot);
+      setSelectedFavoriteListId(favoriteCollectionSelectionId(result.collection.id));
+      setStatusMessage('收藏表已重命名');
+      window.dispatchEvent(new CustomEvent('streaming:favorites-changed', { detail: result.snapshot }));
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : String(renameError));
+      setStatusMessage(null);
     }
   };
 
@@ -1925,13 +1975,14 @@ export const PlaylistsPage = (): JSX.Element => {
             <div className="playlist-list playlist-list--favorites">
               {streamingFavoriteProviders.map((providerItem) => {
                 const count = streamingFavorites.providers[providerItem.value]?.length ?? 0;
+                const selectionId = favoriteProviderSelectionId(providerItem.value);
                 return (
                   <button
                     className="playlist-list-item"
-                    data-active={providerItem.value === selectedFavoriteProvider ? 'true' : undefined}
+                    data-active={selectionId === selectedFavoriteListId ? 'true' : undefined}
                     key={providerItem.value}
                     type="button"
-                    onClick={() => setSelectedFavoriteProvider(providerItem.value)}
+                    onClick={() => setSelectedFavoriteListId(selectionId)}
                   >
                     <Heart size={15} />
                     <span>
@@ -1939,6 +1990,28 @@ export const PlaylistsPage = (): JSX.Element => {
                         <span>{providerItem.label}</span>
                       </strong>
                       <small>{count} favorites</small>
+                    </span>
+                  </button>
+                );
+              })}
+              {(streamingFavorites.collections ?? []).map((collection: StreamingFavoriteCollection) => {
+                const providerLabel = streamingFavoriteProviders.find((item) => item.value === collection.provider)?.label ?? collection.provider;
+                const selectionId = favoriteCollectionSelectionId(collection.id);
+                return (
+                  <button
+                    className="playlist-list-item"
+                    data-active={selectionId === selectedFavoriteListId ? 'true' : undefined}
+                    key={collection.id}
+                    type="button"
+                    onClick={() => setSelectedFavoriteListId(selectionId)}
+                  >
+                    <Heart size={15} />
+                    <span>
+                      <strong>
+                        <span>{collection.name}</span>
+                        <em>{providerLabel}</em>
+                      </strong>
+                      <small>{collection.tracks.length} favorites</small>
                     </span>
                   </button>
                 );
@@ -1956,8 +2029,8 @@ export const PlaylistsPage = (): JSX.Element => {
                 {favoriteDisplayTracks[0]?.coverThumb ? <img alt="" src={favoriteDisplayTracks[0].coverThumb} /> : <Heart size={34} />}
               </div>
               <div className="playlist-detail-copy">
-                <h2>{streamingFavoriteProviders.find((item) => item.value === selectedFavoriteProvider)?.label ?? selectedFavoriteProvider} 收藏</h2>
-                <p>保存到本地 streaming-favorites.json，包含可迁移的视频/音频页面链接。</p>
+                <h2>{selectedFavoriteListName}</h2>
+                <p>{selectedFavoriteCollection ? `${selectedFavoriteProviderLabel} · ${selectedFavoriteCollection.sourceName ?? selectedFavoriteCollection.providerPlaylistId}` : '保存到本地 streaming-favorites.json，包含可迁移的视频/音频页面链接。'}</p>
                 <small>{favoriteItems.length} tracks · {new Date(streamingFavorites.updatedAt).toLocaleString()}</small>
               </div>
               <div className="playlist-actions">
@@ -1999,6 +2072,12 @@ export const PlaylistsPage = (): JSX.Element => {
                   <ListPlus size={16} />
                   <span>添加到队列</span>
                 </button>
+                {selectedFavoriteCollection ? (
+                  <button className="secondary-action" type="button" onClick={() => void handleRenameFavoriteCollection()}>
+                    <Pencil size={16} />
+                    <span>重命名</span>
+                  </button>
+                ) : null}
                 <button className="secondary-action" type="button" disabled={isExportingFavorites} onClick={() => void handleExportStreamingFavorites()}>
                   {isExportingFavorites ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
                   <span>{isExportingFavorites ? '导出中' : '导出收藏'}</span>

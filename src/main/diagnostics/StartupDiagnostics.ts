@@ -1,9 +1,9 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import type { AppSettings } from '../../shared/types/appSettings';
 import { sanitizeLogPayload, sanitizePath } from './Logger';
-import { openDevConsoleWindow, recordDevConsoleSystemEntry } from './DevConsoleService';
+import { openDevConsoleWindow, recordDevConsoleSystemEntry, recordDevConsoleSystemWarning } from './DevConsoleService';
 import { attachExceptionRecorderFile, recordDiagnosticException } from './ExceptionRecorder';
 
 export type StartupDiagnosticEntry = {
@@ -21,14 +21,24 @@ export type SafeModeStartupContext = {
   platform: NodeJS.Platform;
   arch: string;
   userDataPath: string;
+  appPath?: string;
+  execPath?: string;
 };
 
-type StartupDiagnosticsSink = (message: string) => void;
+type StartupDiagnosticsLevel = 'info' | 'warn';
+type StartupDiagnosticsSink = (message: string, level?: StartupDiagnosticsLevel) => void;
 type StartupDiagnosticsClock = () => number;
 type StartupShellSpawner = typeof spawn;
 
 const startupSlowStageThresholdMs = 2000;
 const startupLogFileName = 'startup-safe-mode.log';
+const persistentStateFileNames = [
+  'echo-settings.json',
+  'accounts.json',
+  'echo-library.sqlite',
+  'echo-library.sqlite-wal',
+  'echo-library.sqlite-shm',
+] as const;
 const safeModeShellPollIntervalMs = 250;
 let startupLogPath: string | null = null;
 let startupShellStarted = false;
@@ -63,9 +73,107 @@ const sanitizeDetails = (details: unknown): unknown => {
   return sanitizeLogPayload(details);
 };
 
+const recordStartupDiagnosticToConsole: StartupDiagnosticsSink = (message, level = 'info') => {
+  if (level === 'warn') {
+    recordDevConsoleSystemWarning(message);
+    return;
+  }
+
+  recordDevConsoleSystemEntry(message);
+};
+
+const importantStartupStagePattern = /(?:failed|SLOW|protected|quarantined|archived|unhealthy|poisoned|recovery)/iu;
+
+const getStartupStageLevel = (entry: Pick<StartupDiagnosticEntry, 'stage' | 'slow'>): StartupDiagnosticsLevel =>
+  entry.slow || importantStartupStagePattern.test(entry.stage) ? 'warn' : 'info';
+
+export type StartupPersistentStateFileSnapshot = {
+  name: string;
+  exists: boolean;
+  sizeBytes?: number;
+  modifiedAt?: string;
+  modifiedAgeMs?: number;
+  error?: string;
+};
+
+export type StartupPersistentStateSnapshot = {
+  appVersion: string;
+  platform: NodeJS.Platform;
+  arch: string;
+  userData: ReturnType<typeof sanitizePath>;
+  appPath?: ReturnType<typeof sanitizePath>;
+  execPath?: ReturnType<typeof sanitizePath>;
+  files: StartupPersistentStateFileSnapshot[];
+};
+
+const snapshotPersistentFile = (
+  userDataPath: string,
+  name: string,
+  clock: StartupDiagnosticsClock,
+): StartupPersistentStateFileSnapshot => {
+  const path = join(userDataPath, name);
+  try {
+    const stat = statSync(path);
+    return {
+      name,
+      exists: true,
+      sizeBytes: stat.size,
+      modifiedAt: stat.mtime.toISOString(),
+      modifiedAgeMs: Math.max(0, Math.round(clock() - stat.mtimeMs)),
+    };
+  } catch (error) {
+    return {
+      name,
+      exists: false,
+      error: error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined,
+    };
+  }
+};
+
+export const collectStartupPersistentStateSnapshot = (
+  context: SafeModeStartupContext,
+  clock: StartupDiagnosticsClock = () => Date.now(),
+): StartupPersistentStateSnapshot => ({
+  appVersion: context.appVersion,
+  platform: context.platform,
+  arch: context.arch,
+  userData: sanitizePath(context.userDataPath),
+  appPath: context.appPath ? sanitizePath(context.appPath) : undefined,
+  execPath: context.execPath ? sanitizePath(context.execPath) : undefined,
+  files: persistentStateFileNames.map((name) => snapshotPersistentFile(context.userDataPath, name, clock)),
+});
+
+const formatPersistentFileSnapshot = (file: StartupPersistentStateFileSnapshot): string => {
+  if (!file.exists) {
+    return `${file.name}=missing${file.error ? `(${file.error})` : ''}`;
+  }
+
+  const ageHours = typeof file.modifiedAgeMs === 'number' ? (file.modifiedAgeMs / 3_600_000).toFixed(1) : 'unknown';
+  return `${file.name}=exists size=${file.sizeBytes ?? 0}B age=${ageHours}h`;
+};
+
+export const recordStartupPersistentStateSnapshot = (
+  context: SafeModeStartupContext,
+  clock: StartupDiagnosticsClock = () => Date.now(),
+): StartupPersistentStateSnapshot => {
+  const snapshot = collectStartupPersistentStateSnapshot(context, clock);
+  const lines = [
+    '[startup:persistent-state] Captured launch state for startup/play-click lag diagnosis.',
+    `version=${snapshot.appVersion} platform=${snapshot.platform} arch=${snapshot.arch}`,
+    `userData=${snapshot.userData.basename}#${snapshot.userData.pathHash}`,
+    snapshot.appPath ? `appPath=${snapshot.appPath.basename}#${snapshot.appPath.pathHash}` : null,
+    snapshot.execPath ? `execPath=${snapshot.execPath.basename}#${snapshot.execPath.pathHash}` : null,
+    `files: ${snapshot.files.map(formatPersistentFileSnapshot).join('; ')}`,
+    'actionHint: If registry cleanup or reinstall only helps briefly, compare these file ages/sizes before and after; persistent userData, startup tasks, or playback initialization are more likely than the registry alone.',
+  ].filter((line): line is string => Boolean(line));
+
+  recordDevConsoleSystemWarning(lines.join('\n'));
+  return snapshot;
+};
+
 export const createStartupDiagnosticsTracker = (
   clock: StartupDiagnosticsClock = () => Date.now(),
-  sink: StartupDiagnosticsSink = recordDevConsoleSystemEntry,
+  sink: StartupDiagnosticsSink = recordStartupDiagnosticToConsole,
 ) => {
   let bootTimeMs = clock();
   let lastStageMs = bootTimeMs;
@@ -99,7 +207,7 @@ export const createStartupDiagnosticsTracker = (
     entries.push(entry);
 
     const slowSuffix = slow ? ' SLOW' : '';
-    sink(`[Startup] #${entry.index} ${stage} +${formatMs(deltaMs)} total=${formatMs(elapsedMs)}${slowSuffix}`);
+    sink(`[Startup] #${entry.index} ${stage} +${formatMs(deltaMs)} total=${formatMs(elapsedMs)}${slowSuffix}`, getStartupStageLevel(entry));
     appendStartupLogLine(formatStartupLogLine(entry));
     if (slow) {
       recordDiagnosticException({

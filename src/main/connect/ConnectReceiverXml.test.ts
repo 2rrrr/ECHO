@@ -113,6 +113,24 @@ describe('Connect receiver XML and SOAP helpers', () => {
     expect(metadata.artist).toBe('Unknown Artist');
   });
 
+  it('does not expose dotted opaque stream titles after receiver restore', () => {
+    const opaqueTitle = '._92slRtOaWPuniOzuONt9eYvJdvmdXiyOoS8dDGxO';
+    const metadata = parseReceiverMetadata(
+      `<DIDL-Lite><item><dc:title>${opaqueTitle}</dc:title></item></DIDL-Lite>`,
+      'http://m701.music.126.net/stream?id=123',
+    );
+
+    expect(metadata.title).toBe('External stream');
+    expect(metadata.artist).toBe('Unknown Artist');
+  });
+
+  it('does not expose dotted opaque URI basenames as fallback titles', () => {
+    const metadata = parseReceiverMetadata('', 'http://phone.local/media/._92slRtOaWPuniOzuONt9eYvJdvmdXiyOoS8dDGxO');
+
+    expect(metadata.title).toBe('External stream');
+    expect(metadata.artist).toBe('Unknown Artist');
+  });
+
   it('decodes URL-style metadata and splits title artist fallbacks', () => {
     const metadata = parseReceiverMetadata(
       '<DIDL-Lite><item><dc:title>se+kai+no+shikumi+-+Guiano</dc:title></item></DIDL-Lite>',

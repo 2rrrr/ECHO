@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { DragEvent } from 'react';
 import type { DownloadJob } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack } from '../../shared/types/library';
+import type { StreamingFavoriteTrack, StreamingFavoritesSnapshot } from '../../shared/types/streaming';
 import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
 import { PlaylistsPage } from './PlaylistsPage';
 
@@ -142,6 +143,41 @@ const page = (items: LibraryPlaylistItem[]): LibraryPage<LibraryPlaylistItem> =>
   pageSize: 100,
   total: items.length,
   hasMore: false,
+});
+
+const streamingFavoritesSnapshot = (overrides: Partial<StreamingFavoritesSnapshot> = {}): StreamingFavoritesSnapshot => ({
+  version: 1,
+  updatedAt: '2026-05-29T00:00:00.000Z',
+  providers: {
+    bilibili: [],
+    youtube: [],
+    soundcloud: [],
+  },
+  collections: [],
+  ...overrides,
+});
+
+const streamingFavoriteTrack = (overrides: Partial<StreamingFavoriteTrack> = {}): StreamingFavoriteTrack => ({
+  id: 'streaming:youtube:video-1',
+  provider: 'youtube',
+  providerTrackId: 'video-1',
+  stableKey: 'streaming:youtube:video-1',
+  title: 'Video Song',
+  artist: 'Video Artist',
+  album: 'YouTube',
+  albumArtist: 'Video Artist',
+  duration: 180,
+  coverUrl: null,
+  coverThumb: null,
+  qualities: ['high'],
+  playable: true,
+  unavailableReason: null,
+  lyricsStatus: 'unknown',
+  mvStatus: 'unknown',
+  webUrl: 'https://www.youtube.com/watch?v=video-1',
+  addedAt: '2026-05-29T00:00:00.000Z',
+  updatedAt: '2026-05-29T00:00:00.000Z',
+  ...overrides,
 });
 
 const downloadJob = (overrides: Partial<DownloadJob> = {}): DownloadJob => ({
@@ -699,6 +735,79 @@ describe('PlaylistsPage actions menu', () => {
     await waitFor(() => expect(importPlaylistFromUrl).toHaveBeenCalledWith(spotifyUrl));
     expect(await screen.findByText('已添加歌单：Spotify Mix，共 1 首')).toBeTruthy();
     expect(await screen.findByRole('button', { name: 'Spotify Song' })).toBeTruthy();
+  });
+
+  it('imports streaming favorite links as a named collection and renames it', async () => {
+    const importedTrack = streamingFavoriteTrack();
+    const importedSnapshot = streamingFavoritesSnapshot({
+      collections: [
+        {
+          id: 'streaming-favorites:youtube:PL123',
+          provider: 'youtube',
+          providerPlaylistId: 'PL123',
+          name: 'YouTube Favorites',
+          sourceName: 'YouTube Favorites',
+          tracks: [importedTrack],
+          createdAt: '2026-05-29T00:00:00.000Z',
+          updatedAt: '2026-05-29T00:00:00.000Z',
+        },
+      ],
+    });
+    const renamedSnapshot = streamingFavoritesSnapshot({
+      collections: [
+        {
+          ...importedSnapshot.collections[0],
+          name: 'Night Picks',
+        },
+      ],
+    });
+    const importFavoritesFromUrl = vi.fn().mockResolvedValue({
+      provider: 'youtube',
+      providerPlaylistId: 'PL123',
+      collectionId: 'streaming-favorites:youtube:PL123',
+      playlistName: 'YouTube Favorites',
+      importedCount: 1,
+      addedCount: 1,
+      snapshot: importedSnapshot,
+    });
+    const renameFavoriteCollection = vi.fn().mockResolvedValue({
+      collection: renamedSnapshot.collections[0],
+      snapshot: renamedSnapshot,
+    });
+    window.prompt = vi.fn(() => 'Night Picks');
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ itemCount: 0 })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+      streaming: {
+        getFavorites: vi.fn().mockResolvedValue(streamingFavoritesSnapshot()),
+        importFavoritesFromUrl,
+        renameFavoriteCollection,
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('tab', { name: '流媒体收藏' }));
+    const input = await screen.findByPlaceholderText('粘贴 Bilibili 收藏 / YouTube 播放列表 / SoundCloud sets');
+    fireEvent.change(input, { target: { value: 'https://www.youtube.com/playlist?list=PL123' } });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+
+    await waitFor(() => expect(importFavoritesFromUrl).toHaveBeenCalledWith('https://www.youtube.com/playlist?list=PL123'));
+    expect(await screen.findByText('已导入收藏表：YouTube Favorites，新增 1 / 读取 1 首')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Video Song' })).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole('button', { name: '重命名' }));
+    await waitFor(() =>
+      expect(renameFavoriteCollection).toHaveBeenCalledWith({ collectionId: 'streaming-favorites:youtube:PL123', name: 'Night Picks' }),
+    );
+    expect(await screen.findByText('收藏表已重命名')).toBeTruthy();
+    expect(await screen.findAllByText('Night Picks')).toHaveLength(2);
   });
 
   it('guides Spotify owner-restricted playlist imports through the system browser', async () => {

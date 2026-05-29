@@ -301,20 +301,40 @@ const isUnsafeLibraryText = (text: string, maxLength: number): boolean => {
   return controlCount >= 8 || controlCount / Math.max(1, text.length) > 0.02;
 };
 
+const stripArtistSortPrefix = (value: string): string => {
+  const trimmed = value.trim();
+  const stripped = trimmed
+    .replace(/^\d{1,3}\s*[.)\uff0e\u3002]\s*/u, '')
+    .replace(/^\d{1,3}\s*[-_]\s*(?=[^\d\s(\[\uff08])/u, '')
+    .trim();
+
+  return stripped || trimmed;
+};
+
+const isLikelyTrackNumberArtistName = (value: string): boolean => {
+  const normalized = value.normalize('NFKC').trim();
+  return /^\d{1,2}$/u.test(normalized) || /^0+\d*$/u.test(normalized);
+};
+
+const filenameArtistFallback = (value: string): string | null => {
+  const stripped = stripArtistSortPrefix(value);
+  return stripped && !isLikelyTrackNumberArtistName(stripped) ? stripped : null;
+};
+
 const filenameTrackFallback = (filePath: string): { title: string; artist: string | null } => {
   const name = basename(filePath, extname(filePath)).trim();
   const parts = name.split(' - ').map((part) => part.trim()).filter(Boolean);
 
   if (parts.length >= 2) {
     return {
-      artist: parts[0],
-      title: parts.slice(1).join(' - '),
+      artist: filenameArtistFallback(parts[0]),
+      title: stripArtistSortPrefix(parts.slice(1).join(' - ')),
     };
   }
 
   return {
     artist: null,
-    title: name || 'Untitled',
+    title: stripArtistSortPrefix(name) || 'Untitled',
   };
 };
 
@@ -425,6 +445,31 @@ const shuffleRows = <Row,>(rows: Row[]): Row[] => {
   }
 
   return next;
+};
+
+const randomOneBasedRowNumbers = (totalRows: number, count: number): number[] => {
+  const total = Math.max(0, Math.floor(totalRows));
+  const target = Math.max(0, Math.min(total, Math.floor(count)));
+  if (total <= 0 || target <= 0) {
+    return [];
+  }
+
+  const selected = new Set<number>();
+  const maxRandomAttempts = target * 4;
+  let attempts = 0;
+  while (selected.size < target && attempts < maxRandomAttempts) {
+    selected.add(Math.floor(Math.random() * total) + 1);
+    attempts += 1;
+  }
+
+  if (selected.size < target) {
+    const start = Math.floor(Math.random() * total);
+    for (let index = 0; selected.size < target && index < total; index += 1) {
+      selected.add(((start + index) % total) + 1);
+    }
+  }
+
+  return [...selected];
 };
 
 const pageFromQuery = (
@@ -805,6 +850,11 @@ const stableArtistAlbumScore = (artistKey: string, albumId: string): number => {
 const normalizeArtistDisplayName = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+const normalizeArtistComponentName = (value: string): string => {
+  const normalized = normalizeArtistDisplayName(stripArtistSortPrefix(value));
+  return normalized && !isLikelyTrackNumberArtistName(normalized) ? normalized : '';
+};
+
 const artistKeyForName = (name: string): string => name.normalize('NFKC').toLocaleLowerCase();
 const numericArtistSlashPlaceholder = '__ECHO_NUMERIC_ARTIST_SLASH__';
 const protectNumericArtistSlashes = (value: string): string =>
@@ -825,11 +875,11 @@ const splitArtistNames = (value: unknown): string[] => {
 
   const names = protectNumericArtistSlashes(normalized)
     .split(artistNameSeparatorPattern)
-    .map((name) => normalizeArtistDisplayName(restoreNumericArtistSlashes(name)))
+    .map((name) => normalizeArtistComponentName(restoreNumericArtistSlashes(name)))
     .filter(Boolean);
   const uniqueNames = new Map<string, string>();
 
-  for (const name of names.length > 0 ? names : [normalized]) {
+  for (const name of names) {
     const key = artistKeyForName(name);
     if (!uniqueNames.has(key)) {
       uniqueNames.set(key, name);
@@ -3825,10 +3875,25 @@ export class LibraryStore {
   }
 
   deleteTracks(trackIds: string[]): number {
+    const uniqueTrackIds = Array.from(new Set(trackIds.filter((trackId) => trackId.trim() !== '')));
+    const affectedAlbumIds = new Set<string>();
     let changed = 0;
 
-    for (const trackId of trackIds) {
+    for (const trackId of uniqueTrackIds) {
+      const albumRows = this.allRows('SELECT album_id FROM album_tracks WHERE track_id = ?', trackId);
+      for (const row of albumRows) {
+        const albumId = textOrNull(row.album_id);
+        if (albumId) {
+          affectedAlbumIds.add(albumId);
+        }
+      }
+
       changed += Number(this.run('DELETE FROM tracks WHERE id = ?', trackId).changes ?? 0);
+      this.run('DELETE FROM album_tracks WHERE track_id = ?', trackId);
+    }
+
+    for (const albumId of affectedAlbumIds) {
+      this.compactAlbumAfterTrackDelete(albumId);
     }
 
     return changed;
@@ -3837,10 +3902,8 @@ export class LibraryStore {
   deleteTrackAndCompactAlbums(trackId: string): number {
     const albumRows = this.allRows(
       `SELECT
-        album_tracks.album_id AS album_id,
-        tracks.duration AS duration
+        album_tracks.album_id AS album_id
        FROM album_tracks
-       INNER JOIN tracks ON tracks.id = album_tracks.track_id
        WHERE album_tracks.track_id = ?`,
       trackId,
     );
@@ -3853,17 +3916,25 @@ export class LibraryStore {
     this.run('DELETE FROM album_tracks WHERE track_id = ?', trackId);
 
     for (const row of albumRows) {
-      this.compactAlbumAfterTrackDelete(String(row.album_id), Number(row.duration ?? 0));
+      this.compactAlbumAfterTrackDelete(String(row.album_id));
     }
 
     return changed;
   }
 
-  private compactAlbumAfterTrackDelete(albumId: string, deletedDuration: number): void {
-    const remainingRow = this.getRow('SELECT COUNT(*) AS count FROM album_tracks WHERE album_id = ?', albumId);
+  private compactAlbumAfterTrackDelete(albumId: string): void {
+    const remainingRow = this.getRow(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(COALESCE(tracks.duration, 0)), 0) AS duration
+       FROM album_tracks
+       INNER JOIN tracks ON tracks.id = album_tracks.track_id
+       WHERE album_tracks.album_id = ?
+         AND tracks.missing = 0`,
+      albumId,
+    );
     const remainingCount = Number(remainingRow?.count ?? 0);
 
     if (remainingCount <= 0) {
+      this.run('DELETE FROM artist_albums WHERE album_id = ?', albumId);
       this.run('DELETE FROM albums WHERE id = ?', albumId);
       return;
     }
@@ -3881,16 +3952,43 @@ export class LibraryStore {
     this.run(
       `UPDATE albums
        SET track_count = ?,
-           duration = MAX(0, duration - ?),
-           cover_id = COALESCE(cover_id, ?),
+           duration = ?,
+           cover_id = ?,
            updated_at = ?
        WHERE id = ?`,
       remainingCount,
-      Number.isFinite(deletedDuration) ? Math.max(0, deletedDuration) : 0,
+      Number(remainingRow?.duration ?? 0),
       textOrNull(coverRow?.cover_id),
       nowIso(),
       albumId,
     );
+  }
+
+  updateAlbumSummary(albumId: string, update: {
+    title: string;
+    albumArtist: string;
+    year: number | null;
+    coverId: string | null;
+  }, timestamp = nowIso()): LibraryAlbum | null {
+    const safeTitle = sanitizeLibraryText(update.title, 'Unknown Album');
+    const safeAlbumArtist = sanitizeLibraryText(update.albumArtist, unknownArtist);
+    this.run(
+      `UPDATE albums
+       SET title = ?,
+           album_artist = ?,
+           year = ?,
+           cover_id = ?,
+           updated_at = ?
+       WHERE id = ?`,
+      safeTitle,
+      safeAlbumArtist,
+      update.year,
+      update.coverId,
+      timestamp,
+      albumId,
+    );
+
+    return this.getAlbum(albumId);
   }
 
   deleteAllTracks(): number {
@@ -3990,8 +4088,8 @@ export class LibraryStore {
           sourceName,
         });
       };
-      const considerCover = (artist: ArtistIndexStats, albumId: string | null, coverId: string | null): void => {
-        if (!albumId || !coverId) {
+      const considerCover = (artist: ArtistIndexStats, albumId: string | null, coverId: string | null, coverSource: unknown): void => {
+        if (!albumId || !coverId || coverSourceOrNull(coverSource) === 'default') {
           return;
         }
 
@@ -4011,7 +4109,8 @@ export class LibraryStore {
           tracks.id AS track_id,
           tracks.artist AS artist,
           album_tracks.album_id AS album_id,
-          albums.cover_id AS album_cover_id
+          albums.cover_id AS album_cover_id,
+          (SELECT source_type FROM covers WHERE covers.id = albums.cover_id) AS album_cover_source
         FROM tracks
         LEFT JOIN album_tracks ON album_tracks.track_id = tracks.id
         LEFT JOIN albums ON albums.id = album_tracks.album_id
@@ -4026,6 +4125,7 @@ export class LibraryStore {
         const sourceName = normalizeArtistDisplayName(row.artist);
         const albumId = textOrNull(row.album_id);
         const coverId = textOrNull(row.album_cover_id);
+        const coverSource = row.album_cover_source;
 
         for (const name of splitArtistNames(sourceName)) {
           const artist = ensureArtist(name, { trackId, albumId });
@@ -4037,7 +4137,7 @@ export class LibraryStore {
             sourceName,
             position,
           });
-          considerCover(artist, albumId, coverId);
+          considerCover(artist, albumId, coverId, coverSource);
         }
       });
 
@@ -4046,6 +4146,7 @@ export class LibraryStore {
           albums.id AS album_id,
           albums.album_artist AS album_artist,
           albums.cover_id AS cover_id,
+          (SELECT source_type FROM covers WHERE covers.id = albums.cover_id) AS cover_source,
           album_tracks.track_id AS track_id,
           album_tracks.position AS track_position
          FROM albums
@@ -4058,13 +4159,14 @@ export class LibraryStore {
         const albumId = String(row.album_id);
         const sourceName = normalizeArtistDisplayName(row.album_artist);
         const coverId = textOrNull(row.cover_id);
+        const coverSource = row.cover_source;
         const trackId = textOrNull(row.track_id);
         const trackPosition = Number(row.track_position ?? trackLinks.size);
 
         for (const name of splitArtistNames(sourceName)) {
           const artist = ensureArtist(name, { trackId, albumId });
           linkAlbum(artist, albumId, sourceName);
-          considerCover(artist, albumId, coverId);
+          considerCover(artist, albumId, coverId, coverSource);
           if (trackId) {
             artist.trackIds.add(trackId);
             trackLinks.set(`${artist.id}:${trackId}`, {
@@ -4480,18 +4582,25 @@ export class LibraryStore {
               return [];
             }
 
-            const windowSize = Math.min(total, Math.max(pageSize, Math.min(randomWindowMaxRows, pageSize * 3)));
-            const randomOffset = total > windowSize ? Math.floor(Math.random() * (total - windowSize + 1)) : 0;
+            const sampleSize = Math.min(total, Math.max(pageSize, Math.min(randomWindowMaxRows, pageSize * 3)));
+            const rowNumbers = randomOneBasedRowNumbers(total, sampleSize);
+            if (rowNumbers.length === 0) {
+              return [];
+            }
+
             return shuffleRows(
               this.allRows(
-                `${unifiedTracksSql}
+                `${unifiedTracksSql},
+      sampled_tracks AS (
+        SELECT *, ROW_NUMBER() OVER () AS echo_random_row_number
+        FROM library_tracks
+        ${mediaTypeWhereSql}
+      )
       SELECT *
-      FROM library_tracks
-      ${mediaTypeWhereSql}
-      LIMIT ? OFFSET ?`,
+      FROM sampled_tracks
+      WHERE echo_random_row_number IN (${rowNumbers.map(() => '?').join(', ')})`,
                 ...pageParams,
-                windowSize,
-                randomOffset,
+                ...rowNumbers,
               ),
             ).slice(0, pageSize);
           })()
@@ -4712,6 +4821,13 @@ export class LibraryStore {
             AND tracks.missing = 0
         ), '') AS search_blob
       FROM albums
+      WHERE EXISTS (
+        SELECT 1
+        FROM album_tracks
+        INNER JOIN tracks ON tracks.id = album_tracks.track_id
+        WHERE album_tracks.album_id = albums.id
+          AND tracks.missing = 0
+      )
     ),
     remote_albums AS (
       SELECT
@@ -4851,6 +4967,7 @@ export class LibraryStore {
         artists.track_count,
         artists.album_count,
         artists.cover_id,
+        covers.source_type AS cover_source,
         artist_image_cache.status AS avatar_status,
         artist_image_cache.provider AS avatar_provider,
         artist_image_cache.source_hash AS avatar_source_hash,
@@ -4858,6 +4975,7 @@ export class LibraryStore {
         artist_image_cache.medium_path AS avatar_medium_path,
         artist_image_cache.large_path AS avatar_large_path
       FROM artists
+      LEFT JOIN covers ON covers.id = artists.cover_id
       LEFT JOIN artist_image_cache ON artist_image_cache.artist_key = artists.artist_key
     ),
     remote_artists AS (
@@ -4874,6 +4992,7 @@ export class LibraryStore {
         COUNT(*) AS track_count,
         COUNT(DISTINCT remote_artist_rows.album_id) AS album_count,
         MIN(remote_artist_rows.cover_id) AS cover_id,
+        NULL AS cover_source,
         artist_image_cache.status AS avatar_status,
         artist_image_cache.provider AS avatar_provider,
         artist_image_cache.source_hash AS avatar_source_hash,
@@ -4995,7 +5114,7 @@ export class LibraryStore {
       `${artistsSql}
       SELECT
         id, media_type, source_id, source_display_name, provider, artist_key, name, sort_name, role,
-        track_count, album_count, cover_id, avatar_status, avatar_provider,
+        track_count, album_count, cover_id, cover_source, avatar_status, avatar_provider,
         avatar_source_hash, avatar_thumb_path, avatar_medium_path, avatar_large_path
        FROM library_artists
        ${whereSql}
@@ -5021,7 +5140,7 @@ export class LibraryStore {
       `${this.unifiedArtistsSql()}
        SELECT
         id, media_type, source_id, source_display_name, provider, artist_key, name, sort_name, role,
-        track_count, album_count, cover_id, avatar_status, avatar_provider,
+        track_count, album_count, cover_id, cover_source, avatar_status, avatar_provider,
         avatar_source_hash, avatar_thumb_path, avatar_medium_path, avatar_large_path
        FROM library_artists
        WHERE id = ?`,
@@ -5978,9 +6097,13 @@ export class LibraryStore {
     });
   }
 
-  clearPlaylist(playlistId: string): void {
+  clearPlaylist(playlistId: string, sourceProvider?: LibraryPageQuery['sourceProvider']): void {
     this.transaction(() => {
-      this.run('DELETE FROM playlist_items WHERE playlist_id = ?', playlistId);
+      if (sourceProvider) {
+        this.run('DELETE FROM playlist_items WHERE playlist_id = ? AND source_provider = ?', playlistId, sourceProvider);
+      } else {
+        this.run('DELETE FROM playlist_items WHERE playlist_id = ?', playlistId);
+      }
       this.refreshPlaylistItemCount(playlistId);
     });
   }
@@ -6126,8 +6249,8 @@ export class LibraryStore {
     return { liked: true, item: this.likeTrack(trackId) };
   }
 
-  clearLikedTracks(): void {
-    this.clearPlaylist(this.getLikedSongsPlaylist().id);
+  clearLikedTracks(sourceProvider?: LibraryPageQuery['sourceProvider']): void {
+    this.clearPlaylist(this.getLikedSongsPlaylist().id, sourceProvider);
   }
 
   likeAlbum(albumId: string, timestamp = nowIso()): LibraryPlaylistItem {
@@ -6195,8 +6318,8 @@ export class LibraryStore {
     return { liked: true, item: this.likeAlbum(albumId) };
   }
 
-  clearLikedAlbums(): void {
-    this.clearPlaylist(this.getLikedAlbumsPlaylist().id);
+  clearLikedAlbums(sourceProvider?: LibraryPageQuery['sourceProvider']): void {
+    this.clearPlaylist(this.getLikedAlbumsPlaylist().id, sourceProvider);
   }
 
   getSummary(): LibrarySummary {
@@ -7820,6 +7943,7 @@ export class LibraryStore {
       albumCount,
       coverId: textOrNull(row.cover_id),
       coverThumb: this.toCoverUrl(row.cover_id, 'album'),
+      coverSource: coverSourceOrNull(row.cover_source),
       avatarThumbUrl: hasMatchedAvatar && avatarThumbPath ? this.toArtistImageUrl(artistKey, 'thumb') : null,
       avatarUrl: hasMatchedAvatar && (avatarLargePath || avatarMediumPath || avatarThumbPath)
         ? this.toArtistImageUrl(artistKey, avatarLargePath ? 'large' : 'medium')

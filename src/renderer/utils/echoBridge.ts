@@ -35,7 +35,7 @@ import {
   eqMinPreampDb,
   eqMinQ,
 } from '../../shared/types/eq';
-import type { StreamingFavoritesImportResult, StreamingLikedSongsSyncResult, StreamingPlaylistImportResult } from '../../shared/types/streaming';
+import type { StreamingFavoriteCollectionRenameResult, StreamingFavoritesImportResult, StreamingLikedSongsSyncResult, StreamingPlaylistImportResult } from '../../shared/types/streaming';
 
 export const getEchoBridge = (): Window['echo'] | null => window.echo ?? null;
 
@@ -862,6 +862,7 @@ const browserStreamingBridge: StreamingBridgeApi = {
       youtube: [],
       soundcloud: [],
     },
+    collections: [],
   }),
   setFavorite: async (request) => ({
     favorite: request.favorite,
@@ -874,8 +875,12 @@ const browserStreamingBridge: StreamingBridgeApi = {
         youtube: [],
         soundcloud: [],
       },
+      collections: [],
     },
   }),
+  renameFavoriteCollection: async (): Promise<StreamingFavoriteCollectionRenameResult> => {
+    throw new Error('Desktop bridge unavailable. Open ECHO Next in Electron to rename streaming favorite lists.');
+  },
   refreshNeteaseDailyRecommend: refreshNeteaseDailyRecommendFromDevApi,
 };
 

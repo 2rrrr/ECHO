@@ -360,6 +360,7 @@ const defaultPlaylistPlaybackState: PlaylistPlaybackState = {
   playlistId: null,
   snapshot: null,
 };
+const slowQueuePlaybackStepWarnThresholdMs = 750;
 
 const isRepeatMode = (value: unknown): value is RepeatMode => value === 'off' || value === 'one' || value === 'all';
 
@@ -372,7 +373,13 @@ const logQueuePlaybackStep = (
   trackId?: string | null,
 ): void => {
   const durationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
-  console.info(`[playback-perf] ${operation}:${phase} ${durationMs}ms${trackId ? ` ${JSON.stringify({ trackId })}` : ''}`);
+  const message = `[playback-perf] ${operation}:${phase} ${durationMs}ms${trackId ? ` ${JSON.stringify({ trackId })}` : ''}`;
+  if (durationMs >= slowQueuePlaybackStepWarnThresholdMs) {
+    console.warn(`${message} SLOW probableCause=slow_renderer_playback_queue_phase actionHint=check renderer route, recent input, and matching main playback phase`);
+    return;
+  }
+
+  console.info(message);
 };
 
 const runQueuePlaybackStep = async <T,>(

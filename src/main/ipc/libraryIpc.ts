@@ -1850,8 +1850,12 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryToggleAlbumLiked, (_event, albumId: unknown) =>
     getLibraryService().toggleAlbumLiked(requireText(albumId, 'albumId')),
   );
-  ipcMain.handle(IpcChannels.LibraryClearLikedTracks, () => getLibraryService().clearLikedTracks());
-  ipcMain.handle(IpcChannels.LibraryClearLikedAlbums, () => getLibraryService().clearLikedAlbums());
+  ipcMain.handle(IpcChannels.LibraryClearLikedTracks, (_event, query: unknown) =>
+    getLibraryService().clearLikedTracks(normalizeQuery(query).sourceProvider),
+  );
+  ipcMain.handle(IpcChannels.LibraryClearLikedAlbums, (_event, query: unknown) =>
+    getLibraryService().clearLikedAlbums(normalizeQuery(query).sourceProvider),
+  );
   ipcMain.handle(IpcChannels.LibraryGetAlbums, (_event, query: unknown) =>
     getLibraryService().getAlbums(normalizeQuery(query)),
   );

@@ -29,6 +29,7 @@ import {
   isLibraryDatabaseCorruptionError,
   openLibraryDatabaseRecoverySettings,
 } from '../utils/databaseRecovery';
+import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 100;
@@ -180,8 +181,7 @@ export const SongsPage = (): JSX.Element => {
   const [loadedStartIndex, setLoadedStartIndex] = useState(0);
   const [total, setTotal] = useState(() => initialSnapshot?.total ?? 0);
   const [hasMore, setHasMore] = useState(() => (initialSnapshot ? initialSnapshot.items.length < initialSnapshot.total : false));
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
   const [sort, setSort] = useState<LibrarySort>(() => initialSongsState.sort);
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => initialSongsState.sourceMode);
   const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
@@ -358,14 +358,6 @@ export const SongsPage = (): JSX.Element => {
       isMounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearch(searchInput.trim());
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
 
   useEffect(() => {
     if (!isSortOpen) {
@@ -1402,8 +1394,7 @@ export const SongsPage = (): JSX.Element => {
           <input
             type="search"
             placeholder="搜索曲目 / 艺人 / 专辑..."
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
+            {...searchInputProps}
           />
         </label>
 

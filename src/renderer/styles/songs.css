@@ -2867,6 +2867,12 @@ html[data-theme="dark"] .tag-editor-section {
   transform: translateY(-1px);
 }
 
+.tag-editor-tool-row button[data-danger="true"] {
+  color: var(--theme-danger-text);
+  border-color: var(--theme-danger-border);
+  background: var(--theme-danger-bg);
+}
+
 .tag-editor-status-card,
 .tag-editor-section {
   padding: 13px;
@@ -3231,6 +3237,42 @@ html[data-theme="dark"] .tag-editor-lyrics-status {
 html[data-theme="dark"] .tag-editor-actions {
   border-top-color: rgba(232, 238, 247, 0.12);
   background: #1c222c;
+}
+
+.album-tag-editor-drawer {
+  width: min(660px, calc(100vw - 20px));
+}
+
+.album-tag-editor-drawer .tag-editor-scroll {
+  gap: 14px;
+}
+
+.album-tag-editor-drawer .tag-editor-cover-card {
+  grid-template-columns: 116px minmax(0, 1fr);
+  align-items: start;
+  padding: 12px;
+}
+
+.album-tag-editor-drawer .tag-editor-cover {
+  width: 116px;
+  height: 116px;
+  aspect-ratio: auto;
+}
+
+.album-tag-editor-drawer .tag-editor-section {
+  padding: 12px;
+}
+
+.album-tag-editor-drawer .tag-editor-network-content {
+  grid-template-columns: 1fr;
+}
+
+.album-tag-editor-drawer .tag-editor-network-list {
+  max-height: 240px;
+}
+
+.album-tag-editor-drawer .tag-editor-actions {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 @keyframes tag-editor-panel-in {
@@ -3648,6 +3690,17 @@ html[data-theme="dark"] .tag-editor-actions {
     aspect-ratio: 1;
   }
 
+  .album-tag-editor-drawer .tag-editor-cover-card,
+  .album-tag-editor-drawer .tag-editor-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .album-tag-editor-drawer .tag-editor-cover {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+
   .tag-editor-actions {
     align-items: stretch;
     margin-right: -16px;
@@ -3775,6 +3828,16 @@ html[data-theme="dark"] .tag-editor-actions {
   overflow-anchor: none;
 }
 
+.albums-page .album-wall > .album-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 232px;
+}
+
+.artists-page .artist-wall > .artist-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 184px;
+}
+
 .media-wall-scroll-shell::-webkit-scrollbar {
   width: 9px;
 }
@@ -3835,6 +3898,14 @@ html[data-theme="dark"] .tag-editor-actions {
   border-radius: 12px;
   background: linear-gradient(145deg, #f3f7fb, #e8eef6);
   box-shadow: var(--shadow-panel);
+}
+
+.deferred-wall-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .album-copy {
@@ -3952,9 +4023,17 @@ html[data-theme="dark"] .tag-editor-actions {
 }
 
 .artist-avatar img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.artist-avatar .deferred-wall-image {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 100%;
 }
 
 .artist-card:hover .artist-avatar,
@@ -3966,7 +4045,7 @@ html[data-theme="dark"] .tag-editor-actions {
     0 2px 8px rgba(42, 61, 84, 0.05);
 }
 
-.artist-avatar span {
+.artist-avatar > span:not(.deferred-wall-image) {
   max-width: 82%;
   overflow: hidden;
   font-size: clamp(28px, 3.4vw, 44px);

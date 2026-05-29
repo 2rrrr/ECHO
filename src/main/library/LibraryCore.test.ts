@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { createDatabase } from '../database/createDatabase';
@@ -1985,6 +1985,68 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('updateAlbumTags updates the album index without queueing a full grouping refresh', async () => {
+    const harness = createHarness();
+    const first = writeAudioFile(harness.folder, 'Manual A.flac');
+    const second = writeAudioFile(harness.folder, 'Manual B.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', album: 'Old Album', albumArtist: 'Old Artist' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', album: 'Old Album', albumArtist: 'Old Artist' }));
+
+    await harness.service.importAudioFile(first);
+    await harness.service.importAudioFile(second);
+    harness.service.refreshAlbumGrouping();
+    const oldAlbum = harness.service.getAlbums({ pageSize: 10 }).items[0]!;
+
+    const updated = await harness.service.updateAlbumTags({
+      albumId: oldAlbum.id,
+      tags: {
+        album: 'Fresh Album',
+        albumArtist: 'Fresh Artist',
+        year: 2026,
+        genre: 'Ambient',
+      },
+      coverPath: null,
+      coverUrl: null,
+      coverMimeType: null,
+    });
+
+    expect(updated.title).toBe('Fresh Album');
+    expect(updated.albumArtist).toBe('Fresh Artist');
+    expect(updated.trackCount).toBe(2);
+    expect(harness.service.getAlbums({ search: 'Old Album', pageSize: 10 }).total).toBe(0);
+    expect(harness.service.getAlbums({ search: 'Fresh Album', pageSize: 10 }).items[0]?.trackCount).toBe(2);
+    expect(harness.service.getDiagnostics().groupingRefreshQueued).toBe(false);
+    harness.cleanup();
+  });
+
+  it('deleting album tracks compacts the album index immediately', async () => {
+    const harness = createHarness();
+    const first = writeAudioFile(harness.folder, 'Delete A.flac');
+    const second = writeAudioFile(harness.folder, 'Delete B.flac');
+    const kept = writeAudioFile(harness.folder, 'Keep.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'Delete A', album: 'Deleted Album', albumArtist: 'Delete Artist' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'Delete B', album: 'Deleted Album', albumArtist: 'Delete Artist' }));
+    harness.metadataService.overrides.set(kept, baseMetadata({ title: 'Keep', album: 'Kept Album', albumArtist: 'Keep Artist' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const deletedAlbum = harness.service.getAlbums({ search: 'Deleted Album', pageSize: 10 }).items[0]!;
+    const deletedTracks = harness.service.getAlbumTracks(deletedAlbum.id, { pageSize: 10 }).items;
+
+    expect(deletedAlbum.trackCount).toBe(2);
+    expect(harness.service.deleteTracks([deletedTracks[0]!.id])).toBe(1);
+    expect(harness.service.getAlbum(deletedAlbum.id)?.trackCount).toBe(1);
+    expect(harness.service.getSummary().albumCount).toBe(2);
+
+    expect(harness.service.deleteAlbumTracks(deletedAlbum.id)).toBe(1);
+    expect(harness.service.getAlbum(deletedAlbum.id)).toBeNull();
+    expect(harness.service.getAlbumTracks(deletedAlbum.id, { pageSize: 10 }).total).toBe(0);
+    expect(harness.service.getAlbums({ search: 'Deleted Album', pageSize: 10 }).total).toBe(0);
+    expect(harness.service.getAlbums({ search: 'Kept Album', pageSize: 10 }).items[0]?.trackCount).toBe(1);
+    expect(harness.service.getSummary().albumCount).toBe(1);
+    harness.cleanup();
+  }, 20000);
+
   it('album grouping different albumArtist does not merge', async () => {
     const harness = createHarness();
     const first = writeAudioFile(harness.folder, 'A.flac');
@@ -2126,6 +2188,68 @@ describe('Library Core', () => {
     expect(randomPage.items.some((track) => track.id === excludedTrack!.id)).toBe(false);
     randomSpy.mockRestore();
     harness.cleanup();
+  });
+
+  it('getTracks random window samples across the filtered library', () => {
+    const root = makeTempRoot();
+    const folder = join(root, 'music');
+    const databasePath = join(root, 'library.sqlite');
+    const coverCacheDir = join(root, 'cover-cache');
+    const database = createDatabase(databasePath);
+    const service = createLibraryService(databasePath, {
+      databaseConnection: {
+        id: 'random-window-sample-test',
+        serviceName: 'library-test',
+        databasePath,
+        database,
+        close: () => database.close(),
+      },
+      coverCacheDir,
+      appSettings: () => ({ ...defaultSettings, coverCacheDir }),
+    });
+    const now = new Date('2024-01-01T00:00:00.000Z').toISOString();
+    const fieldSources = JSON.stringify(baseMetadata().fieldSources);
+    const insertTrack = database.prepare<[string, string, string, string, string, string]>(
+      `INSERT INTO tracks (
+        id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist,
+        duration, field_sources_json, created_at, updated_at
+      ) VALUES (?, ?, 'folder-1', 1, 1, ?, 'Artist', 'Album', 'Artist', 180, ?, ?, ?)`,
+    );
+
+    try {
+      database.prepare<[string, string, string, string, string]>(
+        `INSERT INTO folders (id, path, name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run('folder-1', folder, 'music', now, now);
+
+      for (let index = 0; index < 200; index += 1) {
+        const suffix = index.toString().padStart(3, '0');
+        insertTrack.run(`track-${suffix}`, join(folder, `${suffix}.flac`), `Track ${suffix}`, fieldSources, now, now);
+      }
+
+      let randomIndex = 0;
+      const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => {
+        const value = ((randomIndex * 37) % 200) / 200;
+        randomIndex += 1;
+        return value;
+      });
+
+      const randomPage = service.getTracks({
+        page: 1,
+        pageSize: 150,
+        sort: 'random',
+        randomWindow: true,
+      });
+      const sampledIndexes = randomPage.items
+        .map((track) => Number.parseInt(basename(track.path).slice(0, 3), 10))
+        .filter((value) => Number.isFinite(value));
+
+      expect(randomPage.items).toHaveLength(150);
+      expect(Math.max(...sampledIndexes) - Math.min(...sampledIndexes)).toBeGreaterThan(170);
+      randomSpy.mockRestore();
+    } finally {
+      service.close();
+    }
   });
 
   it('getTracks title sorting pages directly from SQLite rows', () => {

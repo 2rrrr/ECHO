@@ -67,6 +67,7 @@ type BilibiliFavoriteMedia = {
 
 type BilibiliFavoriteListResponse = {
   code?: number;
+  message?: string;
   data?: {
     info?: {
       title?: string;
@@ -130,13 +131,13 @@ const deleteTempFile = (filePath: string | null): void => {
   }
 };
 
-const bilibiliHeaders = (extra: Record<string, string> = {}): Record<string, string> => ({
+const bilibiliHeaders = (extra: Record<string, string> = {}, options: { includeCookie?: boolean } = {}): Record<string, string> => ({
   Accept: 'application/json,text/plain,*/*',
   Referer: bilibiliReferer,
   Origin: 'https://www.bilibili.com',
   'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7',
   'User-Agent': bilibiliUserAgent,
-  ...(accountCookie() ? { Cookie: accountCookie() } : {}),
+  ...((options.includeCookie ?? true) && accountCookie() ? { Cookie: accountCookie() } : {}),
   ...extra,
 });
 
@@ -444,6 +445,18 @@ const bilibiliFavoriteIdFromValue = (value: string): string | null => {
     return parsed.searchParams.get('fid') ?? parsed.searchParams.get('media_id') ?? parsed.searchParams.get('mediaId');
   } catch {
     return trimmed.match(/(?:fid|media_id|mediaId)=(\d+)/u)?.[1] ?? null;
+  }
+};
+
+const fetchBilibiliFavoriteList = async (url: URL, referer: string, includeCookie: boolean): Promise<Response> => {
+  const requestInit = {
+    headers: bilibiliHeaders({ Referer: referer }, { includeCookie }),
+  };
+
+  try {
+    return await fetch(url.toString(), requestInit);
+  } catch {
+    return fetchWithNetworkProxy(url.toString(), requestInit);
   }
 };
 
@@ -788,7 +801,7 @@ export class BilibiliStreamingProvider implements StreamingProvider {
     }
 
     const page = Math.max(1, Math.floor(input.page ?? 1));
-    const pageSize = Math.min(50, Math.max(1, Math.floor(input.pageSize ?? 20)));
+    const pageSize = Math.min(20, Math.max(1, Math.floor(input.pageSize ?? 20)));
     const url = new URL('https://api.bilibili.com/x/v3/fav/resource/list');
     url.searchParams.set('media_id', mediaId);
     url.searchParams.set('pn', String(page));
@@ -799,16 +812,24 @@ export class BilibiliStreamingProvider implements StreamingProvider {
     url.searchParams.set('tid', '0');
     url.searchParams.set('platform', 'web');
 
-    const response = await fetchWithNetworkProxy(url.toString(), {
-      headers: bilibiliHeaders({ Referer: input.providerPlaylistId.startsWith('http') ? input.providerPlaylistId : bilibiliReferer }),
-    });
+    const referer = input.providerPlaylistId.startsWith('http') ? input.providerPlaylistId : bilibiliReferer;
+    let response = await fetchBilibiliFavoriteList(url, referer, true);
     if (!response.ok) {
       throw new Error(`Bilibili favorite import failed: HTTP ${response.status}`);
     }
 
-    const payload = (await response.json()) as BilibiliFavoriteListResponse;
+    let payload = (await response.json()) as BilibiliFavoriteListResponse;
+    if (payload.code !== 0 && accountCookie()) {
+      response = await fetchBilibiliFavoriteList(url, referer, false);
+      if (!response.ok) {
+        throw new Error(`Bilibili favorite import failed: HTTP ${response.status}`);
+      }
+      payload = (await response.json()) as BilibiliFavoriteListResponse;
+    }
+
     if (payload.code !== 0) {
-      throw new Error('Bilibili favorite import failed.');
+      const message = text(payload.message) ?? `code ${payload.code}`;
+      throw new Error(`Bilibili favorite import failed: ${message}`);
     }
 
     const info = payload.data?.info;

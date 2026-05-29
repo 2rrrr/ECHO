@@ -532,12 +532,12 @@ export class LibraryService {
     return this.store.toggleAlbumLiked(albumId);
   }
 
-  clearLikedTracks(): void {
-    this.store.clearLikedTracks();
+  clearLikedTracks(sourceProvider?: LibraryPageQuery['sourceProvider']): void {
+    this.store.clearLikedTracks(sourceProvider);
   }
 
-  clearLikedAlbums(): void {
-    this.store.clearLikedAlbums();
+  clearLikedAlbums(sourceProvider?: LibraryPageQuery['sourceProvider']): void {
+    this.store.clearLikedAlbums(sourceProvider);
   }
 
   getAlbums(query?: LibraryPageQuery): LibraryPage<LibraryAlbum> {
@@ -1418,7 +1418,8 @@ export class LibraryService {
       });
     }
 
-    const nextAlbum = this.store.transaction(() => {
+    const nextCoverId = updates.find((update) => update.coverId !== undefined)?.coverId ?? album.coverId;
+    const updatedAlbum = this.store.transaction(() => {
       for (const update of updates) {
         this.store.updateTrackTags(update.track.id, {
           title: update.track.title,
@@ -1438,7 +1439,12 @@ export class LibraryService {
         }
       }
 
-      const nextAlbum = this.store.getAlbumForTrack(tracks[0]!.id);
+      const nextAlbum = this.store.updateAlbumSummary(album.id, {
+        title: tags.album,
+        albumArtist: tags.albumArtist,
+        year: tags.year,
+        coverId: nextCoverId,
+      }) ?? this.store.getAlbumForTrack(tracks[0]!.id);
       if (!nextAlbum) {
         throw new Error(`Album update completed but refreshed album could not be found for ${album.title}`);
       }
@@ -1463,9 +1469,8 @@ export class LibraryService {
         errorPrefix: 'Failed to write album tags',
       });
     }
-    this.scheduleGroupingRefresh();
 
-    return nextAlbum;
+    return updatedAlbum;
   }
 
   async repairMissingMetadata(trackId: string, providerNames?: AppSettings['networkMetadataProviders']): Promise<NetworkRepairResult> {

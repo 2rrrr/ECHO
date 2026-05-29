@@ -245,9 +245,11 @@ export type TranslationKey =
   | 'albumTagEditor.action.cancel'
   | 'albumTagEditor.action.chooseCover'
   | 'albumTagEditor.action.close'
+  | 'albumTagEditor.action.deleteAlbum'
   | 'albumTagEditor.action.loadEmbedded'
   | 'albumTagEditor.action.loading'
   | 'albumTagEditor.action.loadNetwork'
+  | 'albumTagEditor.action.openInExplorer'
   | 'albumTagEditor.action.saveTags'
   | 'albumTagEditor.action.saving'
   | 'albumTagEditor.action.searchCandidates'
@@ -270,6 +272,7 @@ export type TranslationKey =
   | 'albumTagEditor.error.networkTemporary'
   | 'albumTagEditor.error.networkUnsupported'
   | 'albumTagEditor.error.noReadableTrack'
+  | 'albumTagEditor.error.openFolderUnsupported'
   | 'albumTagEditor.error.positiveInteger'
   | 'albumTagEditor.error.readTracksUnsupported'
   | 'albumTagEditor.field.album'
@@ -2173,9 +2176,11 @@ const zhCN: TranslationMap = {
   'albumTagEditor.action.cancel': '取消',
   'albumTagEditor.action.chooseCover': '选择封面',
   'albumTagEditor.action.close': '关闭编辑标签',
-  'albumTagEditor.action.loadEmbedded': '从内嵌标签加载',
+  'albumTagEditor.action.deleteAlbum': '删除专辑',
+  'albumTagEditor.action.loadEmbedded': '重读嵌入标签',
   'albumTagEditor.action.loading': '读取中',
   'albumTagEditor.action.loadNetwork': '从网络加载',
+  'albumTagEditor.action.openInExplorer': '从资源管理器打开',
   'albumTagEditor.action.saveTags': '保存标签',
   'albumTagEditor.action.saving': '保存中',
   'albumTagEditor.action.searchCandidates': '搜索候选',
@@ -2198,6 +2203,7 @@ const zhCN: TranslationMap = {
   'albumTagEditor.error.networkTemporary': '网络来源暂时不可用，请稍后再试。',
   'albumTagEditor.error.networkUnsupported': '当前运行环境不支持网络标签搜索。',
   'albumTagEditor.error.noReadableTrack': '这张专辑没有可读取标签的歌曲。',
+  'albumTagEditor.error.openFolderUnsupported': '当前运行环境不支持打开资源管理器。',
   'albumTagEditor.error.positiveInteger': '{label}必须是正整数或留空',
   'albumTagEditor.error.readTracksUnsupported': '当前运行环境不支持读取专辑曲目。',
   'albumTagEditor.field.album': '专辑',
@@ -4328,9 +4334,11 @@ const zhTW: TranslationMap = {
   'albumTagEditor.action.cancel': '取消',
   'albumTagEditor.action.chooseCover': '選擇封面',
   'albumTagEditor.action.close': '關閉編輯標籤',
-  'albumTagEditor.action.loadEmbedded': '從嵌入標籤載入',
+  'albumTagEditor.action.deleteAlbum': '刪除專輯',
+  'albumTagEditor.action.loadEmbedded': '重讀嵌入標籤',
   'albumTagEditor.action.loading': '讀取中',
   'albumTagEditor.action.loadNetwork': '從網路載入',
+  'albumTagEditor.action.openInExplorer': '從檔案總管開啟',
   'albumTagEditor.action.saveTags': '儲存標籤',
   'albumTagEditor.action.saving': '儲存中',
   'albumTagEditor.action.searchCandidates': '搜尋候選',
@@ -4353,6 +4361,7 @@ const zhTW: TranslationMap = {
   'albumTagEditor.error.networkTemporary': '網路來源暫時不可用，請稍後再試。',
   'albumTagEditor.error.networkUnsupported': '目前執行環境不支援網路標籤搜尋。',
   'albumTagEditor.error.noReadableTrack': '這張專輯沒有可讀取標籤的歌曲。',
+  'albumTagEditor.error.openFolderUnsupported': '目前執行環境不支援開啟檔案總管。',
   'albumTagEditor.error.positiveInteger': '{label}必須是正整數或留空',
   'albumTagEditor.error.readTracksUnsupported': '目前執行環境不支援讀取專輯曲目。',
   'albumTagEditor.field.album': '專輯',
@@ -6173,9 +6182,11 @@ const jaJP: TranslationMap = {
   'albumTagEditor.action.cancel': 'キャンセル',
   'albumTagEditor.action.chooseCover': 'カバーを選択',
   'albumTagEditor.action.close': 'タグ編集を閉じる',
-  'albumTagEditor.action.loadEmbedded': '埋め込みタグから読み込み',
+  'albumTagEditor.action.deleteAlbum': 'アルバムを削除',
+  'albumTagEditor.action.loadEmbedded': '埋め込みタグを再読み込み',
   'albumTagEditor.action.loading': '読み込み中',
   'albumTagEditor.action.loadNetwork': 'ネットワークから読み込み',
+  'albumTagEditor.action.openInExplorer': 'フォルダで開く',
   'albumTagEditor.action.saveTags': 'タグを保存',
   'albumTagEditor.action.saving': '保存中',
   'albumTagEditor.action.searchCandidates': '候補を検索',
@@ -6198,6 +6209,7 @@ const jaJP: TranslationMap = {
   'albumTagEditor.error.networkTemporary': 'ネットワークソースは一時的に利用できません。後でもう一度試してください。',
   'albumTagEditor.error.networkUnsupported': '現在の実行環境ではネットワークタグ検索を利用できません。',
   'albumTagEditor.error.noReadableTrack': 'このアルバムにはタグを読み取れる曲がありません。',
+  'albumTagEditor.error.openFolderUnsupported': '現在の実行環境ではフォルダを開けません。',
   'albumTagEditor.error.positiveInteger': '{label} は正の整数または空欄にしてください',
   'albumTagEditor.error.readTracksUnsupported': '現在の実行環境ではアルバム曲目を読み取れません。',
   'albumTagEditor.field.album': 'アルバム',
@@ -8098,9 +8110,11 @@ const enUS: TranslationMap = {
   'albumTagEditor.action.cancel': 'Cancel',
   'albumTagEditor.action.chooseCover': 'Choose cover',
   'albumTagEditor.action.close': 'Close tag editor',
-  'albumTagEditor.action.loadEmbedded': 'Load embedded tags',
+  'albumTagEditor.action.deleteAlbum': 'Delete album',
+  'albumTagEditor.action.loadEmbedded': 'Reload embedded tags',
   'albumTagEditor.action.loading': 'Loading',
   'albumTagEditor.action.loadNetwork': 'Load from network',
+  'albumTagEditor.action.openInExplorer': 'Open in Explorer',
   'albumTagEditor.action.saveTags': 'Save tags',
   'albumTagEditor.action.saving': 'Saving',
   'albumTagEditor.action.searchCandidates': 'Search candidates',
@@ -8123,6 +8137,7 @@ const enUS: TranslationMap = {
   'albumTagEditor.error.networkTemporary': 'Network sources are temporarily unavailable. Try again later.',
   'albumTagEditor.error.networkUnsupported': 'The current runtime cannot search network tags.',
   'albumTagEditor.error.noReadableTrack': 'This album has no track that can be used to read tags.',
+  'albumTagEditor.error.openFolderUnsupported': 'The current runtime cannot open Explorer.',
   'albumTagEditor.error.positiveInteger': '{label} must be a positive integer or empty',
   'albumTagEditor.error.readTracksUnsupported': 'The current runtime cannot read album tracks.',
   'albumTagEditor.field.album': 'Album',

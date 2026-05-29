@@ -620,13 +620,23 @@ const stripFilenameSortPrefix = (value: string): string => {
   return stripped || trimmed;
 };
 
+const isLikelyTrackNumberArtist = (value: string): boolean => {
+  const normalized = value.normalize('NFKC').trim();
+  return /^\d{1,2}$/u.test(normalized) || /^0+\d*$/u.test(normalized);
+};
+
+const filenameArtistFallback = (value: string): string | null => {
+  const stripped = stripFilenameSortPrefix(value);
+  return stripped && !isLikelyTrackNumberArtist(stripped) ? stripped : null;
+};
+
 const guessFromFilename = (filePath: string): { artist: string | null; title: string } => {
   const name = basename(filePath, extname(filePath)).trim();
   const parts = name.split(' - ').map((part) => part.trim()).filter(Boolean);
 
   if (parts.length >= 2) {
     return {
-      artist: parts[0],
+      artist: filenameArtistFallback(parts[0]),
       title: stripFilenameSortPrefix(parts.slice(1).join(' - ')),
     };
   }

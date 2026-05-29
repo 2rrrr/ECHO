@@ -138,6 +138,7 @@ const resetStreamingMemory = (): void => {
     activeTab: 'track',
     input: '',
     query: '',
+    resultKey: null,
     result: null,
     failedCoverUrls: {},
     scrollTop: 0,
@@ -263,6 +264,42 @@ describe('StreamingSearchPage download visibility', () => {
       scrollTop: 0,
     });
   };
+
+  it('restores cached results without refreshing search on mount', async () => {
+    const resultKey = 'netease:track:鏅村ぉ';
+    updateStreamingSearchMemory({
+      provider: 'netease',
+      quality: 'max',
+      activeTab: 'track',
+      input: trackSearchResult.query,
+      query: trackSearchResult.query,
+      resultKey,
+      result: trackSearchResult,
+      failedCoverUrls: {},
+      scrollTop: 0,
+    });
+
+    const search = vi.fn().mockResolvedValue(trackSearchResult);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ streamingDownloadActionsEnabled: false } as AppSettings),
+      },
+      streaming: {
+        getProviders: vi.fn().mockResolvedValue([provider]),
+        search,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <StreamingSearchPage />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(document.querySelector('.streaming-row')).toBeTruthy());
+    await waitFor(() => expect(window.echo?.streaming?.getProviders).toHaveBeenCalled());
+    expect(search).not.toHaveBeenCalled();
+  });
 
   it('hides streaming download actions by default', async () => {
     primeTrackSearch();

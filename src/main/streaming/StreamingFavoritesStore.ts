@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import type {
+  StreamingFavoriteCollection,
   StreamingFavoriteProviderName,
   StreamingFavoritesSnapshot,
   StreamingFavoriteTrack,
@@ -14,6 +15,7 @@ const favoriteProviders: StreamingFavoriteProviderName[] = ['bilibili', 'youtube
 
 type PersistedFavoriteFile = Partial<StreamingFavoritesSnapshot> & {
   providers?: Partial<Record<StreamingFavoriteProviderName, unknown>>;
+  collections?: unknown;
 };
 
 export const isStreamingFavoriteProvider = (provider: string): provider is StreamingFavoriteProviderName =>
@@ -45,6 +47,7 @@ const emptySnapshot = (updatedAt = new Date().toISOString()): StreamingFavorites
     youtube: [],
     soundcloud: [],
   },
+  collections: [],
 });
 
 const text = (value: unknown, fallback = ''): string => (typeof value === 'string' ? value : fallback);
@@ -53,6 +56,9 @@ const nullableText = (value: unknown): string | null => (typeof value === 'strin
 
 const nullableNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+
+const favoriteCollectionId = (provider: StreamingFavoriteProviderName, providerPlaylistId: string): string =>
+  `streaming-favorites:${provider}:${encodeURIComponent(providerPlaylistId)}`;
 
 const normalizeFavoriteItem = (
   provider: StreamingFavoriteProviderName,
@@ -97,6 +103,47 @@ const normalizeFavoriteItem = (
   };
 };
 
+const normalizeFavoriteCollection = (value: unknown): StreamingFavoriteCollection | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Partial<StreamingFavoriteCollection>;
+  const provider = text(input.provider).trim();
+  if (!isStreamingFavoriteProvider(provider)) {
+    return null;
+  }
+
+  const providerPlaylistId = text(input.providerPlaylistId).trim();
+  if (!providerPlaylistId) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const name = text(input.name).trim() || text(input.sourceName).trim() || `${provider} favorites`;
+  const seen = new Set<string>();
+  const tracks = (Array.isArray(input.tracks) ? input.tracks : [])
+    .map((item) => normalizeFavoriteItem(provider, item))
+    .filter((item): item is StreamingFavoriteTrack => {
+      if (!item || seen.has(item.providerTrackId)) {
+        return false;
+      }
+      seen.add(item.providerTrackId);
+      return true;
+    });
+
+  return {
+    id: text(input.id).trim() || favoriteCollectionId(provider, providerPlaylistId),
+    provider,
+    providerPlaylistId,
+    name,
+    sourceName: nullableText(input.sourceName),
+    tracks,
+    createdAt: text(input.createdAt).trim() || now,
+    updatedAt: text(input.updatedAt).trim() || now,
+  };
+};
+
 const normalizeSnapshot = (value: unknown): StreamingFavoritesSnapshot => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return emptySnapshot();
@@ -118,8 +165,49 @@ const normalizeSnapshot = (value: unknown): StreamingFavoritesSnapshot => {
         return true;
       });
   }
+  const seenCollections = new Set<string>();
+  snapshot.collections = (Array.isArray(input.collections) ? input.collections : [])
+    .map((item) => normalizeFavoriteCollection(item))
+    .filter((item): item is StreamingFavoriteCollection => {
+      if (!item) {
+        return false;
+      }
+      const key = `${item.provider}:${item.providerPlaylistId}`;
+      if (seenCollections.has(key)) {
+        return false;
+      }
+      seenCollections.add(key);
+      return true;
+    });
   return snapshot;
 };
+
+const favoriteItemFromTrack = (
+  provider: StreamingFavoriteProviderName,
+  track: StreamingTrack,
+  existing: StreamingFavoriteTrack | undefined,
+  now: string,
+): StreamingFavoriteTrack => ({
+  id: track.stableKey || streamingStableKey(provider, track.providerTrackId),
+  provider,
+  providerTrackId: track.providerTrackId,
+  stableKey: track.stableKey || streamingStableKey(provider, track.providerTrackId),
+  title: track.title,
+  artist: track.artist,
+  album: track.album,
+  albumArtist: track.albumArtist,
+  duration: track.duration,
+  coverUrl: track.coverUrl,
+  coverThumb: track.coverThumb,
+  qualities: track.qualities,
+  playable: track.playable,
+  unavailableReason: track.unavailableReason,
+  lyricsStatus: track.lyricsStatus,
+  mvStatus: track.mvStatus,
+  webUrl: streamingFavoriteWebUrl(track),
+  addedAt: existing?.addedAt ?? now,
+  updatedAt: now,
+});
 
 export class StreamingFavoritesStore {
   constructor(private readonly filePath = join(app?.getPath?.('userData') ?? join(tmpdir(), 'echo-next'), 'streaming-favorites.json')) {}
@@ -147,27 +235,12 @@ export class StreamingFavoritesStore {
     let item: StreamingFavoriteTrack | null = null;
 
     if (favorite) {
-      item = {
-        id: track.stableKey || streamingStableKey(track.provider, track.providerTrackId),
-        provider: track.provider,
-        providerTrackId: track.providerTrackId,
-        stableKey: track.stableKey || streamingStableKey(track.provider, track.providerTrackId),
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        albumArtist: track.albumArtist,
-        duration: track.duration,
-        coverUrl: track.coverUrl,
-        coverThumb: track.coverThumb,
-        qualities: track.qualities,
-        playable: track.playable,
-        unavailableReason: track.unavailableReason,
-        lyricsStatus: track.lyricsStatus,
-        mvStatus: track.mvStatus,
-        webUrl: streamingFavoriteWebUrl(track),
-        addedAt: snapshot.providers[track.provider].find((existing) => existing.providerTrackId === track.providerTrackId)?.addedAt ?? now,
-        updatedAt: now,
-      };
+      item = favoriteItemFromTrack(
+        track.provider,
+        track,
+        snapshot.providers[track.provider].find((existing) => existing.providerTrackId === track.providerTrackId),
+        now,
+      );
       items.unshift(item);
     }
 
@@ -198,27 +271,7 @@ export class StreamingFavoritesStore {
       const importedById = new Map<string, StreamingFavoriteTrack>();
       for (const track of providerTracks) {
         const existing = existingById.get(track.providerTrackId);
-        const item: StreamingFavoriteTrack = {
-          id: track.stableKey || streamingStableKey(provider, track.providerTrackId),
-          provider,
-          providerTrackId: track.providerTrackId,
-          stableKey: track.stableKey || streamingStableKey(provider, track.providerTrackId),
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          albumArtist: track.albumArtist,
-          duration: track.duration,
-          coverUrl: track.coverUrl,
-          coverThumb: track.coverThumb,
-          qualities: track.qualities,
-          playable: track.playable,
-          unavailableReason: track.unavailableReason,
-          lyricsStatus: track.lyricsStatus,
-          mvStatus: track.mvStatus,
-          webUrl: streamingFavoriteWebUrl(track),
-          addedAt: existing?.addedAt ?? now,
-          updatedAt: now,
-        };
+        const item = favoriteItemFromTrack(provider, track, existing, now);
         if (!existing && !importedById.has(track.providerTrackId)) {
           addedCount += 1;
         }
@@ -236,6 +289,90 @@ export class StreamingFavoritesStore {
     snapshot.updatedAt = now;
     this.writeSnapshot(snapshot);
     return { importedCount, addedCount, snapshot };
+  }
+
+  importCollection(
+    provider: StreamingFavoriteProviderName,
+    providerPlaylistId: string,
+    name: string,
+    tracks: StreamingTrack[],
+  ): { collection: StreamingFavoriteCollection; importedCount: number; addedCount: number; snapshot: StreamingFavoritesSnapshot } {
+    if (!isStreamingFavoriteProvider(provider)) {
+      throw new Error('This streaming provider does not support local favorites.');
+    }
+
+    const normalizedProviderPlaylistId = providerPlaylistId.trim();
+    if (!normalizedProviderPlaylistId) {
+      throw new Error('Favorite collection source id is required.');
+    }
+
+    const snapshot = this.getSnapshot();
+    const now = new Date().toISOString();
+    const existingIndex = snapshot.collections.findIndex(
+      (collection) => collection.provider === provider && collection.providerPlaylistId === normalizedProviderPlaylistId,
+    );
+    const existing = existingIndex >= 0 ? snapshot.collections[existingIndex] : null;
+    const existingById = new Map((existing?.tracks ?? []).map((item) => [item.providerTrackId, item]));
+    const importedById = new Map<string, StreamingFavoriteTrack>();
+    let addedCount = 0;
+
+    for (const track of tracks) {
+      if (track.provider !== provider || !track.providerTrackId) {
+        continue;
+      }
+
+      const existingTrack = existingById.get(track.providerTrackId);
+      const item = favoriteItemFromTrack(provider, track, existingTrack, now);
+      if (!existingTrack && !importedById.has(track.providerTrackId)) {
+        addedCount += 1;
+      }
+      importedById.set(track.providerTrackId, item);
+    }
+
+    const sourceName = name.trim() || existing?.sourceName || `${provider} favorites`;
+    const collection: StreamingFavoriteCollection = {
+      id: existing?.id ?? favoriteCollectionId(provider, normalizedProviderPlaylistId),
+      provider,
+      providerPlaylistId: normalizedProviderPlaylistId,
+      name: existing?.name.trim() || sourceName,
+      sourceName,
+      tracks: [...importedById.values()],
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    if (existingIndex >= 0) {
+      snapshot.collections[existingIndex] = collection;
+    } else {
+      snapshot.collections = [collection, ...snapshot.collections];
+    }
+    snapshot.updatedAt = now;
+    this.writeSnapshot(snapshot);
+    return { collection, importedCount: importedById.size, addedCount, snapshot };
+  }
+
+  renameCollection(collectionId: string, name: string): { collection: StreamingFavoriteCollection; snapshot: StreamingFavoritesSnapshot } {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      throw new Error('Favorite collection name is required.');
+    }
+
+    const snapshot = this.getSnapshot();
+    const collectionIndex = snapshot.collections.findIndex((collection) => collection.id === collectionId);
+    if (collectionIndex < 0) {
+      throw new Error('Favorite collection was not found.');
+    }
+
+    const now = new Date().toISOString();
+    const collection = {
+      ...snapshot.collections[collectionIndex],
+      name: trimmedName,
+      updatedAt: now,
+    };
+    snapshot.collections[collectionIndex] = collection;
+    snapshot.updatedAt = now;
+    this.writeSnapshot(snapshot);
+    return { collection, snapshot };
   }
 
   getExportContent(): string {

@@ -142,6 +142,9 @@ const pushEntry = (
 export const recordDevConsoleSystemEntry = (message: string): DiagnosticConsoleEntry =>
   pushEntry('system', 'info', message);
 
+export const recordDevConsoleSystemWarning = (message: string): DiagnosticConsoleEntry =>
+  pushEntry('system', 'warn', message);
+
 const textFromChunk = (chunk: unknown, encoding?: BufferEncoding): string => {
   if (typeof chunk === 'string') {
     return chunk;
@@ -298,8 +301,28 @@ const appendOptionalValueLine = (lines: string[], label: string, value: unknown)
     return;
   }
 
+  if (typeof value === 'boolean') {
+    lines.push(`${label}: ${value ? 'true' : 'false'}`);
+    return;
+  }
+
   if (typeof value === 'string' && value.trim()) {
     lines.push(`${label}: ${value.trim()}`);
+  }
+};
+
+const appendOptionalJsonLine = (lines: string[], label: string, value: unknown): void => {
+  if (value === undefined || value === null) {
+    return;
+  }
+
+  try {
+    const text = JSON.stringify(value);
+    if (text && text !== 'null') {
+      lines.push(`${label}: ${truncateLine(text)}`);
+    }
+  } catch {
+    lines.push(`${label}: [unserializable]`);
   }
 };
 
@@ -323,6 +346,114 @@ const appendPlaybackBreadcrumbs = (
   }
 };
 
+const finiteNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const trimmedString = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() ? value.trim() : null;
+
+type InferredPerformanceStallCause = {
+  probableCause: string;
+  confidence: 'high' | 'medium' | 'low';
+  why: string;
+  actionHint: string;
+};
+
+const inferPerformanceStallCause = (
+  payload: DiagnosticPerformanceStallPayload,
+  audioSnapshot: Record<string, unknown> | null | undefined,
+  playbackSnapshot: ReturnType<typeof getPlaybackPerformanceSnapshot>,
+): InferredPerformanceStallCause => {
+  const underrunCallbacks = finiteNumber(audioSnapshot?.nativeUnderrunCallbacks);
+  const bufferedMs = finiteNumber(audioSnapshot?.nativeBufferedMs);
+  const audioState = trimmedString(audioSnapshot?.state);
+  const pendingBackgroundTask = trimmedString(playbackSnapshot.pendingBackgroundTask);
+  const activePlaybackElapsedMs = finiteNumber(playbackSnapshot.elapsedMs);
+  const lastPlaybackPhaseMs = finiteNumber(playbackSnapshot.lastCompletedDurationMs);
+  const lastInputType = trimmedString(payload.details?.lastInputType);
+  const lastInputAgeMs = finiteNumber(payload.details?.lastInputAgeMs);
+  const longTaskName = trimmedString(payload.details?.name);
+
+  if (audioState === 'playing' && underrunCallbacks !== null && underrunCallbacks > 0) {
+    return {
+      probableCause: 'audio_output_underrun',
+      confidence: 'high',
+      why: `audio was playing and native underrun callbacks reached ${underrunCallbacks.toFixed(0)}`,
+      actionHint: 'Inspect audio backend, buffer size, sample-rate matching, and recent playbackBreadcrumbs.',
+    };
+  }
+
+  if (audioState === 'playing' && bufferedMs !== null && bufferedMs < 80) {
+    return {
+      probableCause: 'audio_buffer_near_empty',
+      confidence: 'medium',
+      why: `audio was playing with only ${bufferedMs.toFixed(0)}ms buffered`,
+      actionHint: 'Check decoder/proxy throughput and whether background work is competing with playback.',
+    };
+  }
+
+  if (payload.source === 'main' && pendingBackgroundTask) {
+    return {
+      probableCause: 'main_background_task',
+      confidence: 'high',
+      why: `main event loop stalled while ${pendingBackgroundTask} was active`,
+      actionHint: 'Move or slice this background task if it appears next to playback glitches.',
+    };
+  }
+
+  if (activePlaybackElapsedMs !== null && activePlaybackElapsedMs >= Math.max(500, payload.thresholdMs)) {
+    return {
+      probableCause: 'active_playback_phase',
+      confidence: 'medium',
+      why: `${playbackSnapshot.operation ?? 'playback'}:${playbackSnapshot.phase ?? 'unknown'} was still running after ${activePlaybackElapsedMs.toFixed(0)}ms`,
+      actionHint: 'Inspect the active playback phase and surrounding breadcrumbs before changing audio output.',
+    };
+  }
+
+  if (lastPlaybackPhaseMs !== null && lastPlaybackPhaseMs >= Math.max(500, payload.thresholdMs)) {
+    return {
+      probableCause: 'recent_slow_playback_phase',
+      confidence: 'medium',
+      why: `${playbackSnapshot.lastCompletedOperation ?? 'playback'}:${playbackSnapshot.lastCompletedPhase ?? 'unknown'} recently took ${lastPlaybackPhaseMs.toFixed(0)}ms`,
+      actionHint: 'Compare the slow phase with the current route, track, and output mode.',
+    };
+  }
+
+  if (payload.source === 'renderer' && payload.kind === 'long_task') {
+    if (lastInputType && lastInputAgeMs !== null && lastInputAgeMs <= 1_500) {
+      return {
+        probableCause: 'renderer_work_after_user_input',
+        confidence: 'medium',
+        why: `renderer long task followed ${lastInputType} by ${lastInputAgeMs.toFixed(0)}ms`,
+        actionHint: 'Check lastInputTarget, activeElement, and longTaskAttribution for the UI surface that triggered work.',
+      };
+    }
+
+    return {
+      probableCause: 'renderer_long_task',
+      confidence: longTaskName ? 'medium' : 'low',
+      why: longTaskName ? `Chromium reported long task "${longTaskName}"` : 'Chromium reported a long renderer task',
+      actionHint: 'Inspect route, activeElement, and attribution; split synchronous renderer work first.',
+    };
+  }
+
+  if (payload.source === 'renderer' && payload.kind === 'animation_frame') {
+    return {
+      probableCause: 'renderer_frame_gap',
+      confidence: 'low',
+      why: 'requestAnimationFrame gap exceeded the visible-frame threshold',
+      actionHint: 'Look for nearby renderer warnings, image/layout work, or a matching long_task entry.',
+    };
+  }
+
+  return {
+    probableCause: payload.source === 'main' ? 'main_event_loop_blocked' : 'renderer_stall',
+    confidence: 'low',
+    why: 'no active playback phase, underrun, or known background task was attached to this stall',
+    actionHint: 'Use the route, breadcrumbs, and nearby console entries to narrow the blocking work.',
+  };
+};
+
 export const recordPerformanceStall = (
   payload: DiagnosticPerformanceStallPayload,
   audioSnapshot?: Record<string, unknown> | null,
@@ -335,15 +466,31 @@ export const recordPerformanceStall = (
   }
 
   lastPerformanceStallLogAtByKey.set(cooldownKey, now);
+  const playbackSnapshot = getPlaybackPerformanceSnapshot();
+  const cause = inferPerformanceStallCause(payload, audioSnapshot, playbackSnapshot);
   const lines = [
     `[performance:${payload.source}] ${payload.kind} stalled for ${payload.durationMs.toFixed(0)}ms`,
     `thresholdMs: ${payload.thresholdMs.toFixed(0)}`,
+    `probableCause: ${cause.probableCause}`,
+    `confidence: ${cause.confidence}`,
+    `why: ${cause.why}`,
+    `actionHint: ${cause.actionHint}`,
   ];
   appendOptionalLine(lines, 'window', payload.windowKind);
   appendOptionalLine(lines, 'url', payload.url);
+  appendOptionalLine(lines, 'route', payload.details?.route);
+  appendOptionalLine(lines, 'visibilityState', payload.details?.visibilityState);
+  appendOptionalValueLine(lines, 'documentFocused', payload.details?.documentFocused);
+  appendOptionalLine(lines, 'activeElement', payload.details?.activeElement);
+  appendOptionalLine(lines, 'lastInputType', payload.details?.lastInputType);
+  appendOptionalLine(lines, 'lastInputTarget', payload.details?.lastInputTarget);
+  appendOptionalValueLine(lines, 'lastInputAgeMs', payload.details?.lastInputAgeMs);
   appendOptionalValueLine(lines, 'expectedIntervalMs', payload.details?.expectedIntervalMs);
   appendOptionalValueLine(lines, 'lastFrameGapMs', payload.details?.lastFrameGapMs);
+  appendOptionalLine(lines, 'longTaskName', payload.details?.name);
+  appendOptionalLine(lines, 'longTaskEntryType', payload.details?.entryType);
   appendOptionalValueLine(lines, 'longTaskStartMs', payload.details?.startTime);
+  appendOptionalJsonLine(lines, 'longTaskAttribution', payload.details?.attribution);
 
   if (audioSnapshot) {
     appendOptionalLine(lines, 'audioState', audioSnapshot.state);
@@ -355,7 +502,6 @@ export const recordPerformanceStall = (
     appendOptionalValueLine(lines, 'audioUnderrunCallbacks', audioSnapshot.nativeUnderrunCallbacks);
   }
 
-  const playbackSnapshot = getPlaybackPerformanceSnapshot();
   appendOptionalLine(lines, 'playbackOperation', playbackSnapshot.operation);
   appendOptionalLine(lines, 'playbackPhase', playbackSnapshot.phase);
   appendOptionalValueLine(lines, 'playbackPhaseElapsedMs', playbackSnapshot.elapsedMs);

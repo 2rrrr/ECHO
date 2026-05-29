@@ -1317,6 +1317,7 @@ export type LibraryArtist = {
   albumCount: number;
   coverId: string | null;
   coverThumb: string | null;
+  coverSource?: 'manual' | 'embedded' | 'folder' | 'network' | 'default' | null;
   avatarThumbUrl?: string | null;
   avatarUrl?: string | null;
   avatarStatus?: ArtistImageCacheStatus | null;

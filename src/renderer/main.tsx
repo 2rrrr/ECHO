@@ -10,6 +10,7 @@ import { App } from './app/App';
 import { DesktopLyricsApp } from './desktop-lyrics/DesktopLyricsApp';
 import { I18nProvider } from './i18n/I18nProvider';
 import { MiniPlayerApp } from './mini-player/MiniPlayerApp';
+import { startPerformanceStallMonitor } from './diagnostics/performanceStallMonitor';
 import {
   applyAppearancePreferences,
   loadPersistedAppearancePreferences,
@@ -106,6 +107,7 @@ window.addEventListener('unhandledrejection', (event) => {
   });
 });
 
+startPerformanceStallMonitor();
 loadAppearanceFontFiles(appearancePreferences);
 if (appBridge) {
   watchThemeSettings(() => appBridge.getSettings());

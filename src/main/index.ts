@@ -7,7 +7,7 @@ import { registerCoverProtocolScheme } from './protocol/coverProtocol';
 import { initializeProtectedUserDataPath } from './app/dataProtection';
 import { isLibraryRecoveryMode } from './app/libraryRecoveryMode';
 import { initializeDevConsoleCapture, initializePerformanceStallMonitor } from './diagnostics/DevConsoleService';
-import { markStartupStage, openEarlySafeModeShellIfEnabled } from './diagnostics/StartupDiagnostics';
+import { markStartupStage, openEarlySafeModeShellIfEnabled, recordStartupPersistentStateSnapshot } from './diagnostics/StartupDiagnostics';
 
 markStartupStage('main:module-loaded');
 const protectedUserDataPath = initializeProtectedUserDataPath();
@@ -22,6 +22,15 @@ registerCrashHandlers();
 markStartupStage('main:crash-handlers-registered');
 initializeDevConsoleCapture();
 markStartupStage('main:dev-console-capture-initialized');
+recordStartupPersistentStateSnapshot({
+  appVersion: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  userDataPath: protectedUserDataPath,
+  appPath: app.getAppPath(),
+  execPath: process.execPath,
+});
+markStartupStage('main:persistent-state-snapshot-recorded');
 initializePerformanceStallMonitor(async () => {
   try {
     const { getAudioSession } = await import('./audio/AudioSession');

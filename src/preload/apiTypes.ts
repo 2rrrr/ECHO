@@ -236,6 +236,7 @@ import type {
   StreamingLyricsResult,
   StreamingAlbumDetail,
   StreamingArtistDetail,
+  StreamingFavoriteCollectionRenameResult,
   StreamingFavoritesImportResult,
   StreamingFavoriteSetResult,
   StreamingFavoritesSnapshot,
@@ -388,8 +389,8 @@ export type EchoApi = {
     likeAlbum: (albumId: string) => Promise<LibraryPlaylistItem>;
     unlikeAlbum: (albumId: string) => Promise<void>;
     toggleAlbumLiked: (albumId: string) => Promise<{ liked: boolean; item?: LibraryPlaylistItem }>;
-    clearLikedTracks: () => Promise<void>;
-    clearLikedAlbums: () => Promise<void>;
+    clearLikedTracks: (query?: Pick<LibraryPageQuery, 'sourceProvider'>) => Promise<void>;
+    clearLikedAlbums: (query?: Pick<LibraryPageQuery, 'sourceProvider'>) => Promise<void>;
     getAlbums: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryAlbum>>;
     getAlbum: (albumId: string) => Promise<LibraryAlbumDetail | null>;
     getAlbumOnlineInfo: (albumId: string, options?: AlbumOnlineInfoRequestOptions) => Promise<AlbumOnlineInfo>;
@@ -592,6 +593,7 @@ export type EchoApi = {
     setTrackLiked: (request: { provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>; providerTrackId: string; liked: boolean }) => Promise<StreamingTrackLikedResult>;
     getFavorites: () => Promise<StreamingFavoritesSnapshot>;
     setFavorite: (request: { track: StreamingTrack; favorite: boolean }) => Promise<StreamingFavoriteSetResult>;
+    renameFavoriteCollection: (request: { collectionId: string; name: string }) => Promise<StreamingFavoriteCollectionRenameResult>;
     refreshNeteaseDailyRecommend: () => Promise<StreamingPlaylistImportResult>;
   };
   lyrics: {

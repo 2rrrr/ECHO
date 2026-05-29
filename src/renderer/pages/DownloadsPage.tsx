@@ -14,6 +14,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import { getDownloadsBridge } from '../utils/echoBridge';
+import { isImeComposingKeyEvent } from '../utils/imeInput';
 
 const terminalStatuses = new Set<DownloadJobStatus>(['completed', 'failed', 'cancelled']);
 const runningStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
@@ -492,7 +493,7 @@ export const DownloadsPage = (): JSX.Element => {
               placeholder={t('downloads.url.placeholder')}
               onChange={(event) => setUrl(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
+                if (!isImeComposingKeyEvent(event) && event.key === 'Enter') {
                   void handleCreate();
                 }
               }}

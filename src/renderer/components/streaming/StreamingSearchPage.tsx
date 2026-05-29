@@ -24,6 +24,7 @@ import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation
 import { useProgressiveRenderLimit } from '../../hooks/useProgressiveRenderLimit';
 import { isPlaybackCancellationError, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { getAccountsBridge, getAppBridge, getDownloadsBridge, getStreamingBridge } from '../../utils/echoBridge';
+import { useImeAwareDebouncedSearch } from '../../utils/imeInput';
 import {
   readStreamingSearchMemory,
   updateStreamingSearchMemory,
@@ -80,6 +81,11 @@ const favoriteIdsFromSnapshot = (snapshot: StreamingFavoritesSnapshot | null | u
 
   for (const items of Object.values(snapshot.providers)) {
     for (const item of items) {
+      ids[favoriteKey(item.provider, item.providerTrackId)] = true;
+    }
+  }
+  for (const collection of snapshot.collections ?? []) {
+    for (const item of collection.tracks) {
       ids[favoriteKey(item.provider, item.providerTrackId)] = true;
     }
   }
@@ -277,8 +283,11 @@ export const StreamingSearchPage = (): JSX.Element => {
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [streamingDownloadActionsEnabled, setStreamingDownloadActionsEnabled] = useState(false);
   const [activeTab, setActiveTab] = useState<StreamingMediaType>(initialMemory.activeTab);
-  const [input, setInput] = useState(initialMemory.input);
-  const [query, setQuery] = useState(initialMemory.query);
+  const {
+    searchInput: input,
+    search: query,
+    searchInputProps,
+  } = useImeAwareDebouncedSearch(300, initialMemory.input || initialMemory.query);
   const [result, setResult] = useState<StreamingSearchResult | null>(initialMemory.result);
   const [selectedAlbum, setSelectedAlbum] = useState<StreamingAlbum | null>(null);
   const [selectedAlbumDetail, setSelectedAlbumDetail] = useState<StreamingAlbumDetail | null>(null);
@@ -310,6 +319,11 @@ export const StreamingSearchPage = (): JSX.Element => {
   const resultRef = useRef<StreamingSearchResult | null>(initialMemory.result);
   const listRef = useRef<HTMLDivElement | null>(null);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
+  const restoredResultKeyRef = useRef<string | null>(
+    initialMemory.result && initialMemory.result.provider === initialMemory.provider && initialMemory.result.query.trim() === initialMemory.query.trim()
+      ? streamingSearchResultKey(initialMemory.provider, initialMemory.query, initialMemory.activeTab)
+      : null,
+  );
 
   const providerOptions = useMemo(
     () => {
@@ -412,14 +426,6 @@ export const StreamingSearchPage = (): JSX.Element => {
     element.addEventListener('scroll', handleScroll, { passive: true });
     return () => element.removeEventListener('scroll', handleScroll);
   }, [tracks.length]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQuery(input.trim());
-    }, 300);
-
-    return () => window.clearTimeout(timer);
-  }, [input]);
 
   useEffect(() => {
     const app = getAppBridge();
@@ -571,19 +577,38 @@ export const StreamingSearchPage = (): JSX.Element => {
   );
 
   useEffect(() => {
+    const restoredResultKey = restoredResultKeyRef.current;
+    if (restoredResultKey && resultRef.current && restoredResultKey === streamingSearchResultKey(provider, query, activeTab)) {
+      restoredResultKeyRef.current = null;
+      return;
+    }
+
+    restoredResultKeyRef.current = null;
     void runSearch(1, 'replace');
-  }, [runSearch]);
+  }, [activeTab, provider, query, runSearch]);
 
   useEffect(() => {
     const streaming = getStreamingBridge();
     if (!streaming?.getFavorites) {
-      return;
+      return undefined;
     }
 
-    void streaming
-      .getFavorites()
-      .then((snapshot) => setFavoriteTrackIds(favoriteIdsFromSnapshot(snapshot)))
-      .catch(() => undefined);
+    let disposed = false;
+    const timer = window.setTimeout(() => {
+      void streaming
+        .getFavorites()
+        .then((snapshot) => {
+          if (!disposed) {
+            setFavoriteTrackIds(favoriteIdsFromSnapshot(snapshot));
+          }
+        })
+        .catch(() => undefined);
+    }, 500);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -1565,7 +1590,7 @@ export const StreamingSearchPage = (): JSX.Element => {
       <section className="streaming-command-panel">
         <label className="search-box streaming-search-box">
           <Search size={19} />
-          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="搜索歌曲、歌手、专辑" />
+          <input {...searchInputProps} placeholder="搜索歌曲、歌手、专辑" />
         </label>
         <div className="streaming-provider-tabs" aria-label="流媒体平台">
           {providerOptions.map((item) => (
