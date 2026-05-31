@@ -28,6 +28,9 @@ const normalizeStylePatch = (value: unknown): DesktopLyricsStylePatch => {
     ...(typeof input.desktopLyricsFontFilePath === 'string' || input.desktopLyricsFontFilePath === null
       ? { desktopLyricsFontFilePath: input.desktopLyricsFontFilePath }
       : {}),
+    ...(input.desktopLyricsColorMode === 'theme' || input.desktopLyricsColorMode === 'custom'
+      ? { desktopLyricsColorMode: input.desktopLyricsColorMode }
+      : {}),
     ...(typeof input.desktopLyricsColor === 'string' ? { desktopLyricsColor: input.desktopLyricsColor } : {}),
     ...(typeof input.desktopLyricsStrokeColor === 'string' ? { desktopLyricsStrokeColor: input.desktopLyricsStrokeColor } : {}),
     ...(input.desktopLyricsOpacityPercent !== undefined ? { desktopLyricsOpacityPercent: Number(input.desktopLyricsOpacityPercent) } : {}),

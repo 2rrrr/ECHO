@@ -11,6 +11,7 @@ export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type RemoteCoverLoadPerformanceMode = 'low' | 'balanced' | 'aggressive' | 'lan';
 export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
 export type LyricsMiniPlayerColorMode = 'default' | 'custom' | 'cover';
+export type DesktopLyricsColorMode = 'theme' | 'custom';
 export type AppWallpaperMediaType = 'image' | 'video';
 export type AppVideoWallpaperPauseMode = 'smart' | 'minimized' | 'never';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
@@ -279,6 +280,7 @@ export type AppSettings = {
   lyricsEmptyStateHidden: boolean;
   lyricsPlayerBarDrawerEnabled?: boolean;
   lyricsPlayerBarDrawerAutoEnableForMv?: boolean;
+  lyricsPlayerBarDrawerAutoHideEnabled?: boolean;
   lyricsPlayerBarDrawerOpacityPercent?: number;
   lyricsPlayerBarDrawerColorMode?: LyricsMiniPlayerColorMode;
   lyricsPlayerBarDrawerColor?: string;
@@ -309,6 +311,7 @@ export type AppSettings = {
   desktopLyricsScalePercent?: number;
   desktopLyricsFontFamily?: string;
   desktopLyricsFontFilePath?: string | null;
+  desktopLyricsColorMode?: DesktopLyricsColorMode;
   desktopLyricsColor?: string;
   desktopLyricsStrokeColor?: string;
   desktopLyricsOpacityPercent?: number;

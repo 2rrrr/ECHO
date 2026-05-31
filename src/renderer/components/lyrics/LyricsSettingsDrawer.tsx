@@ -85,6 +85,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsEmptyStateHidden'
   | 'lyricsPlayerBarDrawerEnabled'
   | 'lyricsPlayerBarDrawerAutoEnableForMv'
+  | 'lyricsPlayerBarDrawerAutoHideEnabled'
   | 'lyricsPlayerBarDrawerOpacityPercent'
   | 'lyricsPlayerBarDrawerColorMode'
   | 'lyricsPlayerBarDrawerColor'
@@ -136,6 +137,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsEmptyStateHidden: true,
   lyricsPlayerBarDrawerEnabled: true,
   lyricsPlayerBarDrawerAutoEnableForMv: true,
+  lyricsPlayerBarDrawerAutoHideEnabled: false,
   lyricsPlayerBarDrawerOpacityPercent: 78,
   lyricsPlayerBarDrawerColorMode: 'default',
   lyricsPlayerBarDrawerColor: '#232120',
@@ -574,6 +576,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
   lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled !== false,
   lyricsPlayerBarDrawerAutoEnableForMv: settings.lyricsPlayerBarDrawerAutoEnableForMv !== false,
+  lyricsPlayerBarDrawerAutoHideEnabled: settings.lyricsPlayerBarDrawerAutoHideEnabled === true,
   lyricsPlayerBarDrawerOpacityPercent: settings.lyricsPlayerBarDrawerOpacityPercent ?? fallbackSettings.lyricsPlayerBarDrawerOpacityPercent,
   lyricsPlayerBarDrawerColorMode: settings.lyricsPlayerBarDrawerColorMode ?? fallbackSettings.lyricsPlayerBarDrawerColorMode,
   lyricsPlayerBarDrawerColor: settings.lyricsPlayerBarDrawerColor ?? fallbackSettings.lyricsPlayerBarDrawerColor,
@@ -1988,6 +1991,23 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             />
           </label>
           <p>{t('lyricsSettings.display.miniPlayerAutoMvDescription')}</p>
+          <label className="audio-toggle-row">
+            <span>
+              <EyeOff size={17} />
+              <strong>{t('lyricsSettings.display.miniPlayerAutoHide')}</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsPlayerBarDrawerAutoHideEnabled === true}
+              disabled={
+                isBusy ||
+                (effectiveSettings.lyricsPlayerBarDrawerEnabled !== true &&
+                  effectiveSettings.lyricsPlayerBarDrawerAutoEnableForMv === false)
+              }
+              onChange={(event) => void patchSettings({ lyricsPlayerBarDrawerAutoHideEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>{t('lyricsSettings.display.miniPlayerAutoHideDescription')}</p>
 
           {effectiveSettings.lyricsPlayerBarDrawerEnabled ? (
             <div className="audio-drawer-mini-grid lyrics-mini-player-options">

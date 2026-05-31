@@ -927,7 +927,51 @@ describe('AudioSession stability cleanup', () => {
     }
   });
 
-  it('treats local playback ending before the probed duration as a possible corrupt file', async () => {
+  it('retries once for local invalid-data decode errors before surfacing the decoder error', async () => {
+    const decoder = new ControlledFailingDecoder(new Map([['song.flac', probe('song.flac', 44100)]]));
+    const bridge = new FakeBridge();
+    const session = createAudioSessionForTest({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    const invalidDataError = new Error('ffmpeg_exit_code_1; kind="input_invalid"; stderr="Invalid data found when processing input"');
+
+    try {
+      await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+      bridge.positionSeconds = 38;
+      decoder.fail(invalidDataError);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(session.getStatus().state).toBe('playing');
+      expect(session.getStatus().error).toBeNull();
+      expect(session.getStatus().warnings).toContain('local_decode_error_recovered');
+      expect(decoder.decodeRequests).toHaveLength(2);
+      expect(decoder.decodeRequests[1]).toMatchObject({ filePath: 'song.flac', startSeconds: 38 });
+      expect(session.getDiagnostics().recentPlaybackEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'watchdog_recovery',
+            severity: 'recovery',
+            reason: 'local_decode_error_recovered',
+          }),
+        ]),
+      );
+
+      decoder.fail(invalidDataError);
+      await Promise.resolve();
+
+      expect(session.getStatus().state).toBe('error');
+      expect(session.getStatus().error).toContain('kind="input_invalid"');
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('retries once before treating local playback ending far before the probed duration as a possible corrupt file', async () => {
     const decoder = new PcmChunkDecoder(new Map([['broken.flac', probe('broken.flac', 44100)]]), [pcmBuffer([0, 0, 0, 0])]);
     const bridge = new FakeBridge();
     const ended = vi.fn();
@@ -942,12 +986,64 @@ describe('AudioSession stability cleanup', () => {
 
     try {
       await session.playLocalFile({ filePath: 'broken.flac', output: { outputMode: 'shared' } });
+      bridge.positionSeconds = 42;
+      bridge.emit('ended');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(ended).not.toHaveBeenCalled();
+      expect(session.getStatus().state).toBe('playing');
+      expect(session.getStatus().error).toBeNull();
+      expect(session.getStatus().warnings).toContain('premature_local_end_recovered');
+      expect(decoder.decodeRequests).toHaveLength(2);
+      expect(decoder.decodeRequests[1]).toMatchObject({ filePath: 'broken.flac', startSeconds: 42 });
+      expect(session.getDiagnostics().recentPlaybackEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'ended',
+            severity: 'recovery',
+            reason: 'premature_local_end_recovered',
+          }),
+        ]),
+      );
+
+      bridge.positionSeconds = 42;
+      bridge.emit('ended');
+
+      expect(session.getStatus().state).toBe('error');
+      expect(session.getStatus().error).toContain('audio_file_decode_failed_or_corrupt');
+      expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
+        kind: 'ended',
+        severity: 'suspect',
+        reason: 'ended_before_duration',
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('does not treat a moderately early local end as a corrupt file', async () => {
+    const decoder = new PcmChunkDecoder(new Map([['short-report.flac', probe('short-report.flac', 44100)]]), [pcmBuffer([0, 0, 0, 0])]);
+    const bridge = new FakeBridge();
+    const ended = vi.fn();
+    const session = createAudioSessionForTest({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    session.on('ended', ended);
+
+    try {
+      await session.playLocalFile({ filePath: 'short-report.flac', output: { outputMode: 'shared' } });
       bridge.positionSeconds = 72;
       bridge.emit('ended');
 
-      expect(ended).not.toHaveBeenCalled();
-      expect(session.getStatus().state).toBe('error');
-      expect(session.getStatus().error).toContain('audio_file_decode_failed_or_corrupt');
+      expect(ended).toHaveBeenCalledTimes(1);
+      expect(session.getStatus().state).toBe('ended');
+      expect(session.getStatus().error).toBeNull();
+      expect(decoder.decodeRequests).toHaveLength(1);
       expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
         kind: 'ended',
         severity: 'suspect',

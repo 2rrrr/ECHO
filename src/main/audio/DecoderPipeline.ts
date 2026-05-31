@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import { parseFile } from 'music-metadata';
 import type { AudioProbeResult, AudioResamplerEngine, DecoderRun, PcmAutomixDecodeRequest, PcmDecodeRequest, PcmGaplessDecodeRequest } from './audioTypes';
 import { readTagLibAudioTechnicalMetadata, shouldPreferTagLibForAlacTechnicalFields } from './AlacTechnicalMetadata';
+import { resolveMp4ContainerAudioCodec } from './Mp4AudioCodec';
 import {
   resolveFfmpegToolchain,
   resolveFfmpegToolchainPath,
@@ -359,6 +360,7 @@ export class DecoderPipeline {
       bitDepth: normalizePositiveInteger(format.bitsPerSample),
       bitrate: normalizePositiveInteger(format.bitrate),
     };
+    result.codec = await resolveMp4ContainerAudioCodec(probePath, result.codec);
     if (shouldPreferTagLibForAlacTechnicalFields(probePath, result.codec)) {
       try {
         const tagLibTechnical = await readTagLibAudioTechnicalMetadata(probePath);

@@ -133,6 +133,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsEmptyStateHidden).toBe(true);
     expect(settings.lyricsPlayerBarDrawerEnabled).toBe(true);
     expect(settings.lyricsPlayerBarDrawerAutoEnableForMv).toBe(true);
+    expect(settings.lyricsPlayerBarDrawerAutoHideEnabled).toBe(false);
     expect(settings.lyricsPlayerBarDrawerOpacityPercent).toBe(78);
     expect(settings.lyricsPlayerBarDrawerColorMode).toBe('default');
     expect(settings.lyricsPlayerBarDrawerColor).toBe('#232120');
@@ -157,6 +158,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsBackgroundScalePercent).toBe(100);
     expect(settings.desktopLyricsFontFamily).toBe('Microsoft YaHei');
     expect(settings.desktopLyricsFontFilePath).toBeNull();
+    expect(settings.desktopLyricsColorMode).toBe('theme');
     expect(settings.desktopLyricsRomanizationEnabled).toBe(true);
     expect(settings.desktopLyricsTranslationEnabled).toBe(true);
     expect(settings.miniPlayerEnabled).toBe(false);
@@ -887,9 +889,11 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         lyricsPlayerBarDrawerAutoEnableForMv: false,
+        lyricsPlayerBarDrawerAutoHideEnabled: true,
       }),
     ).toMatchObject({
       lyricsPlayerBarDrawerAutoEnableForMv: false,
+      lyricsPlayerBarDrawerAutoHideEnabled: true,
     });
     expect(
       normalizeSettings({
@@ -1343,6 +1347,7 @@ describe('app settings normalization', () => {
         lyricsMvAutoShowTrackInfoDisabled: false,
         lyricsEmptyStateHidden: false,
         lyricsPlayerBarDrawerEnabled: true,
+        lyricsPlayerBarDrawerAutoHideEnabled: 'yes' as never,
         lyricsPlayerBarDrawerOpacityPercent: 500,
         lyricsPlayerBarDrawerColorMode: 'neon' as never,
         lyricsPlayerBarDrawerColor: 'red',
@@ -1364,6 +1369,7 @@ describe('app settings normalization', () => {
         lyricsCoverBlurPx: 999,
         lyricsCoverBrightnessPercent: 12,
         lyricsBackgroundScalePercent: 999,
+        desktopLyricsColorMode: 'neon' as never,
         desktopLyricsRomanizationEnabled: false,
         desktopLyricsTranslationEnabled: false,
       }),
@@ -1388,6 +1394,7 @@ describe('app settings normalization', () => {
       lyricsMvAutoShowTrackInfoDisabled: false,
       lyricsEmptyStateHidden: false,
       lyricsPlayerBarDrawerEnabled: true,
+      lyricsPlayerBarDrawerAutoHideEnabled: false,
       lyricsPlayerBarDrawerOpacityPercent: 100,
       lyricsPlayerBarDrawerColorMode: 'default',
       lyricsPlayerBarDrawerColor: '#232120',
@@ -1409,6 +1416,7 @@ describe('app settings normalization', () => {
       lyricsCoverBlurPx: 60,
       lyricsCoverBrightnessPercent: 40,
       lyricsBackgroundScalePercent: 180,
+      desktopLyricsColorMode: 'theme',
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
     });
@@ -1422,6 +1430,7 @@ describe('app settings normalization', () => {
         lyricsLineMaxChars: -1,
         lyricsAutoAcceptScore: 0.1,
         lyricsContextOpacityPercent: 64.4,
+        lyricsPlayerBarDrawerAutoHideEnabled: true,
         lyricsPlayerBarDrawerOpacityPercent: 12,
         lyricsPlayerBarDrawerColorMode: 'cover',
         lyricsPlayerBarDrawerColor: '#ff8a80',
@@ -1434,6 +1443,8 @@ describe('app settings normalization', () => {
         lyricsCoverBlurPx: 12.5,
         lyricsCoverBrightnessPercent: 118.6,
         lyricsBackgroundScalePercent: 55,
+        desktopLyricsColorMode: 'custom',
+        desktopLyricsColor: '#ff8a80',
       }),
     ).toMatchObject({
       lyricsFontSizePx: 22,
@@ -1442,6 +1453,7 @@ describe('app settings normalization', () => {
       lyricsLineMaxChars: 0,
       lyricsAutoAcceptScore: 0.3,
       lyricsContextOpacityPercent: 64,
+      lyricsPlayerBarDrawerAutoHideEnabled: true,
       lyricsPlayerBarDrawerOpacityPercent: 20,
       lyricsPlayerBarDrawerColorMode: 'cover',
       lyricsPlayerBarDrawerColor: '#FF8A80',
@@ -1454,11 +1466,22 @@ describe('app settings normalization', () => {
       lyricsCoverBlurPx: 13,
       lyricsCoverBrightnessPercent: 119,
       lyricsBackgroundScalePercent: 70,
+      desktopLyricsColorMode: 'custom',
+      desktopLyricsColor: '#FF8A80',
       lyricsRomanizationEnabled: true,
       lyricsTranslationEnabled: true,
       lyricsWordHighlightEnabled: true,
       desktopLyricsRomanizationEnabled: true,
       desktopLyricsTranslationEnabled: true,
+    });
+  });
+
+  it('keeps legacy custom desktop lyrics colors in custom mode', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({ desktopLyricsColor: '#ffd166' })).toMatchObject({
+      desktopLyricsColorMode: 'custom',
+      desktopLyricsColor: '#FFD166',
     });
   });
 

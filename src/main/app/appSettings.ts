@@ -19,6 +19,7 @@ import type {
   AppSettings,
   AudioTransportFadeCurve,
   DataBackupIntervalDays,
+  DesktopLyricsColorMode,
   LyricsBackgroundMode,
   LyricsMiniPlayerColorMode,
   NetworkProxyMode,
@@ -448,6 +449,7 @@ export const defaultSettings: AppSettings = {
   lyricsEmptyStateHidden: true,
   lyricsPlayerBarDrawerEnabled: true,
   lyricsPlayerBarDrawerAutoEnableForMv: true,
+  lyricsPlayerBarDrawerAutoHideEnabled: false,
   lyricsPlayerBarDrawerOpacityPercent: 78,
   lyricsPlayerBarDrawerColorMode: 'default',
   lyricsPlayerBarDrawerColor: defaultLyricsMiniPlayerColor,
@@ -478,6 +480,7 @@ export const defaultSettings: AppSettings = {
   desktopLyricsScalePercent: 100,
   desktopLyricsFontFamily: defaultDesktopLyricsFontFamily,
   desktopLyricsFontFilePath: null,
+  desktopLyricsColorMode: 'theme',
   desktopLyricsColor: defaultDesktopLyricsColor,
   desktopLyricsStrokeColor: defaultDesktopLyricsStrokeColor,
   desktopLyricsOpacityPercent: 96,
@@ -1182,6 +1185,16 @@ const normalizeLyricsBackgroundMode = (value: unknown): LyricsBackgroundMode =>
 const normalizeLyricsMiniPlayerColorMode = (value: unknown): LyricsMiniPlayerColorMode =>
   value === 'custom' || value === 'cover' || value === 'default' ? value : defaultSettings.lyricsPlayerBarDrawerColorMode ?? 'default';
 
+const normalizeDesktopLyricsColorMode = (value: unknown, legacyColor: unknown): DesktopLyricsColorMode => {
+  if (value === 'theme' || value === 'custom') {
+    return value;
+  }
+
+  return normalizeHexColor(legacyColor, defaultDesktopLyricsColor) !== defaultDesktopLyricsColor
+    ? 'custom'
+    : defaultSettings.desktopLyricsColorMode ?? 'theme';
+};
+
 const normalizeMvProviderList = (value: unknown, fallback: NetworkMvProviderId[]): NetworkMvProviderId[] => {
   if (!Array.isArray(value)) {
     return [...fallback];
@@ -1617,6 +1630,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden !== false,
     lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled !== false,
     lyricsPlayerBarDrawerAutoEnableForMv: settings.lyricsPlayerBarDrawerAutoEnableForMv !== false,
+    lyricsPlayerBarDrawerAutoHideEnabled: settings.lyricsPlayerBarDrawerAutoHideEnabled === true,
     lyricsPlayerBarDrawerOpacityPercent: Number.isFinite(lyricsPlayerBarDrawerOpacityPercent)
       ? Math.round(clamp(lyricsPlayerBarDrawerOpacityPercent, 20, 100))
       : defaultSettings.lyricsPlayerBarDrawerOpacityPercent,
@@ -1673,6 +1687,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.desktopLyricsScalePercent,
     desktopLyricsFontFamily: normalizeRequiredText(settings.desktopLyricsFontFamily, defaultDesktopLyricsFontFamily),
     desktopLyricsFontFilePath: normalizeFontPath(settings.desktopLyricsFontFilePath),
+    desktopLyricsColorMode: normalizeDesktopLyricsColorMode(settings.desktopLyricsColorMode, settings.desktopLyricsColor),
     desktopLyricsColor: normalizeHexColor(settings.desktopLyricsColor, defaultDesktopLyricsColor),
     desktopLyricsStrokeColor: normalizeHexColor(settings.desktopLyricsStrokeColor, defaultDesktopLyricsStrokeColor),
     desktopLyricsOpacityPercent: Number.isFinite(desktopLyricsOpacityPercent)

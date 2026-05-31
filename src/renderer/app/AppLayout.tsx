@@ -115,6 +115,7 @@ type LyricsMiniPlayerSettings = Pick<
   AppSettings,
   | 'lyricsPlayerBarDrawerEnabled'
   | 'lyricsPlayerBarDrawerAutoEnableForMv'
+  | 'lyricsPlayerBarDrawerAutoHideEnabled'
   | 'lyricsPlayerBarDrawerOpacityPercent'
   | 'lyricsPlayerBarDrawerColorMode'
   | 'lyricsPlayerBarDrawerColor'
@@ -137,6 +138,7 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
 const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
   lyricsPlayerBarDrawerEnabled: true,
   lyricsPlayerBarDrawerAutoEnableForMv: true,
+  lyricsPlayerBarDrawerAutoHideEnabled: false,
   lyricsPlayerBarDrawerOpacityPercent: 78,
   lyricsPlayerBarDrawerColorMode: 'default',
   lyricsPlayerBarDrawerColor: '#232120',
@@ -186,6 +188,7 @@ const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings
 const selectLyricsMiniPlayerSettings = (settings: Partial<AppSettings>): LyricsMiniPlayerSettings => ({
   lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled !== false,
   lyricsPlayerBarDrawerAutoEnableForMv: settings.lyricsPlayerBarDrawerAutoEnableForMv !== false,
+  lyricsPlayerBarDrawerAutoHideEnabled: settings.lyricsPlayerBarDrawerAutoHideEnabled === true,
   lyricsPlayerBarDrawerOpacityPercent: Number.isFinite(settings.lyricsPlayerBarDrawerOpacityPercent)
     ? Math.max(20, Math.min(100, Math.round(Number(settings.lyricsPlayerBarDrawerOpacityPercent))))
     : defaultLyricsMiniPlayerSettings.lyricsPlayerBarDrawerOpacityPercent,
@@ -232,6 +235,8 @@ const openLyricsSettingsEvent = 'app:open-lyrics-settings';
 const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
 const pendingRouteStorageKey = 'echo-next.pending-route';
+const lyricsMiniPlayerAutoHideDistancePx = 118;
+const lyricsMiniPlayerAutoHideDelayMs = 460;
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
 
@@ -277,6 +282,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [sidebarLayoutSettings, setSidebarLayoutSettings] = useState<SidebarLayoutSettings>(defaultSidebarLayoutSettings);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
+  const [isLyricsMiniPlayerAutoHidden, setIsLyricsMiniPlayerAutoHidden] = useState(false);
   const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
   const [appWallpaperSettings, setAppWallpaperSettings] = useState<AppWallpaperSettings>(defaultAppWallpaperSettings);
   const [loadedAppWallpaperKey, setLoadedAppWallpaperKey] = useState<string | null>(null);
@@ -286,6 +292,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const appWallpaperBlurTimerRef = useRef<number | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lyricsMiniPlayerHostRef = useRef<HTMLDivElement | null>(null);
+  const lyricsMiniPlayerAutoHideTimerRef = useRef<number | null>(null);
   const lastAudioErrorRef = useRef<string | null>(null);
   const previousRouteIdRef = useRef<AppRouteId>('songs');
   const routeSwitchSequenceRef = useRef(0);
@@ -337,6 +345,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     isLyricsRoute &&
     (lyricsMiniPlayerSettings.lyricsPlayerBarDrawerEnabled === true ||
       (activeLyricsViewMode === 'mv' && lyricsMiniPlayerSettings.lyricsPlayerBarDrawerAutoEnableForMv !== false));
+  const shouldAutoHideLyricsMiniPlayer =
+    shouldUseLyricsPlayerDrawer && lyricsMiniPlayerSettings.lyricsPlayerBarDrawerAutoHideEnabled === true;
+  const isLyricsMiniPlayerVisuallyHidden =
+    shouldAutoHideLyricsMiniPlayer && isLyricsMiniPlayerAutoHidden && !isLyricsQueueDrawerOpen;
   const shouldRenderPlayerBar = !isStandaloneRoute || isLyricsRoute;
   const hasDesktopLyricsBridge = Boolean(window.echo?.desktopLyrics);
   const currentMiniPlayerTrack = playbackQueue.currentTrack ?? playbackQueue.lastPlayedTrack ?? null;
@@ -1081,6 +1093,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         patch &&
         ('lyricsPlayerBarDrawerEnabled' in patch ||
           'lyricsPlayerBarDrawerAutoEnableForMv' in patch ||
+          'lyricsPlayerBarDrawerAutoHideEnabled' in patch ||
           'lyricsPlayerBarDrawerOpacityPercent' in patch ||
           'lyricsPlayerBarDrawerColorMode' in patch ||
           'lyricsPlayerBarDrawerColor' in patch)
@@ -1111,6 +1124,98 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener('settings:changed', refreshLyricsMiniPlayerSettings);
     };
   }, []);
+
+  useEffect(() => {
+    if (!shouldAutoHideLyricsMiniPlayer) {
+      if (lyricsMiniPlayerAutoHideTimerRef.current !== null) {
+        window.clearTimeout(lyricsMiniPlayerAutoHideTimerRef.current);
+        lyricsMiniPlayerAutoHideTimerRef.current = null;
+      }
+      setIsLyricsMiniPlayerAutoHidden(false);
+      return undefined;
+    }
+
+    let animationFrame = 0;
+    let disposed = false;
+
+    const revealMiniPlayer = (): void => {
+      if (lyricsMiniPlayerAutoHideTimerRef.current !== null) {
+        window.clearTimeout(lyricsMiniPlayerAutoHideTimerRef.current);
+        lyricsMiniPlayerAutoHideTimerRef.current = null;
+      }
+      setIsLyricsMiniPlayerAutoHidden((hidden) => (hidden ? false : hidden));
+    };
+
+    const isNearMiniPlayer = (clientX: number, clientY: number): boolean => {
+      const host = lyricsMiniPlayerHostRef.current;
+      const hostWidth = host?.offsetWidth ?? Math.min(820, Math.max(0, window.innerWidth - 96));
+      const hostHeight = host?.offsetHeight ?? 72;
+      const halfWidth = Math.min(window.innerWidth, hostWidth) / 2;
+      const left = window.innerWidth / 2 - halfWidth - lyricsMiniPlayerAutoHideDistancePx;
+      const right = window.innerWidth / 2 + halfWidth + lyricsMiniPlayerAutoHideDistancePx;
+      const top = window.innerHeight - hostHeight - lyricsMiniPlayerAutoHideDistancePx - 48;
+
+      return clientX >= left && clientX <= right && clientY >= top;
+    };
+
+    const scheduleHideMiniPlayer = (): void => {
+      const host = lyricsMiniPlayerHostRef.current;
+      if (isLyricsQueueDrawerOpen || (host && host.contains(document.activeElement))) {
+        revealMiniPlayer();
+        return;
+      }
+      if (lyricsMiniPlayerAutoHideTimerRef.current !== null) {
+        return;
+      }
+
+      lyricsMiniPlayerAutoHideTimerRef.current = window.setTimeout(() => {
+        lyricsMiniPlayerAutoHideTimerRef.current = null;
+        if (!disposed) {
+          setIsLyricsMiniPlayerAutoHidden(true);
+        }
+      }, lyricsMiniPlayerAutoHideDelayMs);
+    };
+
+    const handleMouseMove = (event: MouseEvent): void => {
+      const { clientX, clientY } = event;
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0;
+        if (isNearMiniPlayer(clientX, clientY)) {
+          revealMiniPlayer();
+        } else {
+          scheduleHideMiniPlayer();
+        }
+      });
+    };
+
+    const handleFocusIn = (event: FocusEvent): void => {
+      const host = lyricsMiniPlayerHostRef.current;
+      if (host && event.target instanceof Node && host.contains(event.target)) {
+        revealMiniPlayer();
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('resize', revealMiniPlayer);
+
+    return () => {
+      disposed = true;
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      if (lyricsMiniPlayerAutoHideTimerRef.current !== null) {
+        window.clearTimeout(lyricsMiniPlayerAutoHideTimerRef.current);
+        lyricsMiniPlayerAutoHideTimerRef.current = null;
+      }
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('resize', revealMiniPlayer);
+    };
+  }, [isLyricsQueueDrawerOpen, shouldAutoHideLyricsMiniPlayer]);
 
   useEffect(() => {
     if (
@@ -1879,7 +1984,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       {shouldRenderPlayerBar ? (
         <div
-          className={`player-bar-host ${shouldUseLyricsPlayerDrawer ? 'lyrics-player-drawer-host lyrics-mini-player-host' : ''}`}
+          ref={lyricsMiniPlayerHostRef}
+          className={[
+            'player-bar-host',
+            shouldUseLyricsPlayerDrawer ? 'lyrics-player-drawer-host lyrics-mini-player-host' : '',
+            shouldAutoHideLyricsMiniPlayer ? 'lyrics-player-drawer-host--auto-hide' : '',
+            isLyricsMiniPlayerVisuallyHidden ? 'lyrics-player-drawer-host--auto-hidden' : '',
+          ].filter(Boolean).join(' ')}
+          data-auto-hide={shouldAutoHideLyricsMiniPlayer ? 'true' : undefined}
+          data-auto-hide-state={shouldAutoHideLyricsMiniPlayer ? (isLyricsMiniPlayerVisuallyHidden ? 'hidden' : 'visible') : undefined}
           data-mini-player-color-mode={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode : undefined}
           style={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerStyle : undefined}
         >

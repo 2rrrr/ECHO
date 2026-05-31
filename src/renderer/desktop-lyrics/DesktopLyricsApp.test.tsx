@@ -17,6 +17,7 @@ const makeDesktopLyricsSettings = (locked: boolean) => ({
   desktopLyricsScalePercent: 100,
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
+  desktopLyricsColorMode: 'theme',
   desktopLyricsColor: '#FFFFFF',
   desktopLyricsStrokeColor: '#111827',
   desktopLyricsOpacityPercent: 96,
@@ -501,6 +502,70 @@ describe('desktop lyrics text fitting', () => {
     await waitFor(() => expect(getLyrics).toHaveBeenCalledWith({
       provider: 'spotify',
       providerTrackId: 'abc123',
+    }));
+  });
+
+  it('uses theme color mode by default and switches to custom colors from swatches', async () => {
+    const settings = makeDesktopLyricsSettings(false);
+    const setStyle = vi.fn().mockResolvedValue({
+      visible: true,
+      locked: false,
+      bounds: null,
+      settings: {
+        ...settings,
+        desktopLyricsColorMode: 'custom',
+        desktopLyricsColor: '#FFD166',
+      },
+    });
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(settings),
+        loadFontFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(null),
+        onStatus: vi.fn(() => () => undefined),
+      },
+      desktopLyrics: {
+        getLastAudioStatus: vi.fn().mockResolvedValue(null),
+        getState: vi.fn().mockResolvedValue({
+          visible: true,
+          locked: false,
+          bounds: null,
+          settings,
+        }),
+        onAudioStatus: vi.fn(() => () => undefined),
+        onStateChanged: vi.fn(() => () => undefined),
+        setMousePassthrough: vi.fn(),
+        setStyle,
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          currentTrackId: null,
+          filePath: null,
+          state: 'stopped',
+          positionMs: 0,
+          durationMs: 0,
+        }),
+      },
+    } as unknown as typeof window.echo;
+
+    const { container } = render(<DesktopLyricsApp />);
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+
+    expect(app?.getAttribute('data-color-mode')).toBe('theme');
+    expect(app?.style.getPropertyValue('--desktop-lyrics-color')).toBe('var(--desktop-lyrics-theme-color)');
+
+    fireEvent.click(await waitFor(() => {
+      const swatch = container.querySelector<HTMLButtonElement>('button[title="#FFD166"]');
+      expect(swatch).toBeTruthy();
+      return swatch!;
+    }));
+
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({
+      desktopLyricsColorMode: 'custom',
+      desktopLyricsColor: '#FFD166',
     }));
   });
 });

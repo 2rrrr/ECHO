@@ -5,6 +5,7 @@ import { parseFile } from 'music-metadata';
 import type { IAudioMetadata } from 'music-metadata';
 import { shouldPreferTagLibForAlacTechnicalFields } from '../../audio/AlacTechnicalMetadata';
 import { resolveCueTrack } from '../../audio/CueSheet';
+import { resolveMp4ContainerAudioCodec } from '../../audio/Mp4AudioCodec';
 import type { EmbeddedCoverData, FieldSource, FieldSources, MetadataFields, MetadataResult } from '../libraryTypes';
 import type { MetadataReader } from './MetadataReader';
 
@@ -1141,7 +1142,10 @@ export class TsMetadataReader implements MetadataReader {
 
       const result = fallbackFields(filePath);
       const tagLibMetadata = await readTagLibFallbackMetadata(filePath);
-      const merged = this.applyTagLibFallback(result, tagLibMetadata, filePath);
+      const merged = await this.applyMp4AudioCodecCorrection(
+        this.applyTagLibFallback(result, tagLibMetadata, filePath),
+        filePath,
+      );
       const recovered = hasTagLibFieldData(tagLibMetadata);
 
       return {
@@ -1162,10 +1166,13 @@ export class TsMetadataReader implements MetadataReader {
     const normalized = this.normalize(filePath, metadata, waveInfoTags);
 
     if (!this.shouldReadTagLibFallback(metadataPath, normalized)) {
-      return normalized;
+      return this.applyMp4AudioCodecCorrection(normalized, metadataPath);
     }
 
-    return this.applyTagLibFallback(normalized, await readTagLibFallbackMetadata(metadataPath), metadataPath);
+    return this.applyMp4AudioCodecCorrection(
+      this.applyTagLibFallback(normalized, await readTagLibFallbackMetadata(metadataPath), metadataPath),
+      metadataPath,
+    );
   }
 
   private shouldReadTagLibFallback(filePath: string, result: MetadataResult): boolean {
@@ -1265,6 +1272,25 @@ export class TsMetadataReader implements MetadataReader {
       embeddedMetadataStatus,
       embeddedCoverStatus: embeddedCover ? 'present' : result.embeddedCoverStatus,
       warnings: [...result.warnings, ...tagLibMetadata.warnings],
+    };
+  }
+
+  private async applyMp4AudioCodecCorrection(result: MetadataResult, filePath: string): Promise<MetadataResult> {
+    const codec = await resolveMp4ContainerAudioCodec(filePath, result.fields.codec);
+    if (!codec || codec === result.fields.codec) {
+      return result;
+    }
+
+    return {
+      ...result,
+      fields: {
+        ...result.fields,
+        codec,
+      },
+      fieldSources: {
+        ...result.fieldSources,
+        codec: 'technical',
+      },
     };
   }
 

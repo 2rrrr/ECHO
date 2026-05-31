@@ -58,12 +58,14 @@ describe('desktop lyrics IPC', () => {
     handlers[IpcChannels.DesktopLyricsSetStyle]!(null, {
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
+      desktopLyricsColorMode: 'custom',
       ignored: true,
     });
 
     expect(setDesktopLyricsStyleMock).toHaveBeenCalledWith({
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
+      desktopLyricsColorMode: 'custom',
     });
   });
 

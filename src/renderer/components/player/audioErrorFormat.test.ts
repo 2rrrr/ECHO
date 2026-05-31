@@ -23,12 +23,18 @@ describe('audio error formatting', () => {
     expect(formatAudioHostError(message)).toBeTruthy();
   });
 
-  it('formats local decode failures as a damaged file message', () => {
+  it('only formats confirmed local corrupt-file failures as a damaged file message', () => {
+    expect(formatAudioHostError('audio_file_decode_failed_or_corrupt; positionSeconds=42.000; durationSeconds=120.000')).toBe(
+      '音频文件可能已经损坏或不完整，ECHO 已停止播放这首歌。请重新获取这份音频文件。',
+    );
+  });
+
+  it('formats broad decode failures without claiming the file is damaged', () => {
     const formatted = formatAudioHostError(
       'ffmpeg_exit_code_69; kind="input_invalid"; stderr="Invalid data found when processing input"',
     );
 
-    expect(formatted).toBe('音频文件可能已经损坏或不完整，ECHO 已停止播放这首歌。请重新获取这份音频文件。');
+    expect(formatted).toBe('音频解码失败，ECHO 已停止播放这首歌。请尝试重新播放；如果只在这首歌上稳定复现，再检查文件或重新导入。');
     expect(formatAudioHostError('system_audio_decode_error; positionSeconds=172.450; durationSeconds=221.565')).toBe(
       formatted,
     );

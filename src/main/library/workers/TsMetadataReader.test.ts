@@ -124,6 +124,23 @@ const writeFlacWithCueSheet = (filePath: string, cueSheet: string): void => {
   writeFileSync(filePath, Buffer.concat([Buffer.from('fLaC', 'ascii'), blockHeader, vorbisComment, Buffer.from('audio')]));
 };
 
+const uint32Be = (value: number): Buffer => {
+  const buffer = Buffer.alloc(4);
+  buffer.writeUInt32BE(value, 0);
+  return buffer;
+};
+
+const mp4Box = (type: string, payload: Buffer): Buffer =>
+  Buffer.concat([uint32Be(8 + payload.length), Buffer.from(type, 'ascii'), payload]);
+
+const mp4AudioSampleEntry = (codecTag: string): Buffer =>
+  Buffer.concat([uint32Be(8), Buffer.from(codecTag, 'ascii')]);
+
+const mp4WithAudioCodec = (codecTag: string): Buffer => {
+  const stsd = mp4Box('stsd', Buffer.concat([Buffer.alloc(4), uint32Be(1), mp4AudioSampleEntry(codecTag)]));
+  return mp4Box('moov', mp4Box('trak', mp4Box('mdia', mp4Box('minf', mp4Box('stbl', stsd)))));
+};
+
 const writeFixedText = (buffer: Buffer, offset: number, length: number, value: string): void => {
   Buffer.from(value, 'utf8').copy(buffer, offset, 0, length);
 };
@@ -324,6 +341,38 @@ describe('TsMetadataReader parser fallbacks', () => {
     expect(result.fields.bitrate).toBe(9216000);
     expect(result.fieldSources.sampleRate).toBe('technical');
     expect(result.fieldSources.bitDepth).toBe('technical');
+  });
+
+  it('uses MP4 sample-entry codec for Dolby m4a files misread as ALAC', async () => {
+    const root = makeTempRoot();
+    const filePath = join(root, 'Dolby.m4a');
+    writeFileSync(filePath, mp4WithAudioCodec('ec-3'));
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      format: {
+        duration: 180,
+        codec: 'ALAC',
+        sampleRate: 48000,
+        bitsPerSample: 16,
+        bitrate: 768000,
+      },
+    }));
+    readTagLibMetadataMock.mockResolvedValue({
+      tags: {},
+      properties: {
+        duration: 180,
+        sampleRate: 48000,
+        bitsPerSample: 16,
+        bitrate: 768,
+        codec: 'MP4',
+        containerFormat: 'MP4',
+      },
+      hasCoverArt: false,
+    } as never);
+
+    const result = await new TsMetadataReader().read(filePath);
+
+    expect(result.fields.codec).toBe('E-AC-3');
+    expect(result.fieldSources.codec).toBe('technical');
   });
 
   it('does not invoke TagLib for complete ordinary FLAC tags just because optional fields or cover are missing', async () => {

@@ -15208,7 +15208,8 @@ html[data-theme="dark"] .history-play-count {
   gap: 12px;
 }
 
-.connect-receiver-panel {
+.connect-receiver-panel,
+.connect-radio-panel {
   display: grid;
   gap: 12px;
   padding: 18px;
@@ -15303,6 +15304,201 @@ html[data-theme="dark"] .history-play-count {
   border-color: #e1e4e8;
   background: #ffffff;
   box-shadow: 0 8px 20px rgba(33, 37, 44, 0.045);
+}
+
+.connect-radio-panel {
+  gap: 16px;
+  min-width: 0;
+  padding: 20px;
+}
+
+.connect-radio-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(340px, 1.25fr) auto;
+  gap: 12px;
+  align-items: end;
+  min-width: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.connect-radio-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.connect-radio-field span {
+  color: var(--theme-subtle-text);
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.connect-radio-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--theme-control-bg);
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+}
+
+.connect-radio-field input:focus {
+  border-color: var(--theme-accent-border);
+  box-shadow: 0 0 0 3px var(--theme-accent-bg);
+}
+
+.connect-radio-form-actions,
+.connect-radio-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.connect-radio-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
+.connect-radio-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  min-height: 104px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--theme-control-bg);
+}
+
+.connect-radio-row[data-active="true"] {
+  border-color: var(--theme-accent-border);
+  background: var(--theme-accent-bg);
+}
+
+.connect-radio-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  color: var(--theme-accent-text);
+  border: 1px solid var(--theme-accent-border);
+  border-radius: 8px;
+  background: var(--theme-accent-bg);
+}
+
+.connect-radio-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.connect-radio-copy strong,
+.connect-radio-last-played {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-radio-copy strong {
+  color: var(--theme-heading-text);
+  font-size: 14px;
+  font-weight: 820;
+}
+
+.connect-radio-copy span,
+.connect-radio-copy small {
+  color: var(--theme-subtle-text);
+  font-size: 12px;
+}
+
+.connect-radio-url,
+.connect-radio-description {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.connect-radio-description {
+  line-height: 1.35;
+}
+
+.connect-radio-marquee__inner {
+  display: inline-block;
+  min-width: max-content;
+  transform: translateX(0);
+}
+
+.connect-radio-marquee[data-marquee="true"] .connect-radio-marquee__inner {
+  animation: connect-radio-marquee var(--connect-radio-marquee-duration, 7s) ease-in-out 0.6s infinite alternate;
+}
+
+@keyframes connect-radio-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(calc(var(--connect-radio-marquee-shift, 0px) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connect-radio-marquee[data-marquee="true"] .connect-radio-marquee__inner {
+    animation: none;
+  }
+}
+
+.connect-radio-last-played {
+  color: var(--theme-muted-text);
+}
+
+.connect-radio-actions {
+  align-self: center;
+}
+
+.connect-radio-actions .icon-button {
+  width: 34px;
+  height: 34px;
+}
+
+.connect-radio-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  min-height: 150px;
+  padding: 22px;
+  color: var(--theme-subtle-text);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  background: var(--theme-control-bg);
+  text-align: center;
+}
+
+.connect-radio-empty strong {
+  color: var(--theme-heading-text);
+  font-size: 14px;
+  font-weight: 820;
+}
+
+.connect-radio-empty span {
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .connect-section-title {
@@ -15535,6 +15731,7 @@ html[data-theme="dark"] .history-play-count {
 .connect-now--stage,
 .connect-device-section--stage,
 .connect-hqplayer-panel,
+.connect-radio-panel,
 .connect-receiver-panel {
   border-color: #e1e4e8;
   background: #ffffff;
@@ -15764,8 +15961,14 @@ html[data-theme="dark"] .history-play-count {
 }
 
 .connect-hqplayer-panel,
-.connect-receiver-panel {
+.connect-receiver-panel,
+.connect-radio-panel {
   padding: 16px;
+}
+
+.connect-radio-panel {
+  gap: 16px;
+  padding: 20px;
 }
 
 .connect-hqplayer-panel[data-collapsed="true"] {
@@ -15835,6 +16038,19 @@ html[data-theme="dark"] .history-play-count {
   .connect-hqplayer-layout,
   .connect-hqplayer-collapsed {
     grid-template-columns: 1fr;
+  }
+
+  .connect-radio-form {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-radio-form-actions {
+    justify-content: stretch;
+  }
+
+  .connect-radio-form-actions .settings-action-button {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .connect-hqplayer-collapsed .settings-inline-toggle {
@@ -15999,6 +16215,7 @@ html[data-theme="dark"] .history-play-count {
   .connect-hqplayer-layout,
   .connect-hqplayer-collapsed,
   .connect-hqplayer-fields,
+  .connect-radio-form,
   .remote-command-center,
   .remote-overview-grid,
   .baidu-oauth-helper,
@@ -16016,6 +16233,15 @@ html[data-theme="dark"] .history-play-count {
 
   .connect-hqplayer-collapsed .settings-inline-toggle {
     justify-self: stretch;
+  }
+
+  .connect-radio-form-actions {
+    justify-content: stretch;
+  }
+
+  .connect-radio-form-actions .settings-action-button {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .connect-autostart-toggle {
@@ -16111,6 +16337,30 @@ html[data-theme="dark"] .history-play-count {
 
   .connect-receiver-body {
     grid-template-columns: 1fr;
+  }
+
+  .connect-radio-list {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-radio-row {
+    grid-template-columns: 38px minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .connect-radio-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .connect-radio-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .connect-radio-actions .icon-button {
+    flex: 1 1 0;
+    width: auto;
   }
 
   .connect-artwork {

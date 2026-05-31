@@ -7,6 +7,9 @@ const nonActionableAudioErrorPatterns = [
 
 const nativeAccessViolationPattern =
   /\bnativeCrash=access_violation\b|\bexitCodeHex=0xC0000005\b|\becho-audio-host\s+exit_code_-?(?:3221225477|1073741819)\b/iu;
+const confirmedDamagedAudioFilePattern = /\baudio_file_decode_failed_or_corrupt\b/iu;
+const audioDecodeFailurePattern =
+  /\bsystem_audio_decode_error\b|\bkind="input_invalid"\b|invalid data found when processing input|decode_frame\(\) failed|error while decoding stream/iu;
 
 export const shouldSuppressAudioHostError = (error: string | null | undefined): boolean => {
   if (!error) {
@@ -25,12 +28,12 @@ export const formatAudioHostError = (error: string | null | undefined): string |
     return null;
   }
 
-  if (
-    /\baudio_file_decode_failed_or_corrupt\b|\bsystem_audio_decode_error\b|\bkind="input_invalid"\b|invalid data found when processing input|decode_frame\(\) failed|error while decoding stream/iu.test(
-      error,
-    )
-  ) {
+  if (confirmedDamagedAudioFilePattern.test(error)) {
     return '音频文件可能已经损坏或不完整，ECHO 已停止播放这首歌。请重新获取这份音频文件。';
+  }
+
+  if (audioDecodeFailurePattern.test(error)) {
+    return '音频解码失败，ECHO 已停止播放这首歌。请尝试重新播放；如果只在这首歌上稳定复现，再检查文件或重新导入。';
   }
 
   if (/\bsystem_audio_seek_timeout\b|\bsystem_audio_range_(?:not_supported|not_satisfiable)\b/u.test(error)) {

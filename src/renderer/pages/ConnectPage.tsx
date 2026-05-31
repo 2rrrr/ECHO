@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   AlertTriangle,
   Cable,
@@ -10,11 +10,14 @@ import {
   Pause,
   Play,
   Power,
+  Plus,
+  Radio,
   RefreshCw,
   Server,
   SlidersHorizontal,
   Smartphone,
   Square,
+  Trash2,
   Unplug,
   Volume2,
 } from 'lucide-react';
@@ -148,6 +151,9 @@ const hqPlayerLocalHost = '127.0.0.1';
 const hqPlayerDefaultPort = 4321;
 const hiddenConnectDevicesStorageKey = 'echo.connect.hiddenDevices.v1';
 const connectDeviceSectionCollapsedStorageKey = 'echo.connect.deviceSectionCollapsed.v1';
+const legacyRadioStationsStorageKey = 'echo.connect.radioStations.v1';
+const radioStationsStorageKey = 'echo.connect.radioStations.v2';
+const maxStoredRadioStations = 40;
 
 const hqPlayerConnectionModes: HqPlayerConnectionMode[] = ['localDesktop', 'remote'];
 const hqPlayerDefaultBackends: HqPlayerDefaultPlaybackBackend[] = ['echoNative', 'ask', 'hqplayer'];
@@ -256,6 +262,224 @@ const writeStoredBoolean = (key: string, value: boolean): void => {
     window.localStorage.setItem(key, String(value));
   } catch {
     // Local UI preference only; ignore blocked storage.
+  }
+};
+
+type RadioStation = {
+  id: string;
+  name: string;
+  url: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastPlayedAt: string | null;
+};
+
+type RadioMarqueeTextProps = {
+  as?: 'small' | 'span';
+  className: string;
+  text: string;
+  title?: string;
+};
+
+const RadioMarqueeText = ({ as = 'span', className, text, title }: RadioMarqueeTextProps): JSX.Element => {
+  const outerRef = useRef<HTMLElement | null>(null);
+  const innerRef = useRef<HTMLSpanElement | null>(null);
+  const [shift, setShift] = useState(0);
+  const setOuterRef = useCallback((node: HTMLElement | null): void => {
+    outerRef.current = node;
+  }, []);
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) {
+      return undefined;
+    }
+
+    const updateShift = (): void => {
+      setShift(Math.max(0, inner.scrollWidth - outer.clientWidth));
+    };
+
+    updateShift();
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateShift);
+    resizeObserver?.observe(outer);
+    resizeObserver?.observe(inner);
+    window.addEventListener('resize', updateShift);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateShift);
+    };
+  }, [text]);
+
+  const style = shift > 0
+    ? ({
+        '--connect-radio-marquee-shift': `${shift}px`,
+        '--connect-radio-marquee-duration': `${Math.min(14, Math.max(5, shift / 20)).toFixed(1)}s`,
+      } as CSSProperties)
+    : undefined;
+  const content = <span className="connect-radio-marquee__inner" ref={innerRef}>{text}</span>;
+  const props = {
+    className: `connect-radio-marquee ${className}`,
+    'data-marquee': shift > 0 ? 'true' : undefined,
+    ref: setOuterRef,
+    style,
+    title: title ?? text,
+  };
+
+  return as === 'small' ? <small {...props}>{content}</small> : <span {...props}>{content}</span>;
+};
+
+const hashText = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const normalizeRadioUrl = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return null;
+    }
+    if (url.username || url.password) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+const radioStationIdForUrl = (url: string): string => `radio:${hashText(url.toLowerCase())}`;
+
+const radioTrackIdForUrl = (url: string): string => `radio-stream:${hashText(url.toLowerCase())}`;
+
+const radioStationKeyForUrl = (url: string): string => (normalizeRadioUrl(url) ?? url).toLowerCase();
+
+const stationNameFromUrl = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./iu, '') || '网络电台';
+  } catch {
+    return '网络电台';
+  }
+};
+
+const defaultRadioStationCreatedAt = '2026-05-31T00:00:00.000Z';
+
+const createDefaultRadioStation = (name: string, url: string, description: string): RadioStation => {
+  const normalizedUrl = normalizeRadioUrl(url) ?? url;
+  return {
+    id: radioStationIdForUrl(normalizedUrl),
+    name,
+    url: normalizedUrl,
+    description,
+    createdAt: defaultRadioStationCreatedAt,
+    updatedAt: defaultRadioStationCreatedAt,
+    lastPlayedAt: null,
+  };
+};
+
+const defaultRadioStations: RadioStation[] = [
+  createDefaultRadioStation('Zeno', 'https://stream.zeno.fm/qpn8mkt8c4duv', 'Zeno 托管的二次元直播流，轻量备用源。'),
+  createDefaultRadioStation('Gensokyo Radio 东方', 'https://stream.gensokyoradio.net/1/', '东方 Project 同人音乐电台，适合长时间后台播放。'),
+  createDefaultRadioStation('ANISONG', 'https://pool.anison.fm/AniSonFM%28320%29', '动画歌曲向电台，OP、ED、角色歌和 ACG 曲库为主。'),
+  createDefaultRadioStation('Yumi Co. Radio', 'https://yumicoradio.net/stream', 'City Pop、Future Funk、Anime Groove 氛围台。'),
+  createDefaultRadioStation('AnimeRadio.de', 'https://stream.animeradio.de/animeradio.mp3', 'J-Pop、J-Rock 和 Anime Musik 的老牌网络电台。'),
+];
+
+const isStoredRadioStation = (value: unknown): value is RadioStation => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const station = value as Partial<RadioStation>;
+  return (
+    typeof station.id === 'string' &&
+    typeof station.name === 'string' &&
+    typeof station.url === 'string' &&
+    normalizeRadioUrl(station.url) !== null &&
+    (station.description === undefined || typeof station.description === 'string') &&
+    typeof station.createdAt === 'string' &&
+    typeof station.updatedAt === 'string' &&
+    (station.lastPlayedAt === null || typeof station.lastPlayedAt === 'string')
+  );
+};
+
+const sanitizeRadioStation = (station: RadioStation): RadioStation => {
+  const url = normalizeRadioUrl(station.url) ?? station.url;
+  const description = station.description?.trim();
+  return {
+    ...station,
+    id: radioStationIdForUrl(url),
+    name: station.name.trim() || stationNameFromUrl(url),
+    url,
+    description: description || undefined,
+  };
+};
+
+const readRadioStationsFromStorage = (key: string): RadioStation[] | null => {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) {
+      return null;
+    }
+
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed
+          .filter(isStoredRadioStation)
+          .map(sanitizeRadioStation)
+          .slice(0, maxStoredRadioStations)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const mergeDefaultRadioStations = (storedStations: RadioStation[]): RadioStation[] => {
+  const storedByUrl = new Map(storedStations.map((station) => [radioStationKeyForUrl(station.url), station]));
+  const defaultKeys = new Set(defaultRadioStations.map((station) => radioStationKeyForUrl(station.url)));
+  const seededStations = defaultRadioStations.map((station) => {
+    const stored = storedByUrl.get(radioStationKeyForUrl(station.url));
+    return stored
+      ? {
+          ...station,
+          createdAt: stored.createdAt,
+          updatedAt: stored.updatedAt,
+          lastPlayedAt: stored.lastPlayedAt,
+        }
+      : station;
+  });
+  const customStations = storedStations.filter((station) => !defaultKeys.has(radioStationKeyForUrl(station.url)));
+  return [...seededStations, ...customStations].slice(0, maxStoredRadioStations);
+};
+
+const readStoredRadioStations = (): RadioStation[] => {
+  const current = readRadioStationsFromStorage(radioStationsStorageKey);
+  if (current) {
+    return current;
+  }
+
+  const migrated = mergeDefaultRadioStations(readRadioStationsFromStorage(legacyRadioStationsStorageKey) ?? []);
+  writeStoredRadioStations(migrated);
+  return migrated;
+};
+
+const writeStoredRadioStations = (stations: RadioStation[]): void => {
+  try {
+    window.localStorage.setItem(radioStationsStorageKey, JSON.stringify(stations.map(sanitizeRadioStation).slice(0, maxStoredRadioStations)));
+  } catch {
+    // Radio favorites are local convenience data; playback must not depend on storage.
   }
 };
 
@@ -612,6 +836,11 @@ export const ConnectPage = (): JSX.Element => {
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [isCommandBusy, setIsCommandBusy] = useState(false);
   const [volumePercent, setVolumePercent] = useState(80);
+  const [radioStations, setRadioStations] = useState<RadioStation[]>(() => readStoredRadioStations());
+  const [radioNameDraft, setRadioNameDraft] = useState('');
+  const [radioUrlDraft, setRadioUrlDraft] = useState('');
+  const [activeRadioId, setActiveRadioId] = useState<string | null>(null);
+  const [isRadioBusy, setIsRadioBusy] = useState(false);
   const [hqPlayerDraft, setHqPlayerDraft] = useState<HqPlayerSettings>(defaultHqPlayerSettings);
   const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
   const [hqPlayerTestResult, setHqPlayerTestResult] = useState<HqPlayerConnectionTestResult | null>(null);
@@ -717,6 +946,21 @@ export const ConnectPage = (): JSX.Element => {
     activeDevice?.protocol === 'dlna' ? t('connectPage.nowPlaying.dlnaPolling') : null,
   ].filter(Boolean).join(' · ');
   const outgoingHttpEvents = status.httpEvents ?? [];
+  const playbackTrackId = playbackStatus.playbackStatus?.currentTrackId ?? playbackStatus.audioStatus?.currentTrackId ?? null;
+  const playbackFilePath = playbackStatus.playbackStatus?.filePath ?? playbackStatus.audioStatus?.currentFilePath ?? null;
+  const playbackState = playbackStatus.playbackStatus?.state ?? playbackStatus.audioStatus?.state ?? 'idle';
+  const activeRadioStation = radioStations.find((station) =>
+    station.id === activeRadioId ||
+    radioTrackIdForUrl(station.url) === playbackTrackId ||
+    station.url === playbackFilePath,
+  ) ?? null;
+  const isRadioActive = Boolean(
+    activeRadioStation &&
+      (playbackState === 'loading' || playbackState === 'playing' || playbackState === 'paused'),
+  );
+  const radioStatusLabel = activeRadioStation
+    ? `${playbackState === 'playing' ? '播放中' : playbackState === 'paused' ? '已暂停' : '准备中'} · ${activeRadioStation.name}`
+    : '未播放电台';
 
   const refreshDevices = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -1071,6 +1315,150 @@ export const ConnectPage = (): JSX.Element => {
     }
   }, []);
 
+  const persistRadioStations = useCallback((updater: (current: RadioStation[]) => RadioStation[]): void => {
+    setRadioStations((current) => {
+      const next = updater(current).slice(0, maxStoredRadioStations);
+      writeStoredRadioStations(next);
+      return next;
+    });
+  }, []);
+
+  const upsertRadioStation = useCallback((station: RadioStation): void => {
+    persistRadioStations((current) => {
+      const existing = current.find((item) => item.id === station.id || item.url === station.url);
+      const nextStation = {
+        ...station,
+        createdAt: existing?.createdAt ?? station.createdAt,
+        description: station.description?.trim() || existing?.description,
+      };
+      return [nextStation, ...current.filter((item) => item.id !== station.id && item.url !== station.url)];
+    });
+  }, [persistRadioStations]);
+
+  const createRadioStationFromDraft = useCallback((lastPlayedAt: string | null = null): RadioStation | null => {
+    const url = normalizeRadioUrl(radioUrlDraft);
+    if (!url) {
+      setError('请输入 http/https 电台直播流 URL，且不要带账号密码。');
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const name = radioNameDraft.trim() || stationNameFromUrl(url);
+    return {
+      id: radioStationIdForUrl(url),
+      name,
+      url,
+      createdAt: now,
+      updatedAt: now,
+      lastPlayedAt,
+    };
+  }, [radioNameDraft, radioUrlDraft]);
+
+  const saveRadioDraftStation = useCallback((): void => {
+    const station = createRadioStationFromDraft(null);
+    if (!station) {
+      return;
+    }
+
+    setError(null);
+    upsertRadioStation(station);
+    setRadioNameDraft(station.name);
+    setRadioUrlDraft(station.url);
+  }, [createRadioStationFromDraft, upsertRadioStation]);
+
+  const playRadioStation = useCallback(async (station: RadioStation): Promise<void> => {
+    const playback = window.echo?.playback;
+    if (!playback?.playLocalFile) {
+      setError('Desktop bridge unavailable. 请在 Electron 桌面端播放网络电台。');
+      return;
+    }
+
+    const url = normalizeRadioUrl(station.url);
+    if (!url) {
+      setError('电台 URL 无效，只支持 http/https 直播流。');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const playableStation: RadioStation = {
+      ...station,
+      id: radioStationIdForUrl(url),
+      name: station.name.trim() || stationNameFromUrl(url),
+      url,
+      updatedAt: now,
+      lastPlayedAt: now,
+    };
+
+    setIsRadioBusy(true);
+    setError(null);
+    try {
+      const disconnectedStatus = await window.echo?.connect?.disconnect?.().catch(() => null);
+      if (disconnectedStatus) {
+        setStatus(disconnectedStatus);
+      }
+
+      await playback.playLocalFile({
+        filePath: playableStation.url,
+        trackId: radioTrackIdForUrl(playableStation.url),
+        metadata: {
+          title: playableStation.name,
+          artist: 'Internet Radio',
+          album: 'ECHO Radio',
+        },
+        probe: {
+          durationSeconds: 0,
+          channels: 2,
+          codec: 'stream',
+        },
+      });
+
+      upsertRadioStation(playableStation);
+      setActiveRadioId(playableStation.id);
+      setRadioNameDraft(playableStation.name);
+      setRadioUrlDraft(playableStation.url);
+    } catch (radioError) {
+      setError(radioError instanceof Error ? radioError.message : String(radioError));
+    } finally {
+      setIsRadioBusy(false);
+    }
+  }, [upsertRadioStation]);
+
+  const playRadioDraft = useCallback(async (event?: { preventDefault: () => void }): Promise<void> => {
+    event?.preventDefault();
+    const station = createRadioStationFromDraft(null);
+    if (!station) {
+      return;
+    }
+
+    await playRadioStation(station);
+  }, [createRadioStationFromDraft, playRadioStation]);
+
+  const stopRadioPlayback = useCallback(async (): Promise<void> => {
+    const playback = window.echo?.playback;
+    if (!playback?.stop) {
+      setError('Desktop bridge unavailable. 请在 Electron 桌面端停止网络电台。');
+      return;
+    }
+
+    setIsRadioBusy(true);
+    setError(null);
+    try {
+      await playback.stop();
+      setActiveRadioId(null);
+    } catch (radioError) {
+      setError(radioError instanceof Error ? radioError.message : String(radioError));
+    } finally {
+      setIsRadioBusy(false);
+    }
+  }, []);
+
+  const removeRadioStation = useCallback((stationId: string): void => {
+    persistRadioStations((current) => current.filter((station) => station.id !== stationId));
+    if (activeRadioId === stationId) {
+      setActiveRadioId(null);
+    }
+  }, [activeRadioId, persistRadioStations]);
+
   const hideDevice = useCallback((device: ConnectDevice): void => {
     setHiddenDeviceIds((current) => {
       const next = new Set(current);
@@ -1318,6 +1706,104 @@ export const ConnectPage = (): JSX.Element => {
             </>
           ) : null}
         </section>
+      </section>
+
+      <section className="connect-radio-panel" aria-label="网络电台">
+        <div className="connect-section-title">
+          <div>
+            <span>Radio</span>
+            <h2>网络电台</h2>
+          </div>
+          <small>{radioStatusLabel}</small>
+        </div>
+
+        <form className="connect-radio-form" aria-label="网络电台表单" onSubmit={(event) => void playRadioDraft(event)}>
+          <label className="connect-radio-field">
+            <span>电台名</span>
+            <input
+              type="text"
+              value={radioNameDraft}
+              placeholder="例如 Groove Salad"
+              onChange={(event) => setRadioNameDraft(event.currentTarget.value)}
+            />
+          </label>
+          <label className="connect-radio-field connect-radio-field--url">
+            <span>直播流 URL</span>
+            <input
+              type="url"
+              inputMode="url"
+              value={radioUrlDraft}
+              placeholder="https://example.com/live.mp3"
+              onChange={(event) => setRadioUrlDraft(event.currentTarget.value)}
+            />
+          </label>
+          <div className="connect-radio-form-actions">
+            <button className="settings-action-button" type="button" onClick={saveRadioDraftStation}>
+              <Plus size={15} />
+              收藏
+            </button>
+            <button className="settings-action-button" type="submit" disabled={isRadioBusy}>
+              {isRadioBusy ? <Loader2 className="spinning-icon" size={15} /> : <Radio size={15} />}
+              播放
+            </button>
+            <button className="settings-action-button" type="button" onClick={() => void stopRadioPlayback()} disabled={isRadioBusy || !isRadioActive}>
+              <Square size={15} />
+              停止
+            </button>
+          </div>
+        </form>
+
+        <div className="connect-radio-list" aria-label="已收藏电台">
+          {radioStations.length > 0 ? (
+            radioStations.map((station) => {
+              const isActive = activeRadioStation?.id === station.id && isRadioActive;
+              return (
+                <article className="connect-radio-row" data-active={isActive ? 'true' : undefined} key={station.id}>
+                  <div className="connect-radio-icon">
+                    <Radio size={22} />
+                  </div>
+                  <div className="connect-radio-copy">
+                    <strong>{station.name}</strong>
+                    {station.description ? <RadioMarqueeText as="small" className="connect-radio-description" text={station.description} /> : null}
+                    <RadioMarqueeText className="connect-radio-url" text={station.url} />
+                    {station.lastPlayedAt ? (
+                      <small className="connect-radio-last-played">上次播放 {formatTimestamp(station.lastPlayedAt)}</small>
+                    ) : (
+                      <small className="connect-radio-last-played">未播放</small>
+                    )}
+                  </div>
+                  <div className="connect-radio-actions">
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`播放 ${station.name}`}
+                      title={`播放 ${station.name}`}
+                      disabled={isRadioBusy}
+                      onClick={() => void playRadioStation(station)}
+                    >
+                      {isRadioBusy && isActive ? <Loader2 className="spinning-icon" size={16} /> : <Play size={16} />}
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`删除 ${station.name}`}
+                      title={`删除 ${station.name}`}
+                      onClick={() => removeRadioStation(station.id)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <div className="connect-radio-empty">
+              <Radio size={26} />
+              <strong>添加一个直播流 URL</strong>
+              <span>先支持手动电台收藏，避免目录接口拖慢 Connect。</span>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="connect-hqplayer-panel" aria-label="HQPlayer Connect" data-collapsed={isHqPlayerExpanded ? undefined : 'true'}>

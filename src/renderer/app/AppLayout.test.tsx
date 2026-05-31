@@ -803,6 +803,50 @@ describe('AppLayout standalone routes', () => {
     expect(screen.getByRole('contentinfo')).toBeTruthy();
   });
 
+  it('auto-hides the lyrics mini player bar only after the pointer moves away', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: true,
+          lyricsPlayerBarDrawerAutoHideEnabled: true,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
+
+    const miniHost = await waitFor(() => {
+      const host = container.querySelector('.lyrics-player-drawer-host') as HTMLElement | null;
+      expect(host).toBeTruthy();
+      expect(host?.dataset.autoHide).toBe('true');
+      return host as HTMLElement;
+    });
+
+    vi.useFakeTimers();
+    act(() => {
+      fireEvent.mouseMove(window, { clientX: 1, clientY: 1 });
+      vi.advanceTimersByTime(20);
+      vi.advanceTimersByTime(480);
+    });
+    expect(miniHost.dataset.autoHideState).toBe('hidden');
+    expect(miniHost.classList.contains('lyrics-player-drawer-host--auto-hidden')).toBe(true);
+
+    act(() => {
+      fireEvent.mouseMove(window, { clientX: window.innerWidth / 2, clientY: window.innerHeight - 8 });
+      vi.advanceTimersByTime(20);
+    });
+    expect(miniHost.dataset.autoHideState).toBe('visible');
+    expect(miniHost.classList.contains('lyrics-player-drawer-host--auto-hidden')).toBe(false);
+  });
+
   it('uses the lyrics mini player bar automatically on the MV page', async () => {
     window.echo = {
       app: {

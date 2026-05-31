@@ -594,6 +594,7 @@ export type TranslationKey =
   | 'desktopLyrics.control.lock'
   | 'desktopLyrics.control.resetPosition'
   | 'desktopLyrics.control.romanization'
+  | 'desktopLyrics.control.themeColor'
   | 'desktopLyrics.control.translation'
   | 'desktopLyrics.control.translationShort'
   | 'desktopLyrics.primary.empty'
@@ -1434,6 +1435,8 @@ export type TranslationKey =
   | 'lyricsSettings.display.matchThreshold'
   | 'lyricsSettings.display.matchThresholdDescription'
   | 'lyricsSettings.display.miniPlayer'
+  | 'lyricsSettings.display.miniPlayerAutoHide'
+  | 'lyricsSettings.display.miniPlayerAutoHideDescription'
   | 'lyricsSettings.display.miniPlayerAutoMv'
   | 'lyricsSettings.display.miniPlayerAutoMvDescription'
   | 'lyricsSettings.display.miniPlayerColor'
@@ -3069,6 +3072,7 @@ const zhCN: TranslationMap = {
   'desktopLyrics.control.lock': '锁定',
   'desktopLyrics.control.resetPosition': '重置位置',
   'desktopLyrics.control.romanization': '桌面歌词显示罗马音',
+  'desktopLyrics.control.themeColor': '跟随主题颜色',
   'desktopLyrics.control.translation': '桌面歌词显示翻译',
   'desktopLyrics.control.translationShort': '译',
   'desktopLyrics.primary.empty': '暂无歌词',
@@ -4223,6 +4227,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.matchThreshold': '歌词匹配度设置',
   'lyricsSettings.display.matchThresholdDescription': '在线结果达到 {threshold}% 才会自动应用',
   'lyricsSettings.display.miniPlayer': '迷你底栏',
+  'lyricsSettings.display.miniPlayerAutoHide': '自动隐藏迷你底栏',
+  'lyricsSettings.display.miniPlayerAutoHideDescription': '开启后鼠标离开底栏一段距离会自动收起；移回底部附近会顺滑显示，默认关闭。',
   'lyricsSettings.display.miniPlayerAutoMv': '播放 MV 时自动启用',
   'lyricsSettings.display.miniPlayerAutoMvDescription': '开启后进入 MV 页面会自动使用迷你底栏；普通歌词页仍按上方开关决定。',
   'lyricsSettings.display.miniPlayerColor': '底栏颜色',
@@ -5844,6 +5850,7 @@ const zhTW: TranslationMap = {
   'desktopLyrics.control.lock': '鎖定',
   'desktopLyrics.control.resetPosition': '重設位置',
   'desktopLyrics.control.romanization': '桌面歌詞顯示羅馬音',
+  'desktopLyrics.control.themeColor': '跟隨主題顏色',
   'desktopLyrics.control.translation': '桌面歌詞顯示翻譯',
   'desktopLyrics.control.translationShort': '譯',
   'desktopLyrics.primary.empty': '暫無歌詞',
@@ -6930,6 +6937,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.matchThreshold': '歌詞匹配度設定',
   'lyricsSettings.display.matchThresholdDescription': '線上結果達到 {threshold}% 才會自動套用',
   'lyricsSettings.display.miniPlayer': '迷你底欄',
+  'lyricsSettings.display.miniPlayerAutoHide': '自動隱藏迷你底欄',
+  'lyricsSettings.display.miniPlayerAutoHideDescription': '開啟後滑鼠離開底欄一段距離會自動收起；移回底部附近會順滑顯示，預設關閉。',
   'lyricsSettings.display.miniPlayerAutoMv': '播放 MV 時自動啟用',
   'lyricsSettings.display.miniPlayerAutoMvDescription': '開啟後進入 MV 頁面會自動使用迷你底欄；一般歌詞頁仍依上方開關決定。',
   'lyricsSettings.display.miniPlayerColor': '底欄顏色',
@@ -8377,6 +8386,7 @@ const jaJP: TranslationMap = {
   'desktopLyrics.control.lock': 'ロック',
   'desktopLyrics.control.resetPosition': '位置をリセット',
   'desktopLyrics.control.romanization': 'デスクトップ歌詞にローマ字を表示',
+  'desktopLyrics.control.themeColor': 'テーマ色に合わせる',
   'desktopLyrics.control.translation': 'デスクトップ歌詞に翻訳を表示',
   'desktopLyrics.control.translationShort': '訳',
   'desktopLyrics.primary.empty': '歌詞がありません',
@@ -9478,6 +9488,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.matchThreshold': '歌詞一致度設定',
   'lyricsSettings.display.matchThresholdDescription': 'オンライン結果が {threshold}% 以上の場合だけ自動適用します',
   'lyricsSettings.display.miniPlayer': 'ミニ下部バー',
+  'lyricsSettings.display.miniPlayerAutoHide': 'ミニ下部バーを自動で隠す',
+  'lyricsSettings.display.miniPlayerAutoHideDescription': 'オンにすると、ポインターが下部バーから離れた時に自動で隠れ、下部付近へ戻ると滑らかに表示します。既定はオフです。',
   'lyricsSettings.display.miniPlayerAutoMv': 'MV 再生時に自動で有効化',
   'lyricsSettings.display.miniPlayerAutoMvDescription': 'オンにすると MV ページではミニ下部バーを自動で使い、通常の歌詞ページでは上の設定に従います。',
   'lyricsSettings.display.miniPlayerColor': '下部バーの色',
@@ -10990,6 +11002,7 @@ const enUS: TranslationMap = {
   'desktopLyrics.control.lock': 'Lock',
   'desktopLyrics.control.resetPosition': 'Reset position',
   'desktopLyrics.control.romanization': 'Show romanization in desktop lyrics',
+  'desktopLyrics.control.themeColor': 'Follow theme color',
   'desktopLyrics.control.translation': 'Show translation in desktop lyrics',
   'desktopLyrics.control.translationShort': 'T',
   'desktopLyrics.primary.empty': 'No lyrics',
@@ -12091,6 +12104,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.matchThreshold': 'Lyrics match threshold',
   'lyricsSettings.display.matchThresholdDescription': 'Automatically apply online results only at {threshold}% or higher',
   'lyricsSettings.display.miniPlayer': 'Mini bottom bar',
+  'lyricsSettings.display.miniPlayerAutoHide': 'Auto-hide mini bottom bar',
+  'lyricsSettings.display.miniPlayerAutoHideDescription': 'When enabled, the bar tucks away after the pointer moves far enough from it, then glides back when the pointer returns near the bottom. Off by default.',
   'lyricsSettings.display.miniPlayerAutoMv': 'Auto-enable while playing MV',
   'lyricsSettings.display.miniPlayerAutoMvDescription': 'Uses the mini bottom bar automatically on the MV page; normal lyrics pages still follow the switch above.',
   'lyricsSettings.display.miniPlayerColor': 'Bottom bar color',

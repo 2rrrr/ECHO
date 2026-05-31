@@ -1794,6 +1794,7 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-now--stage,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-section--stage,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-hqplayer-panel,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-panel,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-receiver-panel,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-outgoing-debug,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugins-list,
@@ -1806,6 +1807,8 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
 
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-empty,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-row,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-empty,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-row,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-meta span,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-list-item,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-command-row,
@@ -1821,6 +1824,7 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
 }
 
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-row:hover,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-row[data-active="true"],
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-list-item:hover,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-list-item[data-active="true"] {
   border-color: var(--theme-panel-border-strong);

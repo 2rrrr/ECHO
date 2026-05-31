@@ -13,6 +13,23 @@ vi.mock('music-metadata', () => ({
 
 const parseFileMock = vi.mocked(parseFile);
 
+const uint32Be = (value: number): Buffer => {
+  const buffer = Buffer.alloc(4);
+  buffer.writeUInt32BE(value, 0);
+  return buffer;
+};
+
+const box = (type: string, payload: Buffer): Buffer =>
+  Buffer.concat([uint32Be(8 + payload.length), Buffer.from(type, 'ascii'), payload]);
+
+const audioSampleEntry = (codecTag: string): Buffer =>
+  Buffer.concat([uint32Be(8), Buffer.from(codecTag, 'ascii')]);
+
+const mp4WithAudioCodec = (codecTag: string): Buffer => {
+  const stsd = box('stsd', Buffer.concat([Buffer.alloc(4), uint32Be(1), audioSampleEntry(codecTag)]));
+  return box('moov', box('trak', box('mdia', box('minf', box('stbl', stsd)))));
+};
+
 const createDecoder = (): DecoderPipeline => {
   const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = () => {
     const child = Object.assign(new EventEmitter(), {
@@ -107,6 +124,33 @@ describe('DecoderPipeline probe cache', () => {
       expect(parseFileMock).toHaveBeenCalledTimes(2);
       expect(first.fileSampleRate).toBe(44100);
       expect(second.fileSampleRate).toBe(96000);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the MP4 audio sample-entry codec before applying ALAC probe correction', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'echo-probe-cache-'));
+    const filePath = join(tempDir, 'dolby.m4a');
+    await writeFile(filePath, mp4WithAudioCodec('ec-3'));
+    parseFileMock.mockResolvedValue({
+      format: {
+        duration: 180,
+        sampleRate: 48000,
+        numberOfChannels: 6,
+        codec: 'ALAC',
+        bitsPerSample: 16,
+        bitrate: 768000,
+      },
+    } as never);
+
+    try {
+      const decoder = createDecoder();
+      const result = await decoder.probeLocalFile(filePath);
+
+      expect(result.codec).toBe('E-AC-3');
+      expect(result.channels).toBe(6);
+      expect(parseFileMock).toHaveBeenCalledTimes(1);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

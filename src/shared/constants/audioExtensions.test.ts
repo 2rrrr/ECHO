@@ -24,6 +24,15 @@ describe('audio extension constants', () => {
       '.mp4',
       '.tta',
       '.tak',
+      '.ac3',
+      '.eac3',
+      '.ec3',
+      '.dd',
+      '.ddp',
+      '.thd',
+      '.truehd',
+      '.mlp',
+      '.ac4',
     ];
 
     for (const extension of supported) {
@@ -36,6 +45,9 @@ describe('audio extension constants', () => {
     expect(isSupportedAudioExtension('D:\\Music\\album.cue')).toBe(true);
     expect(isScannableAudioExtension('D:\\Music\\album.cue')).toBe(false);
     expect(isScannableAudioExtension('D:\\Music\\track.flac')).toBe(true);
+    expect(isScannableAudioExtension('D:\\Music\\atmos.eac3')).toBe(true);
+    expect(isScannableAudioExtension('D:\\Music\\truehd.thd')).toBe(true);
+    expect(isScannableAudioExtension('D:\\Music\\ac4.ac4')).toBe(true);
   });
 
   it('does not treat artwork, lyrics, documents, or executables as audio', () => {
@@ -49,5 +61,8 @@ describe('audio extension constants', () => {
   it('includes cue sheets in the direct playback dialog list', () => {
     expect(isCueFile('album.cue')).toBe(true);
     expect(SUPPORTED_AUDIO_DIALOG_EXTENSIONS).toContain('cue');
+    expect(SUPPORTED_AUDIO_DIALOG_EXTENSIONS).toContain('eac3');
+    expect(SUPPORTED_AUDIO_DIALOG_EXTENSIONS).toContain('truehd');
+    expect(SUPPORTED_AUDIO_DIALOG_EXTENSIONS).toContain('ac4');
   });
 });

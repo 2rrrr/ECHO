@@ -61,6 +61,14 @@ describe('TsFileScanner', () => {
       'track.mkv',
       'track.mp4',
       'track.m4p',
+      'track.eac3',
+      'track.ec3',
+      'track.dd',
+      'track.ddp',
+      'track.thd',
+      'track.truehd',
+      'track.mlp',
+      'track.ac4',
     ];
 
     for (const fileName of ['album.cue', ...supported]) {

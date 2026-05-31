@@ -515,8 +515,12 @@ const createPossibleCorruptAudioFileError = (positionSeconds: number, durationSe
     `audio_file_decode_failed_or_corrupt; positionSeconds=${positionSeconds.toFixed(3)}; durationSeconds=${durationSeconds.toFixed(3)}`,
   );
 
-const prematureLocalEndToleranceSeconds = 5;
-const corruptLocalEndRatioThreshold = 0.75;
+const prematureLocalEndToleranceSeconds = 20;
+const corruptLocalEndRatioThreshold = 0.5;
+const localPlaybackAutoRecoveryWindowMs = 5 * 60 * 1000;
+const localPlaybackAutoRecoveryMaxAttempts = 1;
+const recoverableLocalDecodeErrorPattern =
+  /\baudio_file_decode_failed_or_corrupt\b|\bkind="input_invalid"\b|invalid data found when processing input|decode_frame\(\) failed|error while decoding stream/iu;
 const isClearlyCorruptLocalEnd = (positionSeconds: number, durationSeconds: number): boolean =>
   durationSeconds > 0 &&
   positionSeconds < durationSeconds - prematureLocalEndToleranceSeconds &&
@@ -1417,6 +1421,7 @@ export class AudioSession extends EventEmitter {
   private juceExclusiveFallbackRecovering = false;
   private watchdogLastRecoveryAt: string | null = null;
   private readonly watchdogRecoveries = new Map<string, { count: number; windowStartedAt: number }>();
+  private readonly localPlaybackRecoveries = new Map<string, { count: number; windowStartedAt: number }>();
   private sharedStabilityTier: SharedStabilityTier = 'standard';
   private sharedStabilityRecovering = false;
   private lastSharedStabilityRecoveryAt: string | null = null;
@@ -3027,6 +3032,7 @@ export class AudioSession extends EventEmitter {
     await this.refreshDeviceService({ useJuceOutput: this.outputSettings.useJuceOutput === true });
     this.unavailableAsioDevices.clear();
     this.watchdogRecoveries.clear();
+    this.localPlaybackRecoveries.clear();
     this.watchdogLastRecoveryAt = null;
     this.watchdogPendingWarning = null;
     this.sharedStabilityTier = 'standard';
@@ -6008,6 +6014,13 @@ export class AudioSession extends EventEmitter {
           },
         );
         if (clearlyCorrupt && !activeChainedPlayback && isLocalPlaybackPath(this.currentFilePath)) {
+          if (this.reserveLocalPlaybackRecoverySlot('premature_local_end')) {
+            void this.recoverLocalPlaybackRestart(token, 'premature_local_end_recovered', endedPositionSeconds, expectedEndSeconds, {
+              eventKind: 'ended',
+            });
+            return;
+          }
+
           this.handleError(createPossibleCorruptAudioFileError(endedPositionSeconds, expectedEndSeconds));
           return;
         }
@@ -7213,6 +7226,10 @@ export class AudioSession extends EventEmitter {
       return;
     }
 
+    if (this.tryRecoverLocalDecodeError(error)) {
+      return;
+    }
+
     if (this.tryClaimRecoverableAudioError(error)) {
       this.stopResources();
       this.errorMessage = null;
@@ -7231,6 +7248,33 @@ export class AudioSession extends EventEmitter {
     this.resetWatchdogProgress();
     this.emit('error', error, this.getStatus());
     this.emitStatus();
+  }
+
+  private tryRecoverLocalDecodeError(error: Error): boolean {
+    if (
+      this.state !== 'playing' ||
+      !this.currentFilePath ||
+      !this.currentOutputSettings ||
+      !this.currentProbe ||
+      this.activeAutomix ||
+      !isLocalPlaybackPath(this.currentFilePath) ||
+      !recoverableLocalDecodeErrorPattern.test(error.message) ||
+      !this.reserveLocalPlaybackRecoverySlot('local_decode_error')
+    ) {
+      return false;
+    }
+
+    const token = this.runToken;
+    this.updatePositionFromOutput();
+    const positionSeconds = this.clock.getPositionSeconds();
+    void this.recoverLocalPlaybackRestart(
+      token,
+      'local_decode_error_recovered',
+      positionSeconds,
+      this.currentProbe.durationSeconds,
+      { cause: error },
+    );
+    return true;
   }
 
   private tryClaimRecoverableAudioError(error: Error): boolean {
@@ -7606,6 +7650,104 @@ export class AudioSession extends EventEmitter {
     recovery.count += 1;
     this.watchdogRecoveries.set(key, recovery);
     return recovery.count;
+  }
+
+  private reserveLocalPlaybackRecoverySlot(reason: string, now = Date.now()): boolean {
+    const playbackKey = this.getWatchdogRecoveryKey();
+    if (!playbackKey) {
+      return false;
+    }
+
+    const key = `${reason}:${playbackKey}`;
+    const current = this.localPlaybackRecoveries.get(key);
+    if (!current || now - current.windowStartedAt > localPlaybackAutoRecoveryWindowMs) {
+      this.localPlaybackRecoveries.set(key, { count: 1, windowStartedAt: now });
+      return true;
+    }
+
+    if (current.count >= localPlaybackAutoRecoveryMaxAttempts) {
+      return false;
+    }
+
+    current.count += 1;
+    this.localPlaybackRecoveries.set(key, current);
+    return true;
+  }
+
+  private async recoverLocalPlaybackRestart(
+    token: number,
+    reason: string,
+    positionSeconds: number,
+    durationSeconds: number,
+    options: { cause?: Error; eventKind?: 'ended' | 'watchdog_recovery' } = {},
+  ): Promise<void> {
+    if (!this.isRecoveryRunCurrent(token)) {
+      return;
+    }
+
+    if (!this.currentFilePath || !this.currentOutputSettings || !this.currentProbe || !isLocalPlaybackPath(this.currentFilePath)) {
+      return;
+    }
+
+    const filePath = this.currentFilePath;
+    const trackId = this.currentTrackId;
+    const metadata = this.currentTrackMetadata ?? undefined;
+    const replayGain = this.currentReplayGain;
+    const inputHeaders = this.currentInputHeaders ? { ...this.currentInputHeaders } : undefined;
+    const output = { ...this.currentOutputSettings };
+    const probe = createProbeHint(this.currentProbe);
+    const safePositionSeconds = Math.min(Math.max(0, positionSeconds), durationSeconds || Number.POSITIVE_INFINITY);
+
+    this.addPendingOutputWarning(reason);
+    this.recordPlaybackDiagnosticEvent(options.eventKind ?? 'watchdog_recovery', 'recovery', reason, {
+      trackId,
+      filePath,
+      positionSeconds: safePositionSeconds,
+      durationSeconds,
+      details: {
+        cause: options.cause?.message ?? null,
+        remainingSeconds: Math.max(0, durationSeconds - safePositionSeconds),
+      },
+    });
+    this.logger(
+      `[AudioSession] ${reason}; retrying local playback once file="${redactUrlSecrets(filePath)}" position=${safePositionSeconds.toFixed(
+        3,
+      )} duration=${durationSeconds.toFixed(3)}`,
+    );
+
+    if (!this.isRecoveryRunCurrent(token)) {
+      return;
+    }
+
+    try {
+      this.pendingOutputRestartContext = {
+        recoveryReason: reason,
+        fallbackReason: null,
+      };
+      await this.playLocalFile({
+        filePath,
+        trackId: trackId ?? undefined,
+        metadata,
+        replayGain,
+        startSeconds: safePositionSeconds,
+        output,
+        probe,
+        inputHeaders,
+      });
+    } catch (error) {
+      if (isAudioSessionRunCancelledError(error)) {
+        this.verboseLogger(`[AudioSession] ${reason} recovery was superseded by a newer playback run`);
+        return;
+      }
+
+      this.logger(
+        `[AudioSession] ${reason} recovery failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      if (this.runToken === token) {
+        this.resetWatchdogProgress();
+      }
+    }
   }
 
   private tierForRecoveryCount(recoveryCount: number): SharedStabilityTier {

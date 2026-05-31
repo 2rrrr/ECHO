@@ -38,6 +38,7 @@ const toDesktopLyricsSettings = (): DesktopLyricsState['settings'] => {
     desktopLyricsScalePercent: settings.desktopLyricsScalePercent,
     desktopLyricsFontFamily: settings.desktopLyricsFontFamily,
     desktopLyricsFontFilePath: settings.desktopLyricsFontFilePath,
+    desktopLyricsColorMode: settings.desktopLyricsColorMode,
     desktopLyricsColor: settings.desktopLyricsColor,
     desktopLyricsStrokeColor: settings.desktopLyricsStrokeColor,
     desktopLyricsOpacityPercent: settings.desktopLyricsOpacityPercent,

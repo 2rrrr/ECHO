@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hqPlayerConnectDeviceId, type ConnectDevice, type ConnectSessionStatus } from '../../shared/types/connect';
 import type {
@@ -10,6 +10,7 @@ import type {
   HqPlayerSettings,
   HqPlayerStatus,
 } from '../../shared/types/hqplayer';
+import { I18nProvider } from '../i18n/I18nProvider';
 import { ConnectPage } from './ConnectPage';
 
 const queueMock = {
@@ -198,6 +199,13 @@ const hqPlayerConnectStatus: ConnectSessionStatus = {
   updatedAt: '2026-05-21T01:00:00.000Z',
 };
 
+const renderConnectPage = () =>
+  render(
+    <I18nProvider>
+      <ConnectPage />
+    </I18nProvider>,
+  );
+
 const dlnaDevice: ConnectDevice = {
   id: 'dlna:uuid-streamer-1',
   name: 'Living Room Streamer',
@@ -353,6 +361,22 @@ const installEchoBridge = (
         .mockResolvedValueOnce(hqControl())
         .mockResolvedValue(sentControl),
     },
+    playback: {
+      playLocalFile: vi.fn().mockResolvedValue({
+        state: 'playing',
+        currentTrackId: 'radio-stream:test',
+        positionMs: 0,
+        durationMs: 0,
+        filePath: 'https://radio.example.test/live.mp3',
+      }),
+      stop: vi.fn().mockResolvedValue({
+        state: 'stopped',
+        currentTrackId: null,
+        positionMs: 0,
+        durationMs: 0,
+        filePath: null,
+      }),
+    },
   };
   Object.defineProperty(window, 'echo', {
     configurable: true,
@@ -365,6 +389,7 @@ describe('ConnectPage HQPlayer controls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    window.localStorage.setItem('echo-next.locale', 'zh-CN');
   });
 
   afterEach(() => {
@@ -374,7 +399,7 @@ describe('ConnectPage HQPlayer controls', () => {
 
   it('shows HQPlayer as a Connect output device and routes connection through Connect', async () => {
     const bridge = installEchoBridge(hqStatus('available'));
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('HQPlayer Desktop');
     const row = screen.getByText('HQPlayer Desktop').closest('article');
@@ -395,20 +420,80 @@ describe('ConnectPage HQPlayer controls', () => {
     expect(bridge.hqPlayer.sendLastPlaybackControl).not.toHaveBeenCalled();
   });
 
+  it('saves and plays a manual internet radio stream from Connect', async () => {
+    const bridge = installEchoBridge(hqStatus('available'));
+    renderConnectPage();
+
+    const form = await screen.findByLabelText('网络电台表单');
+    fireEvent.change(within(form).getByPlaceholderText('例如 Groove Salad'), {
+      target: { value: 'Test FM' },
+    });
+    fireEvent.change(within(form).getByPlaceholderText('https://example.com/live.mp3'), {
+      target: { value: 'https://radio.example.test/live.mp3' },
+    });
+
+    fireEvent.click(within(form).getByRole('button', { name: '收藏' }));
+
+    const storedStations = JSON.parse(window.localStorage.getItem('echo.connect.radioStations.v2') ?? '[]');
+    expect(storedStations[0]).toEqual(expect.objectContaining({
+      name: 'Test FM',
+      url: 'https://radio.example.test/live.mp3',
+    }));
+
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(bridge.connect.disconnect).toHaveBeenCalled());
+    await waitFor(() => expect(bridge.playback.playLocalFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filePath: 'https://radio.example.test/live.mp3',
+        trackId: expect.stringMatching(/^radio-stream:/u),
+        metadata: expect.objectContaining({
+          title: 'Test FM',
+          artist: 'Internet Radio',
+        }),
+        probe: expect.objectContaining({
+          durationSeconds: 0,
+          channels: 2,
+        }),
+      }),
+    ));
+  });
+
+  it('seeds default internet radio stations and keeps deletions local', async () => {
+    installEchoBridge(hqStatus('available'));
+    const { unmount } = renderConnectPage();
+
+    await screen.findByText('Gensokyo Radio 东方');
+    expect(screen.getByText('东方 Project 同人音乐电台，适合长时间后台播放。')).toBeTruthy();
+    expect(screen.getByText('ANISONG')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '删除 Zeno' }));
+    expect(screen.queryByText('Zeno')).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem('echo.connect.radioStations.v2') ?? '[]')).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'Zeno' })]),
+    );
+
+    unmount();
+    renderConnectPage();
+
+    expect(screen.queryByText('Zeno')).toBeNull();
+    await screen.findByText('Gensokyo Radio 东方');
+  });
+
   it('shows DLNA streamer model, address, and metadata support directly in the device list', async () => {
     installEchoBridge(hqStatus('available'), hqSettings, connectStatus, [dlnaDevice, hqPlayerDevice]);
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('Living Room Streamer');
     expect(screen.getByText('DLNA / UPnP · Silent Angel · N130 · v2')).toBeTruthy();
     expect(screen.getByText('局域网 192.168.1.42')).toBeTruthy();
     expect(screen.getByText('可定位 · 可调音量 · 封面/元数据 · 可直连 · FLAC / WAV / MP3')).toBeTruthy();
-    expect(screen.getByText('1 台数播 · 2 个入口')).toBeTruthy();
+    expect(screen.getByText('1 台数播 · 2 个入口 · 已隐藏 0')).toBeTruthy();
   });
 
   it('hides a noisy LAN device from the list and restores it locally', async () => {
     installEchoBridge(hqStatus('available'), hqSettings, connectStatus, [dlnaDevice, hqPlayerDevice]);
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('Living Room Streamer');
     const row = screen.getByText('Living Room Streamer').closest('article');
@@ -429,7 +514,7 @@ describe('ConnectPage HQPlayer controls', () => {
 
   it('remembers the LAN streamer section collapsed state', async () => {
     installEchoBridge(hqStatus('available'));
-    const { unmount } = render(<ConnectPage />);
+    const { unmount } = renderConnectPage();
 
     await screen.findByText('HQPlayer Desktop');
     fireEvent.click(screen.getByRole('button', { name: '折叠局域网数播' }));
@@ -438,7 +523,7 @@ describe('ConnectPage HQPlayer controls', () => {
     expect(window.localStorage.getItem('echo.connect.deviceSectionCollapsed.v1')).toBe('true');
 
     unmount();
-    render(<ConnectPage />);
+    renderConnectPage();
 
     expect(screen.queryByText('HQPlayer Desktop')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '展开局域网数播' }));
@@ -455,7 +540,7 @@ describe('ConnectPage HQPlayer controls', () => {
         supportedMimeTypes: ['*/*'],
       },
     }]);
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('Universal Streamer');
     expect(screen.getByText('可定位 · 可调音量 · 封面/元数据 · 可直连 · 全格式接收')).toBeTruthy();
@@ -463,7 +548,7 @@ describe('ConnectPage HQPlayer controls', () => {
 
   it('shows the active DLNA streamer and cover handoff in the now-playing panel', async () => {
     installEchoBridge(hqStatus('available'), hqSettings, dlnaConnectStatus, [dlnaDevice, hqPlayerDevice]);
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('Living Room Streamer');
     expect(screen.getByText('DLNA / UPnP · Living Room Streamer')).toBeTruthy();
@@ -479,7 +564,7 @@ describe('ConnectPage HQPlayer controls', () => {
       port: null,
       defaultPlaybackBackend: 'echoNative',
     });
-    render(<ConnectPage />);
+    renderConnectPage();
 
     fireEvent.click(await screen.findByRole('button', { name: /检测 HQPlayer/u }));
 
@@ -505,7 +590,7 @@ describe('ConnectPage HQPlayer controls', () => {
       ...hqSettings,
       enabled: false,
     });
-    const { container } = render(<ConnectPage />);
+    const { container } = renderConnectPage();
 
     await screen.findByText('HQPlayer Desktop');
     await waitFor(() => expect(container.querySelector('.connect-hqplayer-collapsed')).toBeTruthy());
@@ -553,7 +638,7 @@ describe('ConnectPage HQPlayer controls', () => {
         receivedAt: '2026-05-21T01:00:00.000Z',
       },
     });
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('HQPlayer Desktop 5.17.2');
     expect(screen.getByText('5.29.2')).toBeTruthy();
@@ -563,7 +648,7 @@ describe('ConnectPage HQPlayer controls', () => {
 
   it('keeps enabled local HQPlayer passive until the user manually tests it', async () => {
     const bridge = installEchoBridge(hqStatus('unavailable'), hqSettings);
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('HQPlayer Desktop');
     await waitFor(() => expect(bridge.hqPlayer.getStatus).toHaveBeenCalled());
@@ -572,7 +657,7 @@ describe('ConnectPage HQPlayer controls', () => {
 
   it('stops the active HQPlayer session when HQPlayer is disabled', async () => {
     const bridge = installEchoBridge(hqStatus('available'), hqSettings, hqPlayerConnectStatus);
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('HQPlayer Desktop');
     const hqPlayerToggle = screen
@@ -588,13 +673,14 @@ describe('ConnectPage HQPlayer controls', () => {
 
   it('disables unsupported transport controls while HQPlayer is the active output', async () => {
     installEchoBridge(hqStatus('available'), hqSettings, hqPlayerConnectStatus);
-    render(<ConnectPage />);
+    renderConnectPage();
 
     await screen.findByText('HQPlayer Desktop');
 
-    expect((screen.getByRole('button', { name: '播放' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '暂停' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '停止' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '断开' }) as HTMLButtonElement).disabled).toBe(false);
+    const controls = screen.getByLabelText('Connect 控制');
+    expect((within(controls).getByRole('button', { name: '播放' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(controls).getByRole('button', { name: '暂停' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(controls).getByRole('button', { name: '停止' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(controls).getByRole('button', { name: '断开' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

@@ -24,6 +24,7 @@ type DesktopLyricsSettings = Required<Pick<
   | 'desktopLyricsScalePercent'
   | 'desktopLyricsFontFamily'
   | 'desktopLyricsFontFilePath'
+  | 'desktopLyricsColorMode'
   | 'desktopLyricsColor'
   | 'desktopLyricsStrokeColor'
   | 'desktopLyricsOpacityPercent'
@@ -68,6 +69,7 @@ const fallbackSettings: DesktopLyricsSettings = {
   desktopLyricsScalePercent: 100,
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
+  desktopLyricsColorMode: 'theme',
   desktopLyricsColor: '#FFFFFF',
   desktopLyricsStrokeColor: '#111827',
   desktopLyricsOpacityPercent: 96,
@@ -229,6 +231,10 @@ const pickDesktopLyricsSettings = (settings: Partial<AppSettings> | null | undef
   desktopLyricsScalePercent: settings?.desktopLyricsScalePercent ?? fallbackSettings.desktopLyricsScalePercent,
   desktopLyricsFontFamily: settings?.desktopLyricsFontFamily ?? fallbackSettings.desktopLyricsFontFamily,
   desktopLyricsFontFilePath: settings?.desktopLyricsFontFilePath ?? fallbackSettings.desktopLyricsFontFilePath,
+  desktopLyricsColorMode:
+    settings?.desktopLyricsColorMode === 'custom' || settings?.desktopLyricsColorMode === 'theme'
+      ? settings.desktopLyricsColorMode
+      : fallbackSettings.desktopLyricsColorMode,
   desktopLyricsColor: settings?.desktopLyricsColor ?? fallbackSettings.desktopLyricsColor,
   desktopLyricsStrokeColor: settings?.desktopLyricsStrokeColor ?? fallbackSettings.desktopLyricsStrokeColor,
   desktopLyricsOpacityPercent: settings?.desktopLyricsOpacityPercent ?? fallbackSettings.desktopLyricsOpacityPercent,
@@ -1002,13 +1008,21 @@ export const DesktopLyricsApp = (): JSX.Element => {
       scalePercent: settings.desktopLyricsScalePercent,
     }),
   );
+  const desktopLyricsColor =
+    settings.desktopLyricsColorMode === 'custom'
+      ? settings.desktopLyricsColor
+      : 'var(--desktop-lyrics-theme-color)';
+  const desktopLyricsStrokeColor =
+    settings.desktopLyricsColorMode === 'custom'
+      ? settings.desktopLyricsStrokeColor
+      : 'var(--desktop-lyrics-theme-stroke-color)';
 
   const style = {
     '--desktop-lyrics-font-size': `${settings.desktopLyricsFontSizePx}px`,
     '--desktop-lyrics-scale': (settings.desktopLyricsScalePercent / 100).toFixed(2),
     '--desktop-lyrics-font-family': desktopLyricsFontFamily,
-    '--desktop-lyrics-color': settings.desktopLyricsColor,
-    '--desktop-lyrics-stroke-color': settings.desktopLyricsStrokeColor,
+    '--desktop-lyrics-color': desktopLyricsColor,
+    '--desktop-lyrics-stroke-color': desktopLyricsStrokeColor,
     '--desktop-lyrics-opacity': (settings.desktopLyricsOpacityPercent / 100).toFixed(2),
   } as CSSProperties;
   const primaryTextStyle = {
@@ -1018,6 +1032,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
   return (
     <main
       className="desktop-lyrics-app"
+      data-color-mode={settings.desktopLyricsColorMode}
       data-locked={settings.desktopLyricsLocked}
       data-menu-visible={menuVisible}
       style={style}
@@ -1068,15 +1083,26 @@ export const DesktopLyricsApp = (): JSX.Element => {
             </button>
             <Palette size={15} aria-hidden="true" />
             <div className="desktop-lyrics-swatches">
+              <button
+                aria-label={t('desktopLyrics.control.themeColor')}
+                aria-pressed={settings.desktopLyricsColorMode === 'theme'}
+                className="desktop-lyrics-theme-swatch"
+                title={t('desktopLyrics.control.themeColor')}
+                type="button"
+                onClick={() => void patchStyle({ desktopLyricsColorMode: 'theme' })}
+              />
               {colorSwatches.map((color) => (
                 <button
                   aria-label={t('desktopLyrics.control.colorSwatch', { color })}
-                  aria-pressed={settings.desktopLyricsColor.toUpperCase() === color}
+                  aria-pressed={
+                    settings.desktopLyricsColorMode === 'custom' &&
+                    settings.desktopLyricsColor.toUpperCase() === color
+                  }
                   key={color}
                   style={{ background: color }}
                   title={color}
                   type="button"
-                  onClick={() => void patchStyle({ desktopLyricsColor: color })}
+                  onClick={() => void patchStyle({ desktopLyricsColorMode: 'custom', desktopLyricsColor: color })}
                 />
               ))}
             </div>
@@ -1085,7 +1111,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
               title={t('desktopLyrics.control.customColor')}
               type="color"
               value={settings.desktopLyricsColor}
-              onChange={(event) => void patchStyle({ desktopLyricsColor: event.currentTarget.value })}
+              onChange={(event) =>
+                void patchStyle({ desktopLyricsColorMode: 'custom', desktopLyricsColor: event.currentTarget.value })}
             />
             <button
               className="desktop-lyrics-menu-toggle"

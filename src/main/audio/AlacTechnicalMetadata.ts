@@ -1,4 +1,4 @@
-import { extname } from 'node:path';
+import { isAlacCodec, isMp4ContainerPath } from './Mp4AudioCodec';
 
 export type TagLibAudioTechnicalMetadata = {
   codec: string | null;
@@ -8,8 +8,6 @@ export type TagLibAudioTechnicalMetadata = {
   channels: number | null;
   durationSeconds: number | null;
 };
-
-const alacContainerExtensions = new Set(['.m4a', '.m4b', '.m4p', '.mp4', '.mov']);
 
 const normalizePositiveInteger = (value: unknown): number | null => {
   const parsed = Number(value);
@@ -24,15 +22,12 @@ const normalizePositiveFloat = (value: unknown): number | null => {
 const cleanText = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
 
-export const isAlacCodec = (value: unknown): boolean =>
-  typeof value === 'string' && /\b(?:alac|apple\s+lossless)\b/iu.test(value);
-
 export const shouldPreferTagLibForAlacTechnicalFields = (
   filePath: string,
   primaryCodec: unknown,
   tagLibCodec?: unknown,
 ): boolean =>
-  alacContainerExtensions.has(extname(filePath).toLowerCase()) &&
+  isMp4ContainerPath(filePath) &&
   (isAlacCodec(primaryCodec) || isAlacCodec(tagLibCodec));
 
 export const readTagLibAudioTechnicalMetadata = async (

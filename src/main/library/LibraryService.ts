@@ -20,6 +20,7 @@ import {
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { getLibraryDatabaseManager, type LibraryDatabaseConnection } from '../database/LibraryDatabaseManager';
 import { assertDatabaseHealthy } from '../database/health';
+import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
@@ -185,6 +186,15 @@ const isExistingFile = async (filePath: string): Promise<boolean> => {
     return (await statFile(filePath)).isFile();
   } catch {
     return false;
+  }
+};
+
+const runMainBackgroundTask = async <T>(name: string, work: () => Promise<T> | T): Promise<T> => {
+  const clearBackgroundTask = beginMainBackgroundTask(name);
+  try {
+    return await work();
+  } finally {
+    clearBackgroundTask();
   }
 };
 
@@ -986,88 +996,90 @@ export class LibraryService {
       coverUrl?: string | null;
     } = {},
   ): Promise<LibraryTrack> {
-    const afterNcm = await getNcmConverter().convertIfNeeded(resolve(filePath));
-    const normalizedPath = await getKgmConverter().convertIfNeeded(afterNcm);
+    return runMainBackgroundTask('library-import-files', async () => {
+      const afterNcm = await getNcmConverter().convertIfNeeded(resolve(filePath));
+      const normalizedPath = await getKgmConverter().convertIfNeeded(afterNcm);
 
-    if (!existsSync(normalizedPath)) {
-      throw new Error(`Track file is missing: ${normalizedPath}`);
-    }
+      if (!existsSync(normalizedPath)) {
+        throw new Error(`Track file is missing: ${normalizedPath}`);
+      }
 
-    const initialFileStat = statSync(normalizedPath);
-    if (!initialFileStat.isFile()) {
-      throw new Error(`Track path is not a file: ${normalizedPath}`);
-    }
+      const initialFileStat = statSync(normalizedPath);
+      if (!initialFileStat.isFile()) {
+        throw new Error(`Track path is not a file: ${normalizedPath}`);
+      }
 
-    const folder = this.store.addFolder(resolve(options.folderPath ?? dirname(normalizedPath)));
-    const metadata = await this.metadataReader.read(normalizedPath);
-    const metadataOverrides = {
-      title: cleanNullableText(options.metadata?.title ?? null) ?? undefined,
-      artist: cleanNullableText(options.metadata?.artist ?? null) ?? undefined,
-      album: cleanNullableText(options.metadata?.album ?? null) ?? undefined,
-      albumArtist: cleanNullableText(options.metadata?.albumArtist ?? null) ?? undefined,
-    };
-    const metadataFields = {
-      ...metadata.fields,
-      ...Object.fromEntries(Object.entries(metadataOverrides).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
-    };
-    const fieldSources: MetadataResult['fieldSources'] = {
-      ...metadata.fieldSources,
-      ...Object.fromEntries(Object.keys(metadataOverrides).filter((key) => metadataOverrides[key as keyof typeof metadataOverrides]).map((key) => [key, 'technical'])),
-    };
-    let coverId: string | null = null;
-    let coverErrors: string[] = [];
-    const coverUrl = cleanNullableText(options.coverUrl ?? null);
-    const coverData = coverUrl ? await readCoverImageFromUrl(coverUrl, null).catch(() => null) : null;
-    const hasMetadataOverrides = hasImportMetadataOverrides(metadataOverrides);
-    const embeddedWriteErrors = await writeImportedEmbeddedTags(normalizedPath, metadataFields, coverData, hasMetadataOverrides || Boolean(coverData));
-    const fileStat = statSync(normalizedPath);
+      const folder = this.store.addFolder(resolve(options.folderPath ?? dirname(normalizedPath)));
+      const metadata = await this.metadataReader.read(normalizedPath);
+      const metadataOverrides = {
+        title: cleanNullableText(options.metadata?.title ?? null) ?? undefined,
+        artist: cleanNullableText(options.metadata?.artist ?? null) ?? undefined,
+        album: cleanNullableText(options.metadata?.album ?? null) ?? undefined,
+        albumArtist: cleanNullableText(options.metadata?.albumArtist ?? null) ?? undefined,
+      };
+      const metadataFields = {
+        ...metadata.fields,
+        ...Object.fromEntries(Object.entries(metadataOverrides).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+      };
+      const fieldSources: MetadataResult['fieldSources'] = {
+        ...metadata.fieldSources,
+        ...Object.fromEntries(Object.keys(metadataOverrides).filter((key) => metadataOverrides[key as keyof typeof metadataOverrides]).map((key) => [key, 'technical'])),
+      };
+      let coverId: string | null = null;
+      let coverErrors: string[] = [];
+      const coverUrl = cleanNullableText(options.coverUrl ?? null);
+      const coverData = coverUrl ? await readCoverImageFromUrl(coverUrl, null).catch(() => null) : null;
+      const hasMetadataOverrides = hasImportMetadataOverrides(metadataOverrides);
+      const embeddedWriteErrors = await writeImportedEmbeddedTags(normalizedPath, metadataFields, coverData, hasMetadataOverrides || Boolean(coverData));
+      const fileStat = statSync(normalizedPath);
 
-    try {
-      const cover = await this.coverExtractor.extract(normalizedPath, {
-        cacheRoot: this.coverCacheDir,
-        metadata: coverData ? metadataWithEmbeddedCover(coverData.data, coverData.mimeType) : metadata,
+      try {
+        const cover = await this.coverExtractor.extract(normalizedPath, {
+          cacheRoot: this.coverCacheDir,
+          metadata: coverData ? metadataWithEmbeddedCover(coverData.data, coverData.mimeType) : metadata,
+        });
+        coverId = this.store.upsertCover(cover);
+        coverErrors = cover.errors;
+      } catch (error) {
+        coverErrors = [error instanceof Error ? error.message : String(error)];
+      }
+
+      const timestamp = new Date().toISOString();
+      const trackId = randomUUID();
+      const trackWrite = {
+        path: normalizedPath,
+        folderId: folder.id,
+        sizeBytes: fileStat.size,
+        mtimeMs: Math.round(fileStat.mtimeMs),
+        ...metadataFields,
+        id: trackId,
+        coverId,
+        fieldSources,
+        embeddedMetadataStatus: hasMetadataOverrides ? 'present' : metadata.embeddedMetadataStatus,
+        embeddedCoverStatus: coverData ? 'present' : metadata.embeddedCoverStatus,
+        metadataStatus: metadata.status,
+        warnings: metadata.warnings,
+        errors: [...metadata.errors, ...embeddedWriteErrors, ...coverErrors],
+        updatedAt: timestamp,
+      };
+      const searchTerms = await this.store.prepareTrackSearchTerms(trackWrite);
+
+      const track = this.store.transaction(() => {
+        this.store.upsertTrack(trackWrite, searchTerms);
+        const track = this.store.getTrack(trackId) ?? this.store.getTrackByPath(normalizedPath);
+        if (!track) {
+          throw new Error(`Failed to import audio file: ${normalizedPath}`);
+        }
+
+        if (this.readAppSettings().replayGainAnalyzeMissingOnScan === true) {
+          this.startReplayGainAnalysis({ trackIds: [track.id], force: false });
+        }
+
+        return track;
       });
-      coverId = this.store.upsertCover(cover);
-      coverErrors = cover.errors;
-    } catch (error) {
-      coverErrors = [error instanceof Error ? error.message : String(error)];
-    }
-
-    const timestamp = new Date().toISOString();
-    const trackId = randomUUID();
-    const trackWrite = {
-      path: normalizedPath,
-      folderId: folder.id,
-      sizeBytes: fileStat.size,
-      mtimeMs: Math.round(fileStat.mtimeMs),
-      ...metadataFields,
-      id: trackId,
-      coverId,
-      fieldSources,
-      embeddedMetadataStatus: hasMetadataOverrides ? 'present' : metadata.embeddedMetadataStatus,
-      embeddedCoverStatus: coverData ? 'present' : metadata.embeddedCoverStatus,
-      metadataStatus: metadata.status,
-      warnings: metadata.warnings,
-      errors: [...metadata.errors, ...embeddedWriteErrors, ...coverErrors],
-      updatedAt: timestamp,
-    };
-    const searchTerms = await this.store.prepareTrackSearchTerms(trackWrite);
-
-    const track = this.store.transaction(() => {
-      this.store.upsertTrack(trackWrite, searchTerms);
-      const track = this.store.getTrack(trackId) ?? this.store.getTrackByPath(normalizedPath);
-      if (!track) {
-        throw new Error(`Failed to import audio file: ${normalizedPath}`);
-      }
-
-      if (this.readAppSettings().replayGainAnalyzeMissingOnScan === true) {
-        this.startReplayGainAnalysis({ trackIds: [track.id], force: false });
-      }
-
+      this.scheduleGroupingRefresh();
       return track;
     });
-    this.scheduleGroupingRefresh();
-    return track;
   }
 
   recordTrackPlayback(trackId: string): void {
@@ -2280,9 +2292,11 @@ export class LibraryService {
     this.groupingRefreshRetryCount = 0;
     const startedAtMs = Date.now();
     try {
-      this.store.transaction(() => {
-        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-        this.store.refreshArtists();
+      await runMainBackgroundTask('library-scan:grouping_albums', () => {
+        this.store.transaction(() => {
+          this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
+          this.store.refreshArtists();
+        });
       });
       this.artistsDirty = false;
       this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;

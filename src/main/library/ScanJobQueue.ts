@@ -27,6 +27,7 @@ import { getNcmConverter } from './NcmConverter';
 import { getKgmConverter } from './KgmConverter';
 import { FileIdentityService, QUICK_HASH_VERSION, type FileIdentityObservation } from './FileIdentityService';
 import { createCueTrackPath, readCueSheet, readEmbeddedCueSheet, resolveCueTrack } from '../audio/CueSheet';
+import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { preloadSearchIndexRomanizer } from './SearchIndexTokens';
 
 type ParsedScanItem = {
@@ -93,6 +94,15 @@ const scanDiscoveryYieldEveryEntries = 32;
 const maxStoredScanErrors = 200;
 const scanErrorSummaryThreshold = 20;
 const maxScanErrorMessageLength = 512;
+
+const runMainBackgroundTask = async <T>(name: string, work: () => Promise<T> | T): Promise<T> => {
+  const clearBackgroundTask = beginMainBackgroundTask(name);
+  try {
+    return await work();
+  } finally {
+    clearBackgroundTask();
+  }
+};
 const maxLocalScanPathCount = 1000;
 const temporaryExtensions = new Set(['.tmp', '.temp', '.part', '.crdownload', '.download', '.swp']);
 const ignoredTemporaryNames = new Set(['.ds_store', 'thumbs.db']);
@@ -539,58 +549,60 @@ export class ScanJobQueue {
       const metadataConcurrency = reducedOrLargeScanPressure ? 1 : this.metadataConcurrency;
       const coverConcurrency = reducedOrLargeScanPressure ? 1 : this.coverConcurrency;
 
-      await this.processWithConcurrency(changedFiles, metadataConcurrency, async (item) => {
-        this.throwIfCancelled(jobId);
+      await runMainBackgroundTask('library-scan:reading_metadata', () =>
+        this.processWithConcurrency(changedFiles, metadataConcurrency, async (item) => {
+          this.throwIfCancelled(jobId);
 
-        let metadata: MetadataResult;
-        let identity: FileIdentityObservation | null = null;
-
-        try {
-          metadata = await this.metadataReader.read(item.file.path);
-          identity = reducedOrLargeScanPressure ? null : this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-          this.collectWorkerMessages(errors, item.file.path, 'metadata', metadata.warnings, metadata.errors);
-        } catch (error) {
-          const message = compactScanMessage(error instanceof Error ? error.message : String(error));
-          errors.push(`${item.file.path}: metadata: ${message}`);
-          metadata = this.createFallbackMetadata(item.file, message);
-          identity = reducedOrLargeScanPressure ? null : this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-        }
-
-        try {
-          let cover: CoverResult | null = null;
+          let metadata: MetadataResult;
+          let identity: FileIdentityObservation | null = null;
 
           try {
-            cover = await this.coverExtractor.extract(item.file.path, {
-              cacheRoot: this.coverCacheDir,
-              metadata,
-              now: coverTimestamp,
+            metadata = await this.metadataReader.read(item.file.path);
+            identity = reducedOrLargeScanPressure ? null : this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+            this.collectWorkerMessages(errors, item.file.path, 'metadata', metadata.warnings, metadata.errors);
+          } catch (error) {
+            const message = compactScanMessage(error instanceof Error ? error.message : String(error));
+            errors.push(`${item.file.path}: metadata: ${message}`);
+            metadata = this.createFallbackMetadata(item.file, message);
+            identity = reducedOrLargeScanPressure ? null : this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+          }
+
+          try {
+            let cover: CoverResult | null = null;
+
+            try {
+              cover = await this.coverExtractor.extract(item.file.path, {
+                cacheRoot: this.coverCacheDir,
+                metadata,
+                now: coverTimestamp,
+              });
+              this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
+              coverCount += 1;
+            } catch (error) {
+              errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
+            }
+
+            parsedItems.push({
+              ...item,
+              metadata: this.stripEmbeddedCoverData(metadata),
+              cover,
+              identity,
             });
-            this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
-            coverCount += 1;
           } catch (error) {
             errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
           }
 
-          parsedItems.push({
-            ...item,
-            metadata: this.stripEmbeddedCoverData(metadata),
-            cover,
-            identity,
+          processedFiles += 1;
+          progress.update({
+            phase: 'reading_metadata',
+            processedFiles,
+            skippedFiles,
+            coverCount,
+            errors,
           });
-        } catch (error) {
-          errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
-        }
-
-        processedFiles += 1;
-        progress.update({
-          phase: 'reading_metadata',
-          processedFiles,
-          skippedFiles,
-          coverCount,
-          errors,
-        });
-        await yieldToMainLoop();
-      });
+          await yieldToMainLoop();
+        }),
+      );
 
       this.throwIfCancelled(jobId);
 
@@ -602,46 +614,48 @@ export class ScanJobQueue {
         errors,
       });
 
-      await this.processWithConcurrency(coverRepairItems, coverConcurrency, async (item) => {
-        this.throwIfCancelled(jobId);
+      await runMainBackgroundTask('library-scan:extracting_covers', () =>
+        this.processWithConcurrency(coverRepairItems, coverConcurrency, async (item) => {
+          this.throwIfCancelled(jobId);
 
-        try {
-          if (!this.coverExtractor.repairCachedCover) {
-            throw new Error('cover extractor does not support cached cover repair');
+          try {
+            if (!this.coverExtractor.repairCachedCover) {
+              throw new Error('cover extractor does not support cached cover repair');
+            }
+
+            const cover = await this.coverExtractor.repairCachedCover({
+              cacheRoot: this.coverCacheDir,
+              source: item.state.coverSource!,
+              sourceHash: item.state.sourceHash!,
+              mimeType: item.state.mimeType,
+              originalRef: item.state.originalRef!,
+              thumbPath: item.state.thumbPath,
+              albumPath: item.state.albumPath,
+              largePath: item.state.largePath,
+              now: coverTimestamp,
+            });
+            this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
+            item.cover = cover;
+            coverCount += 1;
+          } catch (error) {
+            errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
           }
 
-          const cover = await this.coverExtractor.repairCachedCover({
-            cacheRoot: this.coverCacheDir,
-            source: item.state.coverSource!,
-            sourceHash: item.state.sourceHash!,
-            mimeType: item.state.mimeType,
-            originalRef: item.state.originalRef!,
-            thumbPath: item.state.thumbPath,
-            albumPath: item.state.albumPath,
-            largePath: item.state.largePath,
-            now: coverTimestamp,
+          if (!reducedOrLargeScanPressure && !this.hasIdentityObservation(item.state)) {
+            item.identity = this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+          }
+
+          processedFiles += 1;
+          progress.update({
+            phase: 'extracting_covers',
+            processedFiles,
+            skippedFiles,
+            coverCount,
+            errors,
           });
-          this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
-          item.cover = cover;
-          coverCount += 1;
-        } catch (error) {
-          errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
-        }
-
-        if (!reducedOrLargeScanPressure && !this.hasIdentityObservation(item.state)) {
-          item.identity = this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-        }
-
-        processedFiles += 1;
-        progress.update({
-          phase: 'extracting_covers',
-          processedFiles,
-          skippedFiles,
-          coverCount,
-          errors,
-        });
-        await yieldToMainLoop();
-      });
+          await yieldToMainLoop();
+        }),
+      );
 
       await this.processWithConcurrency(identityUpdateItems, metadataConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
@@ -694,81 +708,83 @@ export class ScanJobQueue {
         errors,
       });
 
-      this.store.transaction(() => {
-        this.store.upsertScanDirectorySnapshots(folder.id, directorySnapshots, timestamp);
+      await runMainBackgroundTask('library-scan:writing_database', async () => {
+        this.store.transaction(() => {
+          this.store.upsertScanDirectorySnapshots(folder.id, directorySnapshots, timestamp);
 
-        if (markMissing) {
-          removedTracks = this.store.markTracksMissingFromFolder(
-            folder.id,
-            [...files.map((file) => file.path), ...protectedPaths],
-            timestamp,
-            { excludeDirectories: inaccessibleDirectories },
-          );
-        }
+          if (markMissing) {
+            removedTracks = this.store.markTracksMissingFromFolder(
+              folder.id,
+              [...files.map((file) => file.path), ...protectedPaths],
+              timestamp,
+              { excludeDirectories: inaccessibleDirectories },
+            );
+          }
 
-        for (const item of coverRepairItems) {
-          if (item.cover) {
-            const repairedCoverId = this.store.upsertCover(item.cover, timestamp);
+          for (const item of coverRepairItems) {
+            if (item.cover) {
+              const repairedCoverId = this.store.upsertCover(item.cover, timestamp);
 
-            if (repairedCoverId && repairedCoverId !== item.state.coverId) {
-              this.store.updateTrackCover(item.state.id, repairedCoverId, timestamp);
-              updatedTracks += 1;
+              if (repairedCoverId && repairedCoverId !== item.state.coverId) {
+                this.store.updateTrackCover(item.state.id, repairedCoverId, timestamp);
+                updatedTracks += 1;
+              }
+            }
+            if (item.identity) {
+              this.store.updateTrackIdentity(item.state.id, item.identity, timestamp);
             }
           }
-          if (item.identity) {
-            this.store.updateTrackIdentity(item.state.id, item.identity, timestamp);
-          }
-        }
 
-        for (const item of identityUpdateItems) {
-          if (item.identity) {
-            this.store.updateTrackIdentity(item.state.id, item.identity, timestamp);
+          for (const item of identityUpdateItems) {
+            if (item.identity) {
+              this.store.updateTrackIdentity(item.state.id, item.identity, timestamp);
+            }
           }
+        });
+
+        const writeBatchSize = reducedOrLargeScanPressure ? largeScanWriteBatchSize : normalScanWriteBatchSize;
+        for (let index = 0; index < preparedParsedItems.length; index += writeBatchSize) {
+          const batch = preparedParsedItems.slice(index, index + writeBatchSize);
+          this.store.transaction(() => {
+            for (const item of batch) {
+              const coverId = item.cover ? this.store.upsertCover(item.cover, timestamp) : null;
+              const result = this.store.upsertTrack({
+                ...item.file,
+                ...item.metadata.fields,
+                id: item.trackId,
+                coverId,
+                fieldSources: item.metadata.fieldSources,
+                embeddedMetadataStatus: item.metadata.embeddedMetadataStatus,
+                embeddedCoverStatus: item.metadata.embeddedCoverStatus,
+                metadataStatus: item.metadata.status,
+                warnings: item.metadata.warnings,
+                errors: item.metadata.errors,
+                updatedAt: timestamp,
+                ...this.toTrackIdentityWrite(item.identity),
+              }, item.searchTerms ?? undefined);
+
+              if (result === 'added') {
+                addedTracks += 1;
+                addedTrackIds.push(item.trackId);
+              } else {
+                updatedTracks += 1;
+              }
+            }
+          });
+
+          progress.flushNow({
+            phase: 'writing_database',
+            processedFiles,
+            skippedFiles,
+            addedTracks,
+            updatedTracks,
+            removedTracks,
+            coverCount,
+            errors,
+          });
+          await yieldToMainLoop();
         }
       });
-
-      const writeBatchSize = reducedOrLargeScanPressure ? largeScanWriteBatchSize : normalScanWriteBatchSize;
-      for (let index = 0; index < preparedParsedItems.length; index += writeBatchSize) {
-        const batch = preparedParsedItems.slice(index, index + writeBatchSize);
-        this.store.transaction(() => {
-          for (const item of batch) {
-            const coverId = item.cover ? this.store.upsertCover(item.cover, timestamp) : null;
-            const result = this.store.upsertTrack({
-              ...item.file,
-              ...item.metadata.fields,
-              id: item.trackId,
-              coverId,
-              fieldSources: item.metadata.fieldSources,
-              embeddedMetadataStatus: item.metadata.embeddedMetadataStatus,
-              embeddedCoverStatus: item.metadata.embeddedCoverStatus,
-              metadataStatus: item.metadata.status,
-              warnings: item.metadata.warnings,
-              errors: item.metadata.errors,
-              updatedAt: timestamp,
-              ...this.toTrackIdentityWrite(item.identity),
-            }, item.searchTerms ?? undefined);
-
-            if (result === 'added') {
-              addedTracks += 1;
-              addedTrackIds.push(item.trackId);
-            } else {
-              updatedTracks += 1;
-            }
-          }
-        });
-
-        progress.flushNow({
-          phase: 'writing_database',
-          processedFiles,
-          skippedFiles,
-          addedTracks,
-          updatedTracks,
-          removedTracks,
-          coverCount,
-          errors,
-        });
-        await yieldToMainLoop();
-      }
 
       this.store.transaction(() => {
         progress.flushNow({
@@ -782,8 +798,13 @@ export class ScanJobQueue {
           errors,
         });
         if (!deferGroupingRefresh && !deferGroupingForPressure) {
-          this.store.refreshAlbums(this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
-          this.store.refreshArtists();
+          const clearBackgroundTask = beginMainBackgroundTask('library-scan:grouping_albums');
+          try {
+            this.store.refreshAlbums(this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+            this.store.refreshArtists();
+          } finally {
+            clearBackgroundTask();
+          }
         }
         progress.flushNow({
           phase: 'writing_database',
@@ -1430,9 +1451,11 @@ export class ScanJobQueue {
     }
 
     try {
-      this.store.transaction(() => {
-        this.store.refreshAlbums(this.albumService, undefined, { albumMergeStrategy: this.getAlbumMergeStrategy() });
-        this.store.refreshArtists();
+      await runMainBackgroundTask('library-scan:grouping_albums', () => {
+        this.store.transaction(() => {
+          this.store.refreshAlbums(this.albumService, undefined, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+          this.store.refreshArtists();
+        });
       });
       this.onDeferredGroupingRefresh();
     } catch (error) {
