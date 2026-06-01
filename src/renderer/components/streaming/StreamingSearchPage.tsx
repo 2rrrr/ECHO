@@ -55,8 +55,8 @@ const defaultCover = `data:image/svg+xml;utf8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="14" fill="#eaf1f8"/><circle cx="31" cy="32" r="12" fill="#9fb6cc"/><path d="M28 67c11-19 25-25 42-9" fill="none" stroke="#5f7f9d" stroke-width="8" stroke-linecap="round"/></svg>',
 )}`;
 
-const hiddenProviderTabs = new Set<StreamingProviderName>(['mock', 'm3u8']);
-const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'kugou', 'plugin', 'soundcloud', 'youtube', 'tidal', 'spotify', 'bilibili'];
+const hiddenProviderTabs = new Set<StreamingProviderName>(['mock', 'm3u8', 'kugou']);
+const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'plugin', 'soundcloud', 'youtube', 'tidal', 'spotify', 'bilibili'];
 const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'tidal', 'bilibili', 'youtube', 'plugin']);
 const favoriteProviders = new Set<StreamingProviderName>(['bilibili', 'youtube', 'soundcloud']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
@@ -283,8 +283,10 @@ export const StreamingSearchPage = (): JSX.Element => {
   const { t } = useI18n();
   const queue = usePlaybackQueue();
   const initialMemory = readStreamingSearchMemory();
+  const initialProvider = hiddenProviderTabs.has(initialMemory.provider) ? 'netease' : initialMemory.provider;
+  const initialResult = initialMemory.result && !hiddenProviderTabs.has(initialMemory.result.provider) ? initialMemory.result : null;
   const [providers, setProviders] = useState<StreamingProviderDescriptor[]>(() => readCachedProviders() ?? []);
-  const [provider, setProvider] = useState<StreamingProviderName>(initialMemory.provider);
+  const [provider, setProvider] = useState<StreamingProviderName>(initialProvider);
   const [quality, setQuality] = useState<QualityPreference>(initialMemory.quality);
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [streamingDownloadActionsEnabled, setStreamingDownloadActionsEnabled] = useState(false);
@@ -294,7 +296,7 @@ export const StreamingSearchPage = (): JSX.Element => {
     search: query,
     searchInputProps,
   } = useImeAwareDebouncedSearch(300, initialMemory.input || initialMemory.query);
-  const [result, setResult] = useState<StreamingSearchResult | null>(initialMemory.result);
+  const [result, setResult] = useState<StreamingSearchResult | null>(initialResult);
   const [selectedAlbum, setSelectedAlbum] = useState<StreamingAlbum | null>(null);
   const [selectedAlbumDetail, setSelectedAlbumDetail] = useState<StreamingAlbumDetail | null>(null);
   const [isAlbumDetailLoading, setIsAlbumDetailLoading] = useState(false);
@@ -322,12 +324,12 @@ export const StreamingSearchPage = (): JSX.Element => {
   const { isReturning: isArtistReturning, returnBack: returnFromArtist } = useAnimatedBackNavigation(() => setSelectedArtist(null), Boolean(selectedArtist) && !selectedAlbum);
   const requestIdRef = useRef(0);
   const playActionIdRef = useRef(0);
-  const resultRef = useRef<StreamingSearchResult | null>(initialMemory.result);
+  const resultRef = useRef<StreamingSearchResult | null>(initialResult);
   const listRef = useRef<HTMLDivElement | null>(null);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
   const restoredResultKeyRef = useRef<string | null>(
-    initialMemory.result && initialMemory.result.provider === initialMemory.provider && initialMemory.result.query.trim() === initialMemory.query.trim()
-      ? streamingSearchResultKey(initialMemory.provider, initialMemory.query, initialMemory.activeTab)
+    initialResult && initialResult.provider === initialProvider && initialResult.query.trim() === initialMemory.query.trim()
+      ? streamingSearchResultKey(initialProvider, initialMemory.query, initialMemory.activeTab)
       : null,
   );
 

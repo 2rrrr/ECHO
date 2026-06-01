@@ -53,6 +53,17 @@ const qqProvider: StreamingProviderDescriptor = {
   requiresAccount: false,
 };
 
+const kugouProvider: StreamingProviderDescriptor = {
+  name: 'kugou',
+  displayName: 'KuGou Music',
+  enabled: true,
+  supportsSearch: true,
+  supportsPlayback: true,
+  supportsLyrics: true,
+  supportsMv: false,
+  requiresAccount: false,
+};
+
 const artist: StreamingArtist = {
   id: 'streaming:netease:artist:jay',
   provider: 'netease',
@@ -391,5 +402,58 @@ describe('StreamingSearchPage download visibility', () => {
 
     expect(await screen.findByText('晴天')).toBeTruthy();
     expect(await screen.findByTitle('下载')).toBeTruthy();
+  });
+});
+
+describe('StreamingSearchPage provider visibility', () => {
+  it('hides KuGou Music from streaming source tabs', async () => {
+    let refreshProviders: (() => void) | null = null;
+    window.echo = {
+      accounts: {
+        onStatusesChanged: vi.fn((handler: () => void) => {
+          refreshProviders = handler;
+          return vi.fn();
+        }),
+      },
+      streaming: {
+        getProviders: vi.fn().mockResolvedValue([provider, qqProvider, kugouProvider]),
+        search: vi.fn().mockResolvedValue(trackSearchResult),
+      },
+    } as unknown as Window['echo'];
+
+    renderStreamingSearchPage();
+    refreshProviders?.();
+
+    expect(await screen.findByRole('button', { name: /NetEase Cloud Music/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /QQ Music/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /KuGou Music/ })).toBeNull();
+  });
+
+  it('falls back from remembered KuGou source before searching', async () => {
+    updateStreamingSearchMemory({
+      provider: 'kugou',
+      quality: 'lossless',
+      activeTab: 'track',
+      input: 'sunny',
+      query: 'sunny',
+      resultKey: null,
+      result: null,
+      failedCoverUrls: {},
+      scrollTop: 0,
+    });
+
+    const search = vi.fn().mockResolvedValue(trackSearchResult);
+    window.echo = {
+      streaming: {
+        getProviders: vi.fn().mockResolvedValue([provider, kugouProvider]),
+        search,
+      },
+    } as unknown as Window['echo'];
+
+    renderStreamingSearchPage();
+
+    await waitFor(() => expect(search).toHaveBeenCalled());
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ provider: 'netease' }));
+    expect(search).not.toHaveBeenCalledWith(expect.objectContaining({ provider: 'kugou' }));
   });
 });
