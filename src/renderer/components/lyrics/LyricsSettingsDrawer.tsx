@@ -69,6 +69,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsAutoSearch'
   | 'lyricsAutoAcceptScore'
   | 'lyricsRestartOnApplyEnabled'
+  | 'lyricsAutoSaveSidecarEnabled'
   | 'lyricsDefaultOffsetMs'
   | 'lyricsGlobalSyncOffsetMs'
   | 'lyricsTimelineCorrectionEnabled'
@@ -112,6 +113,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsBackgroundScalePercent'
   | 'desktopLyricsFontFamily'
   | 'desktopLyricsFontFilePath'
+  | 'desktopLyricsOpacityPercent'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
 >;
@@ -121,6 +123,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
   lyricsRestartOnApplyEnabled: false,
+  lyricsAutoSaveSidecarEnabled: false,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
@@ -164,6 +167,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsBackgroundScalePercent: 100,
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
+  desktopLyricsOpacityPercent: 96,
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
 };
@@ -578,6 +582,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsAutoSearch: settings.lyricsAutoSearch,
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
   lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
+  lyricsAutoSaveSidecarEnabled: settings.lyricsAutoSaveSidecarEnabled === true,
   lyricsDefaultOffsetMs: settings.lyricsDefaultOffsetMs,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
@@ -621,6 +626,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsBackgroundScalePercent: settings.lyricsBackgroundScalePercent,
   desktopLyricsFontFamily: settings.desktopLyricsFontFamily ?? fallbackSettings.desktopLyricsFontFamily,
   desktopLyricsFontFilePath: settings.desktopLyricsFontFilePath ?? fallbackSettings.desktopLyricsFontFilePath,
+  desktopLyricsOpacityPercent: settings.desktopLyricsOpacityPercent ?? fallbackSettings.desktopLyricsOpacityPercent,
   desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled ?? fallbackSettings.desktopLyricsRomanizationEnabled,
   desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
 });
@@ -677,6 +683,11 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     effectiveSettings.desktopLyricsFontFilePath ??
     fallbackSettings.desktopLyricsFontFilePath ??
     null;
+  const desktopLyricsOpacityPercent =
+    desktopLyricsState?.settings.desktopLyricsOpacityPercent ??
+    effectiveSettings.desktopLyricsOpacityPercent ??
+    fallbackSettings.desktopLyricsOpacityPercent ??
+    96;
   const desktopLyricsRomanizationEnabled =
     desktopLyricsState?.settings.desktopLyricsRomanizationEnabled ??
     effectiveSettings.desktopLyricsRomanizationEnabled ??
@@ -1888,6 +1899,27 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 />
               </label>
 
+              <label className="mv-threshold-control lyrics-desktop-opacity-control">
+                <span className="mv-threshold-copy">
+                  <strong>{t('lyricsSettings.display.desktopOpacity')}</strong>
+                  <em>{t('lyricsSettings.display.desktopOpacityDescription', { opacity: desktopLyricsOpacityPercent })}</em>
+                </span>
+                <span className="mv-threshold-slider">
+                  <input
+                    type="range"
+                    min="35"
+                    max="100"
+                    step="1"
+                    value={desktopLyricsOpacityPercent}
+                    aria-label={t('lyricsSettings.display.desktopOpacity')}
+                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                    onChange={(event) =>
+                      patchDesktopLyricsStyle({ desktopLyricsOpacityPercent: Number(event.currentTarget.value) })}
+                  />
+                  <output>{desktopLyricsOpacityPercent}%</output>
+                </span>
+              </label>
+
               {desktopLyricsVisible ? (
                 <>
                   <label className="audio-toggle-row">
@@ -2770,6 +2802,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             />
           </label>
           <p>{t('lyricsSettings.online.autoSearchDescription')}</p>
+
+          <label className="audio-toggle-row">
+            <span>
+              <FolderOpen size={17} />
+              <strong>{t('lyricsSettings.online.autoSaveSidecar')}</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsAutoSaveSidecarEnabled === true}
+              disabled={isBusy}
+              onChange={(event) => void patchSettings({ lyricsAutoSaveSidecarEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>{t('lyricsSettings.online.autoSaveSidecarDescription')}</p>
         </section>
 
         {showPersistentControls ? (

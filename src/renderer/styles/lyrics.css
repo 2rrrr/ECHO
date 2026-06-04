@@ -444,6 +444,10 @@ html[data-theme="dark"] .lyrics-custom-lrc-drop {
   filter: blur(var(--mv-immersive-blur)) saturate(1.05) brightness(var(--mv-immersive-brightness));
 }
 
+.lyrics-mv-background[data-auto-scale="true"] .lyrics-mv-background-video:not(.lyrics-mv-background-video--youtube) {
+  object-fit: contain;
+}
+
 .lyrics-mv-background-video--youtube {
   position: absolute;
   top: 50%;

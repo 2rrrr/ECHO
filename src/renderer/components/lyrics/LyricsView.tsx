@@ -777,7 +777,7 @@ export const LyricsView = ({
           showTranslation={showTranslation}
           wordHighlightEnabled={wordHighlightEnabled && !prefersReducedMotion()}
           onSeek={onSeek}
-          seekable={isSynced && line.timeMs >= 0}
+          seekable={false}
         />
       ))}
     </section>

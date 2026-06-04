@@ -11685,6 +11685,12 @@ html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enable
     rgb(var(--preset-panel-rgb) / 0.52) !important;
 }
 
+html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-page[data-view-mode="lyrics"] > .lyrics-track-header-floating {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 html[data-theme-preset="FINAL"] :is(.lyrics-match-panel, .lyrics-offset-controls) {
   border-color: rgb(var(--preset-border-rgb) / 0.2);
   border-radius: 4px;
@@ -12693,4 +12699,59 @@ html[data-theme="dark"][data-theme-preset="FINAL"] .app-shell:not(.app-shell--wa
     max-width: min(620px, calc(100vw - 52px));
     grid-column: 1;
   }
+}
+
+html[data-album-cover-shape] :is(
+  .album-cover,
+  .album-detail-cover,
+  .album-related-album-cover,
+  .artist-album-cover,
+  .home-artwork,
+  .home-cover-card,
+  .player-cover,
+  .track-cover,
+  .album-track-cover,
+  .artist-track-cover,
+  .queue-now-cover,
+  .queue-row-cover,
+  .lyrics-track-cover,
+  .mini-player-cover
+) {
+  border-radius: var(--echo-album-cover-radius, 12px) !important;
+  clip-path: none !important;
+}
+
+html[data-album-cover-shape] :is(
+  .album-cover,
+  .album-detail-cover,
+  .album-related-album-cover,
+  .artist-album-cover,
+  .home-artwork,
+  .home-cover-card,
+  .player-cover,
+  .track-cover,
+  .album-track-cover,
+  .artist-track-cover,
+  .queue-now-cover,
+  .queue-row-cover,
+  .lyrics-track-cover,
+  .mini-player-cover
+) img,
+html[data-album-cover-shape] :is(
+  .album-cover,
+  .album-detail-cover,
+  .album-related-album-cover,
+  .artist-album-cover,
+  .home-artwork,
+  .home-cover-card,
+  .player-cover,
+  .track-cover,
+  .album-track-cover,
+  .artist-track-cover,
+  .queue-now-cover,
+  .queue-row-cover,
+  .lyrics-track-cover,
+  .mini-player-cover
+) .deferred-wall-image {
+  border-radius: inherit !important;
 }

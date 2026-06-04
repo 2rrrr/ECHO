@@ -74,6 +74,7 @@ const isMvDatabaseError = (error: unknown): boolean => {
 const summarizeMvDatabaseError = (error: unknown, databaseUnavailableLabel: string): string =>
   isMvDatabaseError(error) ? databaseUnavailableLabel : error instanceof Error ? error.message : String(error);
 const immersiveBackgroundDefaults = {
+  immersiveBackgroundAutoScale: true,
   immersiveBackgroundScalePercent: 115,
   immersiveBackgroundOffsetXPercent: 50,
   immersiveBackgroundOffsetYPercent: 50,
@@ -304,7 +305,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   const [failedThumbnailIds, setFailedThumbnailIds] = useState<Set<string>>(() => new Set());
   const [draggedProvider, setDraggedProvider] = useState<NetworkMvProviderId | null>(null);
   const [dragOverProvider, setDragOverProvider] = useState<NetworkMvProviderId | null>(null);
-  const [isNetworkSectionOpen, setIsNetworkSectionOpen] = useState(true);
+  const [isNetworkSectionOpen, setIsNetworkSectionOpen] = useState(false);
   const [isImmersiveControlsOpen, setIsImmersiveControlsOpen] = useState(readImmersiveControlsOpen);
   const [isMvOffsetSectionOpen, setIsMvOffsetSectionOpen] = useState(false);
   const [isMvOffsetSaving, setIsMvOffsetSaving] = useState(false);
@@ -1480,6 +1481,20 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                       >
                         <RotateCcw size={15} />
                         {t('mvSettings.immersive.reset')}
+                      </button>
+                      <button
+                        type="button"
+                        className="mv-source-toggle mv-auto-apply-toggle"
+                        aria-pressed={settings.immersiveBackgroundAutoScale !== false}
+                        onClick={() => void patchSettings({ immersiveBackgroundAutoScale: settings.immersiveBackgroundAutoScale === false })}
+                      >
+                        <span className="mv-switch-track" aria-hidden="true">
+                          <span />
+                        </span>
+                        <span className="mv-toggle-copy">
+                          <strong>{t('mvSettings.immersive.autoScale')}</strong>
+                          <em>{t('mvSettings.immersive.autoScaleDescription')}</em>
+                        </span>
                       </button>
                       <label className="mv-threshold-control">
                         <span className="mv-threshold-copy">

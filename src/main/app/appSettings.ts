@@ -213,6 +213,7 @@ export const defaultAppearancePreferences: AppearancePreferences = {
   baseFontSize: 14,
   lineHeight: 1.35,
   textDepth: 62,
+  albumCoverShape: 'rounded',
 };
 
 const defaultRememberedAudioOutput: RememberedAudioOutput = {
@@ -458,6 +459,7 @@ export const defaultSettings: AppSettings = {
   lyricsAutoAcceptScore: 0.5,
   lyricsBackfillAutoAcceptScore: 0.45,
   lyricsRestartOnApplyEnabled: false,
+  lyricsAutoSaveSidecarEnabled: false,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
@@ -520,6 +522,7 @@ export const defaultSettings: AppSettings = {
   mvAutoApplyThreshold: 0.7,
   mvPreferHighestViewCount: false,
   mvImmersiveBackground: true,
+  mvImmersiveBackgroundAutoScale: true,
   mvImmersiveBackgroundScalePercent: 115,
   mvImmersiveBackgroundOffsetXPercent: 50,
   mvImmersiveBackgroundOffsetYPercent: 50,
@@ -1022,6 +1025,9 @@ const normalizeAppearanceFontFamily = (value: unknown, fallback: string): string
   return normalizeRequiredText(value, fallback);
 };
 
+const normalizeAlbumCoverShape = (value: unknown): AppearancePreferences['albumCoverShape'] =>
+  value === 'square' ? 'square' : 'rounded';
+
 const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { ...defaultAppearancePreferences };
@@ -1048,6 +1054,7 @@ const normalizeAppearancePreferences = (value: unknown): AppearancePreferences =
     textDepth: Number.isFinite(textDepth)
       ? clamp(textDepth, 35, 100)
       : defaultAppearancePreferences.textDepth,
+    albumCoverShape: normalizeAlbumCoverShape(input.albumCoverShape),
   };
 };
 
@@ -1677,6 +1684,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       ? clamp(lyricsBackfillAutoAcceptScore, 0.3, 0.95)
       : defaultSettings.lyricsBackfillAutoAcceptScore,
     lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
+    lyricsAutoSaveSidecarEnabled: settings.lyricsAutoSaveSidecarEnabled === true,
     lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
       ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))
       : defaultSettings.lyricsDefaultOffsetMs,
@@ -1776,6 +1784,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.mvAutoApplyThreshold,
     mvPreferHighestViewCount: settings.mvPreferHighestViewCount === true,
     mvImmersiveBackground: settings.mvImmersiveBackground !== false,
+    mvImmersiveBackgroundAutoScale: settings.mvImmersiveBackgroundAutoScale !== false,
     mvImmersiveBackgroundScalePercent: Number.isFinite(mvImmersiveBackgroundScalePercent)
       ? Math.round(clamp(mvImmersiveBackgroundScalePercent, 100, 220))
       : defaultSettings.mvImmersiveBackgroundScalePercent,

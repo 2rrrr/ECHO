@@ -130,6 +130,8 @@ export type AppThemeCustomTheme = {
   updatedAt: string;
 };
 
+export type AlbumCoverShape = 'rounded' | 'square';
+
 export type AppearancePreferences = {
   mainFontFamily: string;
   mainFontFilePath: string | null;
@@ -140,6 +142,7 @@ export type AppearancePreferences = {
   baseFontSize: number;
   lineHeight: number;
   textDepth: number;
+  albumCoverShape: AlbumCoverShape;
 };
 
 export type RememberedAudioOutput = {
@@ -276,6 +279,7 @@ export type AppSettings = {
   lyricsAutoAcceptScore: number;
   lyricsBackfillAutoAcceptScore?: number;
   lyricsRestartOnApplyEnabled?: boolean;
+  lyricsAutoSaveSidecarEnabled?: boolean;
   lyricsDefaultOffsetMs: number;
   lyricsGlobalSyncOffsetMs: number;
   lyricsTimelineCorrectionEnabled?: boolean;
@@ -338,6 +342,7 @@ export type AppSettings = {
   mvAutoApplyThreshold?: number;
   mvPreferHighestViewCount?: boolean;
   mvImmersiveBackground?: boolean;
+  mvImmersiveBackgroundAutoScale?: boolean;
   mvImmersiveBackgroundScalePercent?: number;
   mvImmersiveBackgroundOffsetXPercent?: number;
   mvImmersiveBackgroundOffsetYPercent?: number;

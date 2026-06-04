@@ -54,6 +54,7 @@ const fallbackMvSettings: MvSettings = {
   autoApplyThreshold: 0.7,
   preferHighestViewCount: false,
   immersiveBackground: true,
+  immersiveBackgroundAutoScale: true,
   immersiveBackgroundScalePercent: 115,
   immersiveBackgroundOffsetXPercent: 50,
   immersiveBackgroundOffsetYPercent: 50,
@@ -207,6 +208,7 @@ const mvSettingsKeys = [
   'autoApplyThreshold',
   'preferHighestViewCount',
   'immersiveBackground',
+  'immersiveBackgroundAutoScale',
   'immersiveBackgroundScalePercent',
   'immersiveBackgroundOffsetXPercent',
   'immersiveBackgroundOffsetYPercent',
@@ -237,6 +239,35 @@ const mvReloadSettingsKeys = [
 type PlaybackSeekedDetail = {
   positionSeconds?: unknown;
   trackId?: unknown;
+};
+
+type ImmersiveBackgroundBounds = {
+  width: number;
+  height: number;
+};
+
+type ImmersiveVideoSize = {
+  width: number;
+  height: number;
+};
+
+const clampImmersiveAutoScale = (value: number): number => Math.max(1, Math.min(3.5, value));
+
+const calculateImmersiveAutoScale = (
+  bounds: ImmersiveBackgroundBounds | null,
+  videoSize: ImmersiveVideoSize | null,
+): number => {
+  if (!bounds || !videoSize || bounds.width <= 0 || bounds.height <= 0 || videoSize.width <= 0 || videoSize.height <= 0) {
+    return 1;
+  }
+
+  const coverScale = Math.max(bounds.width / videoSize.width, bounds.height / videoSize.height);
+  const containScale = Math.min(bounds.width / videoSize.width, bounds.height / videoSize.height);
+  if (!Number.isFinite(coverScale) || !Number.isFinite(containScale) || containScale <= 0) {
+    return 1;
+  }
+
+  return clampImmersiveAutoScale(coverScale / containScale);
 };
 
 const isObjectPatch = (value: unknown): value is Record<string, unknown> =>
@@ -641,11 +672,14 @@ export const MvPanel = ({
   const [isUnavailableNoticeDismissed, setUnavailableNoticeDismissed] = useState(false);
   const [isDiagnosticsReportEnabled, setDiagnosticsReportEnabled] = useState(readMvDiagnosticsEnabled);
   const [hasCopiedDiagnosticsReport, setHasCopiedDiagnosticsReport] = useState(false);
+  const [immersiveBackgroundBounds, setImmersiveBackgroundBounds] = useState<ImmersiveBackgroundBounds | null>(null);
+  const [immersiveVideoSize, setImmersiveVideoSize] = useState<ImmersiveVideoSize | null>(null);
   const requestRef = useRef(0);
   const preloadAttemptRef = useRef<string | null>(null);
   const lastVideoSyncAtRef = useRef(0);
   const videoSeekingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const backgroundRef = useRef<HTMLDivElement | null>(null);
   const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
   const backgroundDragRef = useRef<{
     startX: number;
@@ -1077,6 +1111,64 @@ export const MvPanel = ({
       });
   const temporaryPlaybackNotice = showVideo && selectedVideo?.temporary ? t('mvPanel.status.temporaryPlayback') : null;
   const mvNotice = unavailableReason ?? temporaryPlaybackNotice;
+
+  const updateImmersiveVideoSize = useCallback(
+    (video: HTMLVideoElement | null): void => {
+      const width = Math.round(video?.videoWidth || selectedVideo?.width || 0);
+      const height = Math.round(video?.videoHeight || selectedVideo?.height || 0);
+      setImmersiveVideoSize((current) => {
+        if (width <= 0 || height <= 0) {
+          return current;
+        }
+        if (current?.width === width && current.height === height) {
+          return current;
+        }
+        return { width, height };
+      });
+    },
+    [selectedVideo?.height, selectedVideo?.width],
+  );
+
+  useEffect(() => {
+    const width = Math.round(selectedVideo?.width ?? 0);
+    const height = Math.round(selectedVideo?.height ?? 0);
+    setImmersiveVideoSize(width > 0 && height > 0 ? { width, height } : null);
+  }, [selectedVideo?.height, selectedVideo?.id, selectedVideo?.width, videoMediaUrl]);
+
+  useEffect(() => {
+    if (!showImmersiveBackground) {
+      setImmersiveBackgroundBounds(null);
+      return undefined;
+    }
+
+    const updateBounds = (): void => {
+      const rect = backgroundRef.current?.getBoundingClientRect();
+      const width = Math.round(rect?.width || window.innerWidth || 0);
+      const height = Math.round(rect?.height || window.innerHeight || 0);
+      setImmersiveBackgroundBounds((current) => {
+        if (width <= 0 || height <= 0) {
+          return current;
+        }
+        if (current?.width === width && current.height === height) {
+          return current;
+        }
+        return { width, height };
+      });
+    };
+
+    updateBounds();
+    const ResizeObserverCtor = window.ResizeObserver;
+    const resizeObserver = ResizeObserverCtor ? new ResizeObserverCtor(updateBounds) : null;
+    if (resizeObserver && backgroundRef.current) {
+      resizeObserver.observe(backgroundRef.current);
+    }
+    window.addEventListener('resize', updateBounds);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateBounds);
+    };
+  }, [showImmersiveBackground]);
+
   const mvDiagnosticsReport = useMemo(() => {
     if (!isDiagnosticsReportEnabled || hasVisibleMvSurface) {
       return null;
@@ -1188,16 +1280,25 @@ export const MvPanel = ({
   }, [isUnavailableNoticeDismissed, mvNotice]);
 
   const immersiveBackgroundStyle = useMemo(
-    () =>
-      ({
-        '--mv-immersive-scale': ((settings.immersiveBackgroundScalePercent ?? 115) / 100).toFixed(2),
+    () => {
+      const manualScale = (settings.immersiveBackgroundScalePercent ?? 115) / 100;
+      const autoScale = settings.immersiveBackgroundAutoScale === false
+        ? 1
+        : calculateImmersiveAutoScale(immersiveBackgroundBounds, immersiveVideoSize);
+      return ({
+        '--mv-immersive-scale': (manualScale * autoScale).toFixed(2),
+        '--mv-immersive-auto-scale': autoScale.toFixed(2),
         '--mv-immersive-position-x': `${settings.immersiveBackgroundOffsetXPercent ?? 50}%`,
         '--mv-immersive-position-y': `${settings.immersiveBackgroundOffsetYPercent ?? 50}%`,
         '--mv-immersive-blur': `${settings.immersiveBackgroundBlurPx ?? 0}px`,
         '--mv-immersive-brightness': `${settings.immersiveBackgroundBrightnessPercent ?? 100}%`,
         '--mv-immersive-overlay-opacity': ((settings.immersiveBackgroundOverlayOpacityPercent ?? 0) / 100).toFixed(2),
-      }) as CSSProperties,
+      }) as CSSProperties;
+    },
     [
+      immersiveBackgroundBounds,
+      immersiveVideoSize,
+      settings.immersiveBackgroundAutoScale,
       settings.immersiveBackgroundBlurPx,
       settings.immersiveBackgroundBrightnessPercent,
       settings.immersiveBackgroundOffsetXPercent,
@@ -1570,8 +1671,10 @@ export const MvPanel = ({
 
       {showImmersiveBackground ? (
         <div
+          ref={backgroundRef}
           className="lyrics-mv-background"
           aria-hidden="true"
+          data-auto-scale={settings.immersiveBackgroundAutoScale === false ? 'false' : 'true'}
           data-provider={showYouTubeImmersiveBackground ? 'youtube' : undefined}
           data-lyrics-readability={isLyricsReadabilityEnhanced ? 'true' : undefined}
           style={immersiveBackgroundStyle}
@@ -1617,6 +1720,7 @@ export const MvPanel = ({
               loop
               muted
               onLoadedMetadata={(event) => {
+                updateImmersiveVideoSize(event.currentTarget);
                 applyVideoPlaybackRate(event.currentTarget);
                 syncVideoToAudio({ force: true, bypassCooldown: true });
                 if (isAudioPlayingRef.current) {

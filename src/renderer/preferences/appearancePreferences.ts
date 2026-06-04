@@ -23,6 +23,7 @@ export const defaultAppearancePreferences: AppearancePreferences = {
   baseFontSize: 14,
   lineHeight: 1.35,
   textDepth: 62,
+  albumCoverShape: 'rounded',
 };
 
 const childrenDoodleDefaultFontPreferences = {
@@ -51,6 +52,9 @@ const normalizeFontPath = (value: unknown): string | null => {
   return normalized || null;
 };
 
+const normalizeAlbumCoverShape = (value: unknown): AppearancePreferences['albumCoverShape'] =>
+  value === 'square' ? 'square' : 'rounded';
+
 const normalizePreferences = (value: Partial<AppearancePreferences>): AppearancePreferences => ({
   mainFontFamily: normalizeFontName(value.mainFontFamily, defaultAppearancePreferences.mainFontFamily),
   mainFontFilePath: normalizeFontPath(value.mainFontFilePath),
@@ -61,6 +65,7 @@ const normalizePreferences = (value: Partial<AppearancePreferences>): Appearance
   baseFontSize: clamp(Number(value.baseFontSize) || defaultAppearancePreferences.baseFontSize, 12, 18),
   lineHeight: clamp(Number(value.lineHeight) || defaultAppearancePreferences.lineHeight, 1.1, 1.8),
   textDepth: clamp(Number(value.textDepth) || defaultAppearancePreferences.textDepth, 35, 100),
+  albumCoverShape: normalizeAlbumCoverShape(value.albumCoverShape),
 });
 
 const hasDefaultFontPreferences = (preferences: AppearancePreferences): boolean =>
@@ -157,9 +162,11 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences): 
     'sans-serif',
   ].join(', ');
 
+  root.dataset.albumCoverShape = normalized.albumCoverShape;
   root.style.setProperty('--echo-font-family', fontStack);
   root.style.setProperty('--echo-base-font-size', `${normalized.baseFontSize}px`);
   root.style.setProperty('--echo-ui-line-height', normalized.lineHeight.toFixed(2));
+  root.style.setProperty('--echo-album-cover-radius', normalized.albumCoverShape === 'square' ? '0px' : '12px');
   root.style.setProperty('--color-text', `hsl(214 ${isDarkTheme ? 24 : 30}% ${textLightness.toFixed(1)}%)`);
   root.style.setProperty('--color-muted', `hsl(214 ${isDarkTheme ? 14 : 18}% ${mutedLightness.toFixed(1)}%)`);
   root.style.setProperty('--color-subtle', `hsl(214 ${isDarkTheme ? 10 : 14}% ${subtleLightness.toFixed(1)}%)`);

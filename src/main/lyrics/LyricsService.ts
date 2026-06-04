@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, writeFileSync } from 'node:fs';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import electron from 'electron';
 import type { EchoDatabase } from '../database/createDatabase';
 import { getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
@@ -58,6 +58,7 @@ type LyricsSettings = Pick<
   | 'lyricsAutoAcceptScore'
   | 'lyricsCoverAutoAcceptScore'
   | 'lyricsDefaultOffsetMs'
+  | 'lyricsAutoSaveSidecarEnabled'
   | 'lyricsRomanizationEnabled'
   | 'lyricsUtatenKanaEnabled'
   | 'lyricsTranslationEnabled'
@@ -445,6 +446,31 @@ const lyricsToEmbeddableText = (
   return null;
 };
 
+const lyricsToSidecarText = (lyrics: TrackLyrics): { text: string; extension: '.lrc' | '.ttml' | '.txt' } | null => {
+  const syncedText = lyrics.syncedText?.trim() || syncedLinesToText(lyrics);
+  if (syncedText) {
+    return {
+      text: syncedText,
+      extension: /<tt(?:\s|>)/iu.test(syncedText) ? '.ttml' : '.lrc',
+    };
+  }
+
+  const plainText = lyrics.plainText?.trim() || plainLinesToText(lyrics);
+  return plainText ? { text: plainText, extension: '.txt' } : null;
+};
+
+const shouldAutoSaveSidecarLyrics = (query: LyricsQuery, lyrics: TrackLyrics): boolean =>
+  Boolean(query.filePath) &&
+  query.mediaType !== 'remote' &&
+  query.mediaType !== 'streaming' &&
+  lyrics.kind !== 'empty' &&
+  lyrics.kind !== 'instrumental' &&
+  lyrics.provider !== 'local' &&
+  lyrics.provider !== 'cached' &&
+  lyrics.provider !== 'none';
+
+const sidecarLyricsExtensions = ['.lrc', '.ttml', '.txt'] as const;
+
 const shouldDelayEmbeddedLyricsWriteForAudio = async (filePath: string): Promise<boolean> => {
   try {
     const { getAudioSession } = await import('../audio/AudioSession');
@@ -670,6 +696,7 @@ const safeSettings = (readSettings: () => AppSettings): LyricsSettings => {
         ? Math.max(0.5, Math.min(1, Number(settings.lyricsCoverAutoAcceptScore)))
         : (defaultSettings.lyricsCoverAutoAcceptScore ?? 0.97),
       lyricsDefaultOffsetMs: clampOffset(Number(settings.lyricsDefaultOffsetMs ?? 0)),
+      lyricsAutoSaveSidecarEnabled: settings.lyricsAutoSaveSidecarEnabled === true,
       lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled !== false,
       lyricsUtatenKanaEnabled: settings.lyricsUtatenKanaEnabled === true,
       lyricsTranslationEnabled: settings.lyricsTranslationEnabled !== false,
@@ -687,6 +714,7 @@ const safeSettings = (readSettings: () => AppSettings): LyricsSettings => {
       lyricsAutoAcceptScore: defaultSettings.lyricsAutoAcceptScore,
       lyricsCoverAutoAcceptScore: defaultSettings.lyricsCoverAutoAcceptScore ?? 0.97,
       lyricsDefaultOffsetMs: defaultSettings.lyricsDefaultOffsetMs,
+      lyricsAutoSaveSidecarEnabled: defaultSettings.lyricsAutoSaveSidecarEnabled === true,
       lyricsRomanizationEnabled: defaultSettings.lyricsRomanizationEnabled,
       lyricsUtatenKanaEnabled: defaultSettings.lyricsUtatenKanaEnabled === true,
       lyricsTranslationEnabled: defaultSettings.lyricsTranslationEnabled,
@@ -1329,7 +1357,41 @@ export class LyricsService {
       );
 
     const row = this.database.prepare<[string], LyricsCacheRow>('SELECT * FROM lyrics_cache WHERE cache_key = ?').get(cacheKey);
-    return this.mapCacheRow(row!);
+    const cached = this.mapCacheRow(row!);
+    this.autoSaveSidecarLyrics(query, cached, settings);
+    return cached;
+  }
+
+  private autoSaveSidecarLyrics(query: LyricsQuery, lyrics: TrackLyrics, settings: LyricsSettings): void {
+    if (!settings.lyricsAutoSaveSidecarEnabled || !shouldAutoSaveSidecarLyrics(query, lyrics) || !query.filePath) {
+      return;
+    }
+
+    const sidecar = lyricsToSidecarText(lyrics);
+    if (!sidecar) {
+      return;
+    }
+
+    const audioFolder = dirname(query.filePath);
+    const audioBaseName = basename(query.filePath, extname(query.filePath));
+    const existingSidecarPath = sidecarLyricsExtensions
+      .map((extension) => join(audioFolder, `${audioBaseName}${extension}`))
+      .find((candidatePath) => existsSync(candidatePath));
+    if (existingSidecarPath) {
+      return;
+    }
+
+    const targetPath = join(audioFolder, `${audioBaseName}${sidecar.extension}`);
+    try {
+      writeFileSync(targetPath, `${sidecar.text.trim()}\n`, 'utf8');
+    } catch (error) {
+      console.warn('[lyrics] Failed to auto-save sidecar lyrics', {
+        trackId: query.trackId,
+        targetPath,
+        provider: lyrics.provider,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private upsertCandidateWithRepair(trackId: string, candidate: LyricsSearchCandidate, raw: unknown): StoredCandidate {

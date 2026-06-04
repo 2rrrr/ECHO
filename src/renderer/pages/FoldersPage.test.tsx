@@ -354,6 +354,45 @@ describe('FoldersPage', () => {
     expect(libraryMock.getFolderChildren).not.toHaveBeenCalled();
   });
 
+  it('restores the expanded local tree and selected folder after a cold restart', async () => {
+    const firstRender = renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    fireEvent.click(screen.getByRole('button', { name: /Music/i }).querySelector('.folder-expand-hit')!);
+    const rockButton = (await screen.findByText('Rock')).closest('button');
+    expect(rockButton).toBeTruthy();
+    fireEvent.click(rockButton!);
+
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music\\Rock',
+        }),
+      ),
+    );
+    expect(window.localStorage.getItem('echo-next.local-folder-tree-view.v1')).toContain('D:\\\\Music\\\\Rock');
+
+    firstRender.unmount();
+    __resetFoldersPageSessionForTests();
+    libraryMock.getFolderChildren.mockClear();
+    libraryMock.getFolderTracks.mockClear();
+
+    renderFoldersPage();
+
+    const restoredRockButton = (await screen.findByText('Rock')).closest('button');
+    expect(restoredRockButton?.getAttribute('data-active')).toBe('true');
+    await waitFor(() => expect(libraryMock.getFolderChildren).toHaveBeenCalledWith({ folderId: 'folder-1', parentPath: 'D:\\Music' }));
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music\\Rock',
+        }),
+      ),
+    );
+  });
+
   it('ignores Escape folder-up navigation while the folders page is hidden', async () => {
     const { container } = renderFoldersPage();
 

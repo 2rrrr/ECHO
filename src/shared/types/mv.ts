@@ -35,6 +35,7 @@ export type MvSettings = {
   autoApplyThreshold?: number;
   preferHighestViewCount?: boolean;
   immersiveBackground?: boolean;
+  immersiveBackgroundAutoScale?: boolean;
   immersiveBackgroundScalePercent?: number;
   immersiveBackgroundOffsetXPercent?: number;
   immersiveBackgroundOffsetYPercent?: number;

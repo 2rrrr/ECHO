@@ -180,6 +180,7 @@
 }
 
 .album-primary-action,
+.album-secondary-action,
 .album-icon-action,
 .album-load-more {
   display: inline-flex;
@@ -206,6 +207,15 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
+.album-secondary-action {
+  gap: 8px;
+  min-width: 112px;
+  min-height: 36px;
+  padding: 0 15px;
+  border-radius: 999px;
+  box-shadow: var(--echo-polish-shadow-row);
+}
+
 .album-icon-action {
   width: 36px;
   height: 36px;
@@ -215,7 +225,8 @@
   box-shadow: var(--echo-polish-shadow-row);
 }
 
-.album-primary-action:disabled {
+.album-primary-action:disabled,
+.album-secondary-action:disabled {
   cursor: default;
   opacity: 0.56;
 }

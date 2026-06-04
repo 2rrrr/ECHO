@@ -43,6 +43,14 @@ const tabs: Array<{ key: StreamingMediaType; labelKey: Parameters<typeof transla
   { key: 'playlist', labelKey: 'streaming.tab.playlist' },
 ];
 type QualityPreference = StreamingQualityPreference;
+type AlbumDownloadState = {
+  albumId: string;
+  title: string;
+  total: number;
+  queued: number;
+  failedToQueue: number;
+  jobIds: string[];
+};
 
 const qualities: Array<{ key: QualityPreference; labelKey: Parameters<typeof translateCurrentLocale>[0]; descriptionKey: Parameters<typeof translateCurrentLocale>[0] }> = [
   { key: 'lossless', labelKey: 'streaming.quality.lossless', descriptionKey: 'streaming.quality.losslessDescription' },
@@ -61,6 +69,7 @@ const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 
 const favoriteProviders = new Set<StreamingProviderName>(['bilibili', 'youtube', 'soundcloud']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
 const providerCacheTtlMs = 30_000;
+const albumDownloadQueueYieldMs = 90;
 const emptyTracks: StreamingTrack[] = [];
 const emptyAlbums: StreamingAlbum[] = [];
 const emptyArtists: StreamingArtist[] = [];
@@ -133,6 +142,21 @@ const statusText = (provider: StreamingProviderDescriptor): string => {
 };
 
 const qualityToPlaybackQuality = (quality: QualityPreference): StreamingAudioQuality => quality;
+
+const activeDownloadStatuses = new Set<DownloadJobStatus>([
+  'queued',
+  'probing',
+  'downloading',
+  'extracting_audio',
+  'importing',
+  'binding_mv',
+]);
+
+const sleep = (delayMs: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, delayMs));
+
+const showChromeNotice = (message: string): void => {
+  window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: message }));
+};
 
 const downloadStatusLabels: Record<DownloadJobStatus, string> = {
   queued: '排队中',
@@ -314,6 +338,7 @@ export const StreamingSearchPage = (): JSX.Element => {
   const [downloadingTrackKey, setDownloadingTrackKey] = useState<string | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
   const [downloadJobIdsByTrackKey, setDownloadJobIdsByTrackKey] = useState<Record<string, string>>({});
+  const [albumDownload, setAlbumDownload] = useState<AlbumDownloadState | null>(null);
   const [favoriteTrackIds, setFavoriteTrackIds] = useState<Record<string, boolean>>({});
   const [favoriteTrackKey, setFavoriteTrackKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -327,6 +352,8 @@ export const StreamingSearchPage = (): JSX.Element => {
   const resultRef = useRef<StreamingSearchResult | null>(initialResult);
   const listRef = useRef<HTMLDivElement | null>(null);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
+  const albumDownloadRunIdRef = useRef(0);
+  const lastAlbumDownloadNoticeRef = useRef<string | null>(null);
   const restoredResultKeyRef = useRef<string | null>(
     initialResult && initialResult.provider === initialProvider && initialResult.query.trim() === initialMemory.query.trim()
       ? streamingSearchResultKey(initialProvider, initialMemory.query, initialMemory.activeTab)
@@ -357,6 +384,7 @@ export const StreamingSearchPage = (): JSX.Element => {
   const albums = result?.albums ?? emptyAlbums;
   const artists = result?.artists ?? emptyArtists;
   const playlists = result?.playlists ?? emptyPlaylists;
+  const visibleKnownTracks = useMemo(() => [...tracks, ...(selectedAlbumDetail?.tracks ?? emptyTracks)], [selectedAlbumDetail?.tracks, tracks]);
   const resultCount = activeTab === 'album' ? albums.length : activeTab === 'artist' ? artists.length : activeTab === 'playlist' ? playlists.length : tracks.length;
   const activeTabLabel = t(tabs.find((tab) => tab.key === activeTab)?.labelKey ?? 'streaming.tab.track');
   const resultSummary = query
@@ -742,14 +770,41 @@ export const StreamingSearchPage = (): JSX.Element => {
         const matchedTrackKey = trackedEntries.find(([, jobId]) => jobId === job.id)?.[0];
         if (matchedTrackKey) {
           notifiedDownloadJobIdsRef.current.add(job.id);
-          const matchedTrack = tracks.find((track) => track.stableKey === matchedTrackKey);
+          const matchedTrack = visibleKnownTracks.find((track) => track.stableKey === matchedTrackKey);
           setActionError(null);
           setActionMessage(`下载成功：${job.title ?? matchedTrack?.title ?? job.sourceUrl}`);
           break;
         }
       }
+
+      if (albumDownload?.jobIds.length) {
+        const albumJobs = albumDownload.jobIds
+          .map((jobId) => nextJobs.find((job) => job.id === jobId) ?? null)
+          .filter((job): job is DownloadJob => Boolean(job));
+        const completedCount = albumJobs.filter((job) => job.status === 'completed').length;
+        const failedCount = albumDownload.failedToQueue + albumJobs.filter((job) => job.status === 'failed' || job.status === 'cancelled').length;
+        const terminalCount = completedCount + failedCount;
+        const activeJob = albumJobs.find((job) => activeDownloadStatuses.has(job.status)) ?? null;
+        const activeProgress = activeJob ? Math.max(0, Math.min(100, activeJob.progress)) / 100 : 0;
+        const progress = Math.round(Math.max(0, Math.min(100, ((completedCount + activeProgress) / albumDownload.total) * 100)));
+        const notice =
+          terminalCount >= albumDownload.total
+            ? failedCount > 0
+              ? `专辑下载结束：${albumDownload.title}，完成 ${completedCount}/${albumDownload.total}，失败 ${failedCount}`
+              : `专辑下载完成：${albumDownload.title}（${albumDownload.total}/${albumDownload.total}）`
+            : `专辑下载中：${albumDownload.title}，${completedCount}/${albumDownload.total} · ${progress}%`;
+
+        if (lastAlbumDownloadNoticeRef.current !== notice) {
+          lastAlbumDownloadNoticeRef.current = notice;
+          showChromeNotice(notice);
+        }
+
+        if (terminalCount >= albumDownload.total && albumDownload.queued + albumDownload.failedToQueue >= albumDownload.total) {
+          setAlbumDownload(null);
+        }
+      }
     });
-  }, [downloadJobIdsByTrackKey, tracks]);
+  }, [albumDownload, downloadJobIdsByTrackKey, visibleKnownTracks]);
 
   const handleCoverError = useCallback((stableKey: string, coverUrl: string): void => {
     if (coverUrl === defaultCover) {
@@ -956,6 +1011,138 @@ export const StreamingSearchPage = (): JSX.Element => {
     }
   }, [quality]);
 
+  const handleDownloadAlbum = useCallback(async (): Promise<void> => {
+    const detail = selectedAlbumDetail;
+    if (!detail || albumDownload) {
+      return;
+    }
+
+    const downloads = getDownloadsBridge();
+    const streaming = getStreamingBridge();
+    if (!downloads?.createUrlJob || !streaming?.resolvePlayback) {
+      setAlbumDetailError('Desktop download bridge unavailable. Open ECHO Next in Electron to download streaming albums.');
+      showChromeNotice('下载服务不可用：请在 ECHO Next 桌面端使用。');
+      return;
+    }
+
+    const downloadableTracks = detail.tracks.filter((track) =>
+      track.playable &&
+      !unsupportedDownloadProviders.has(track.provider) &&
+      Boolean(streamingTrackWebUrl(track)),
+    );
+
+    if (downloadableTracks.length === 0) {
+      setAlbumDetailError('这张流媒体专辑没有可下载的歌曲。');
+      showChromeNotice(`无法下载专辑：${detail.title}`);
+      return;
+    }
+
+    const runId = albumDownloadRunIdRef.current + 1;
+    albumDownloadRunIdRef.current = runId;
+    lastAlbumDownloadNoticeRef.current = null;
+    const albumSubdirectory = [detail.artist, detail.title].filter(Boolean).join(' - ') || detail.title;
+    let queuedCount = 0;
+    let failedToQueueCount = 0;
+
+    setAlbumDetailError(null);
+    setActionError(null);
+    setActionMessage(null);
+    setAlbumDownload({
+      albumId: detail.id,
+      title: detail.title,
+      total: downloadableTracks.length,
+      queued: 0,
+      failedToQueue: 0,
+      jobIds: [],
+    });
+    showChromeNotice(`准备下载专辑：${detail.title}（0/${downloadableTracks.length}）`);
+
+    for (let index = 0; index < downloadableTracks.length; index += 1) {
+      if (albumDownloadRunIdRef.current !== runId) {
+        return;
+      }
+
+      const track = downloadableTracks[index];
+      const webpageUrl = streamingTrackWebUrl(track);
+      if (!webpageUrl) {
+        failedToQueueCount += 1;
+        setAlbumDownload((current) =>
+          current?.albumId === detail.id
+            ? { ...current, failedToQueue: failedToQueueCount }
+            : current,
+        );
+        continue;
+      }
+
+      setDownloadingTrackKey(track.stableKey);
+      showChromeNotice(`解析专辑：${detail.title}，${index + 1}/${downloadableTracks.length} · ${track.title}`);
+
+      try {
+        const source = await streaming.resolvePlayback({
+          provider: track.provider,
+          providerTrackId: track.providerTrackId,
+          quality: qualityToPlaybackQuality(quality),
+        });
+        const job = await downloads.createUrlJob(source.url, {
+          title: track.title,
+          artist: track.artist,
+          album: track.album || detail.title,
+          albumArtist: track.albumArtist ?? detail.artist ?? track.artist,
+          coverUrl: track.coverUrl ?? track.coverThumb ?? detail.coverUrl ?? detail.coverThumb ?? null,
+          webpageUrl,
+          outputSubdirectory: albumSubdirectory,
+          bindMvAfterImport: false,
+          requestHeaders: source.headers,
+          directAudio: true,
+          directAudioMimeType: source.mimeType,
+          directAudioExtension: source.codec,
+          streamingProvider: track.provider,
+          streamingProviderTrackId: track.providerTrackId,
+          streamingStableKey: track.stableKey,
+          downloadAuthorizationToken: source.downloadAuthorizationToken,
+        });
+
+        queuedCount += 1;
+        setDownloadJobs((current) => (current.some((item) => item.id === job.id) ? current : [job, ...current]));
+        setDownloadJobIdsByTrackKey((current) => ({ ...current, [track.stableKey]: job.id }));
+        setAlbumDownload((current) =>
+          current?.albumId === detail.id
+            ? {
+                ...current,
+                queued: queuedCount,
+                jobIds: current.jobIds.includes(job.id) ? current.jobIds : [...current.jobIds, job.id],
+              }
+            : current,
+        );
+      } catch (downloadError) {
+        failedToQueueCount += 1;
+        setAlbumDownload((current) =>
+          current?.albumId === detail.id
+            ? { ...current, failedToQueue: failedToQueueCount }
+            : current,
+        );
+        setActionError(downloadError instanceof Error ? downloadError.message : '添加专辑下载任务失败');
+      } finally {
+        setDownloadingTrackKey((current) => (current === track.stableKey ? null : current));
+      }
+
+      await sleep(albumDownloadQueueYieldMs);
+    }
+
+    if (albumDownloadRunIdRef.current !== runId) {
+      return;
+    }
+
+    const finalNotice = failedToQueueCount > 0
+      ? `专辑已加入下载队列：${detail.title}，成功 ${queuedCount}/${downloadableTracks.length}，失败 ${failedToQueueCount}`
+      : `专辑已加入下载队列：${detail.title}（${queuedCount}/${downloadableTracks.length}）`;
+    showChromeNotice(finalNotice);
+    setActionMessage(finalNotice);
+    if (queuedCount === 0) {
+      setAlbumDownload(null);
+    }
+  }, [albumDownload, quality, selectedAlbumDetail]);
+
   const handleImportPlaylist = useCallback(async (): Promise<void> => {
     const streaming = getStreamingBridge();
     const url = playlistUrl.trim();
@@ -1140,6 +1327,12 @@ export const StreamingSearchPage = (): JSX.Element => {
     const firstTrack = detailTracks[0] ?? null;
     const qualitySummary = firstTrack?.qualities.join(' / ') || 'Reading signal';
     const currentDetailStableKey = queue.currentTrack?.mediaType === 'streaming' ? queue.currentTrack.stableKey ?? queue.currentTrack.id : null;
+    const downloadableDetailTrackCount = detailTracks.filter((track) =>
+      track.playable &&
+      !unsupportedDownloadProviders.has(track.provider) &&
+      Boolean(streamingTrackWebUrl(track)),
+    ).length;
+    const isAlbumDownloadBusy = Boolean(albumDownload && albumDownload.albumId === album.id);
 
     return (
       <div className={`album-detail-page ${isAlbumReturning ? 'is-returning' : ''}`}>
@@ -1171,6 +1364,17 @@ export const StreamingSearchPage = (): JSX.Element => {
                 {isAlbumDetailLoading ? <Loader2 className="spinning-icon" size={16} /> : <Play size={16} fill="currentColor" />}
                 {isAlbumDetailLoading ? 'Reading album' : 'Play Now'}
               </button>
+              {streamingDownloadActionsEnabled ? (
+                <button
+                  className="album-secondary-action"
+                  type="button"
+                  disabled={isAlbumDetailLoading || downloadableDetailTrackCount === 0 || isAlbumDownloadBusy}
+                  onClick={() => void handleDownloadAlbum()}
+                >
+                  {isAlbumDownloadBusy ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
+                  {isAlbumDownloadBusy ? 'Downloading' : '下载专辑'}
+                </button>
+              ) : null}
             </div>
 
             {albumDetailError ? <p className="album-detail-error">{albumDetailError}</p> : null}
@@ -1211,7 +1415,11 @@ export const StreamingSearchPage = (): JSX.Element => {
                 const isPlaying = currentDetailStableKey === track.stableKey;
                 const isResolving = resolvingTrackKey === track.stableKey;
                 const isQueued = queuedTrackKey === track.stableKey;
+                const downloadJobId = downloadJobIdsByTrackKey[track.stableKey];
+                const downloadJob = downloadJobId ? downloadJobs.find((job) => job.id === downloadJobId) : null;
+                const isDownloading = downloadingTrackKey === track.stableKey || Boolean(downloadJob && activeDownloadStatuses.has(downloadJob.status));
                 const disabled = !track.playable || Boolean(resolvingTrackKey);
+                const downloadProgress = downloadJob ? Math.max(0, Math.min(100, downloadJob.progress)) : 0;
                 const rawCoverSrc = track.coverThumb ?? coverSrc ?? defaultCover;
                 const trackCoverSrc = failedCoverUrls[track.stableKey] === rawCoverSrc ? defaultCover : rawCoverSrc;
 
@@ -1247,7 +1455,31 @@ export const StreamingSearchPage = (): JSX.Element => {
                         {isQueued ? <Check size={16} /> : <ListPlus size={16} />}
                       </button>
                       {renderFavoriteButton(track)}
+                      {streamingDownloadActionsEnabled && !unsupportedDownloadProviders.has(track.provider) ? (
+                        <button type="button" title="下载" onClick={() => void handleDownload(track)} disabled={isDownloading}>
+                          {isDownloading ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
+                        </button>
+                      ) : null}
                     </div>
+                    {isResolving ? <div className="streaming-resolving">正在解析播放地址...</div> : null}
+                    {downloadJob ? (
+                      <div className="streaming-download-progress" data-status={downloadJob.status}>
+                        <div
+                          className="streaming-download-progress-track"
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={Math.round(downloadProgress)}
+                          aria-label="下载进度"
+                        >
+                          <span style={{ width: `${downloadProgress}%` }} />
+                        </div>
+                        <small>
+                          {downloadStatusLabels[downloadJob.status]} · {Math.round(downloadProgress)}%
+                        </small>
+                        {downloadJob.status === 'failed' && downloadJob.error ? <small>{downloadJob.error}</small> : null}
+                      </div>
+                    ) : null}
                   </article>
                 );
               })}

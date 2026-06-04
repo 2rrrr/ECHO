@@ -393,6 +393,11 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '桌面歌词显示翻译' }));
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsTranslationEnabled: false }));
 
+    const opacitySlider = container.querySelector<HTMLInputElement>('.lyrics-desktop-opacity-control input[type="range"]');
+    expect(opacitySlider).toBeTruthy();
+    fireEvent.change(opacitySlider as HTMLInputElement, { target: { value: '72' } });
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsOpacityPercent: 72 }));
+
     fireEvent.click(screen.getByRole('button', { name: /恢复桌面歌词默认字体/ }));
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({
       desktopLyricsFontFamily: 'Microsoft YaHei',

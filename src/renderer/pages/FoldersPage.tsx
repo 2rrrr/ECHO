@@ -93,6 +93,7 @@ const terminalStatuses = new Set<LibraryScanStatus['status']>(['completed', 'fai
 const runningStatuses = new Set<LibraryScanStatus['status']>(['queued', 'running']);
 const folderRootDragMime = 'application/x-echo-folder-root-id';
 const folderRootOrderMemoryKey = 'echo-next.folder-root-order.v1';
+const localFolderTreeViewMemoryKey = 'echo-next.local-folder-tree-view.v1';
 
 const uniqueFolderRootIds = (ids: unknown): string[] => {
   if (!Array.isArray(ids)) {
@@ -138,6 +139,69 @@ const writeFolderRootOrderMemory = (orderedIds: string[]): void => {
     );
   } catch {
     // Folder order memory is a sidebar preference; folder data stays in the library database.
+  }
+};
+
+type LocalFolderTreeViewMemory = {
+  expanded: Record<string, boolean>;
+  selectedKey: string | null;
+};
+
+const emptyLocalFolderTreeViewMemory = (): LocalFolderTreeViewMemory => ({
+  expanded: {},
+  selectedKey: null,
+});
+
+const normalizeFolderTreeExpandedMemory = (value: unknown): Record<string, boolean> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const expanded: Record<string, boolean> = {};
+  for (const [key, isExpanded] of Object.entries(value as Record<string, unknown>)) {
+    if (isExpanded === true && parseTargetKey(key)) {
+      expanded[key] = true;
+    }
+  }
+
+  return expanded;
+};
+
+const readLocalFolderTreeViewMemory = (): LocalFolderTreeViewMemory => {
+  try {
+    const raw = window.localStorage.getItem(localFolderTreeViewMemoryKey);
+    if (!raw) {
+      return emptyLocalFolderTreeViewMemory();
+    }
+
+    const parsed = JSON.parse(raw) as { expanded?: unknown; selectedKey?: unknown };
+    const selectedKey = typeof parsed.selectedKey === 'string' && parseTargetKey(parsed.selectedKey)
+      ? parsed.selectedKey
+      : null;
+    return {
+      expanded: normalizeFolderTreeExpandedMemory(parsed.expanded),
+      selectedKey,
+    };
+  } catch {
+    return emptyLocalFolderTreeViewMemory();
+  }
+};
+
+const writeLocalFolderTreeViewMemory = (
+  expanded: Record<string, boolean>,
+  selected: Pick<FolderTarget, 'folderId' | 'path'> | null,
+): void => {
+  try {
+    window.localStorage.setItem(
+      localFolderTreeViewMemoryKey,
+      JSON.stringify({
+        version: 1,
+        expanded: normalizeFolderTreeExpandedMemory(expanded),
+        selectedKey: selected ? targetKey(selected.folderId, selected.path) : null,
+      }),
+    );
+  } catch {
+    // Folder tree memory is a view preference and must not block library browsing.
   }
 };
 
@@ -271,6 +335,18 @@ const localParentPath = (rootPath: string, currentPath: string): string | null =
 
   const parent = trimmedCurrent.slice(0, slashIndex);
   return isSameLocalPath(rootPath, parent) ? rootPath : parent;
+};
+
+const localAncestorPaths = (rootPath: string, currentPath: string): string[] => {
+  const paths: string[] = [];
+  let parent = localParentPath(rootPath, currentPath);
+
+  while (parent) {
+    paths.push(parent);
+    parent = localParentPath(rootPath, parent);
+  }
+
+  return paths.reverse();
 };
 
 const shouldIgnoreEscapeTarget = (target: EventTarget | null): boolean => {
@@ -562,7 +638,10 @@ export const FoldersPage = (): JSX.Element => {
   const [childrenByParent, setChildrenByParentState] = useState<Record<string, LibraryFolderNode[]>>(
     () => localFolderTreeSession.childrenByParent,
   );
-  const [expanded, setExpandedState] = useState<Record<string, boolean>>(() => localFolderTreeSession.expanded);
+  const [expanded, setExpandedState] = useState<Record<string, boolean>>(() => ({
+    ...readLocalFolderTreeViewMemory().expanded,
+    ...localFolderTreeSession.expanded,
+  }));
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<FolderTarget | null>(null);
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
@@ -613,6 +692,7 @@ export const FoldersPage = (): JSX.Element => {
   const trackRequestIdRef = useRef(0);
   const bulkRequestIdRef = useRef(0);
   const refreshedTerminalScanIdsRef = useRef<Set<string>>(new Set());
+  const pendingLocalSelectionKeyRef = useRef<string | null>(readLocalFolderTreeViewMemory().selectedKey);
   const remoteIndexedRefreshRef = useRef<{ key: string | null; jobUpdatedAt: string | null; refreshedAt: number; syncStatus: RemoteSyncStatus['status'] | null }>({
     key: null,
     jobUpdatedAt: null,
@@ -759,10 +839,35 @@ export const FoldersPage = (): JSX.Element => {
     try {
       const nextOverviews = await library.getFolderOverviews();
       setOverviews(nextOverviews);
+      const pendingSelectionKey = pendingLocalSelectionKeyRef.current;
+      const pendingSelection = pendingSelectionKey ? parseTargetKey(pendingSelectionKey) : null;
+      const pendingSelectionRoot = pendingSelection
+        ? nextOverviews.find((overview) => overview.id === pendingSelection.folderId)
+        : null;
+      if (pendingSelection && pendingSelectionRoot && !isSameLocalPath(pendingSelectionRoot.path, pendingSelection.path)) {
+        setExpanded((expandedCurrent) => {
+          const nextExpanded = { ...expandedCurrent };
+          for (const ancestorPath of localAncestorPaths(pendingSelectionRoot.path, pendingSelection.path)) {
+            nextExpanded[targetKey(pendingSelectionRoot.id, ancestorPath)] = true;
+          }
+          return nextExpanded;
+        });
+      }
       setSelected((current) => {
         if (current && nextOverviews.some((overview) => overview.id === current.folderId)) {
           const root = nextOverviews.find((overview) => overview.id === current.folderId)!;
           return current.path === root.path ? overviewToTarget(root) : current;
+        }
+
+        if (pendingSelection) {
+          if (!pendingSelectionRoot) {
+            pendingLocalSelectionKeyRef.current = null;
+          } else if (isSameLocalPath(pendingSelectionRoot.path, pendingSelection.path)) {
+            pendingLocalSelectionKeyRef.current = null;
+            return overviewToTarget(pendingSelectionRoot);
+          }
+
+          return null;
         }
 
         const orderedNextOverviews = orderFolderOverviews(nextOverviews, readFolderRootOrderMemory());
@@ -1086,6 +1191,54 @@ export const FoldersPage = (): JSX.Element => {
       }
     }
   }, [childrenByParent, expanded, loadChildren, loadingChildren]);
+
+  useEffect(() => {
+    const pendingSelectionKey = pendingLocalSelectionKeyRef.current;
+    if (!pendingSelectionKey || mode !== 'local') {
+      return;
+    }
+
+    const pendingSelection = parseTargetKey(pendingSelectionKey);
+    if (!pendingSelection) {
+      pendingLocalSelectionKeyRef.current = null;
+      return;
+    }
+
+    const root = overviews.find((overview) => overview.id === pendingSelection.folderId);
+    if (!root) {
+      return;
+    }
+
+    if (isSameLocalPath(root.path, pendingSelection.path)) {
+      pendingLocalSelectionKeyRef.current = null;
+      setSelected(overviewToTarget(root));
+      return;
+    }
+
+    const restoredNode = Object.values(childrenByParent)
+      .flat()
+      .find((node) => node.folderId === pendingSelection.folderId && isSameLocalPath(node.path, pendingSelection.path));
+    if (restoredNode) {
+      pendingLocalSelectionKeyRef.current = null;
+      setSelected(nodeToTarget(restoredNode, root));
+      return;
+    }
+
+    const ancestorKeys = localAncestorPaths(root.path, pendingSelection.path).map((path) => targetKey(root.id, path));
+    const ancestorsLoaded = ancestorKeys.every((key) => childrenByParent[key] || loadingChildren[key] === false);
+    if (ancestorsLoaded) {
+      pendingLocalSelectionKeyRef.current = null;
+      setSelected(overviewToTarget(root));
+    }
+  }, [childrenByParent, loadingChildren, mode, overviews]);
+
+  useEffect(() => {
+    if (mode !== 'local' || (pendingLocalSelectionKeyRef.current && !selected)) {
+      return;
+    }
+
+    writeLocalFolderTreeViewMemory(expanded, selected);
+  }, [expanded, mode, selected]);
 
   const loadTracks = useCallback(
     async (nextPage: number, loadMode: 'replace' | 'append'): Promise<void> => {

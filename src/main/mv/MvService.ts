@@ -558,6 +558,10 @@ const normalizeSettingsPatch = (patch: Partial<MvSettings>): Partial<MvSettings>
     normalized.immersiveBackground = patch.immersiveBackground;
   }
 
+  if (typeof patch.immersiveBackgroundAutoScale === 'boolean') {
+    normalized.immersiveBackgroundAutoScale = patch.immersiveBackgroundAutoScale;
+  }
+
   if (typeof patch.immersiveBackgroundScalePercent === 'number' && Number.isFinite(patch.immersiveBackgroundScalePercent)) {
     normalized.immersiveBackgroundScalePercent = normalizePercent(patch.immersiveBackgroundScalePercent, 115, 100, 220);
   }
@@ -614,6 +618,7 @@ const appSettingsToMvSettings = (): MvSettings => {
     autoApplyThreshold: normalizeAutoApplyThreshold(settings.mvAutoApplyThreshold),
     preferHighestViewCount: settings.mvPreferHighestViewCount === true,
     immersiveBackground: settings.mvImmersiveBackground !== false,
+    immersiveBackgroundAutoScale: settings.mvImmersiveBackgroundAutoScale !== false,
     immersiveBackgroundScalePercent: normalizePercent(settings.mvImmersiveBackgroundScalePercent, 115, 100, 220),
     immersiveBackgroundOffsetXPercent: normalizePercent(settings.mvImmersiveBackgroundOffsetXPercent, 50, 0, 100),
     immersiveBackgroundOffsetYPercent: normalizePercent(settings.mvImmersiveBackgroundOffsetYPercent, 50, 0, 100),
@@ -708,6 +713,9 @@ export class MvService {
     }
     if (typeof normalized.immersiveBackground === 'boolean') {
       appSettingsPatch.mvImmersiveBackground = normalized.immersiveBackground;
+    }
+    if (typeof normalized.immersiveBackgroundAutoScale === 'boolean') {
+      appSettingsPatch.mvImmersiveBackgroundAutoScale = normalized.immersiveBackgroundAutoScale;
     }
     if (typeof normalized.immersiveBackgroundScalePercent === 'number') {
       appSettingsPatch.mvImmersiveBackgroundScalePercent = normalized.immersiveBackgroundScalePercent;

@@ -195,6 +195,9 @@ describe('theme presets stylesheet', () => {
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-back-button {\n  position: relative;\n  z-index: 80;');
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-line[data-active="true"] span');
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-track-header');
+    expect(css).toMatch(
+      /html\[data-theme-preset="FINAL"\] \.app-shell--lyrics-player-drawer \.lyrics-page\[data-view-mode="lyrics"\] > \.lyrics-track-header-floating \{\r?\n  border-color: transparent !important;\r?\n  background: transparent !important;\r?\n  box-shadow: none !important;/,
+    );
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-back-button {\n  position: absolute;\n  top: max(18px, calc(var(--titlebar-height) + 8px));\n  left: 22px;\n  z-index: 80;');
     expect(css).toContain('pointer-events: auto;');
     expect(css).toContain('-webkit-app-region: no-drag !important;');

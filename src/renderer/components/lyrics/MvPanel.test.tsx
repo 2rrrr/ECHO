@@ -1002,6 +1002,25 @@ describe('MvPanel', () => {
     expect(background.style.getPropertyValue('--mv-immersive-overlay-opacity')).toBe('0.35');
   });
 
+  it('auto scales immersive MV backgrounds from the video aspect ratio', async () => {
+    const { container } = renderPanel(makeVideo({ width: 1920, height: 1080 }), true, {
+      ...defaultMvSettings,
+      immersiveBackground: true,
+      immersiveBackgroundAutoScale: true,
+      immersiveBackgroundScalePercent: 100,
+    });
+
+    const background = await waitFor(() => {
+      const element = container.querySelector('.lyrics-mv-background') as HTMLElement | null;
+      expect(element).toBeTruthy();
+      expect(Number(element!.style.getPropertyValue('--mv-immersive-auto-scale'))).toBeGreaterThan(1);
+      return element!;
+    });
+
+    expect(background.dataset.autoScale).toBe('true');
+    expect(Number(background.style.getPropertyValue('--mv-immersive-scale'))).toBeGreaterThan(1);
+  });
+
   it('marks the immersive MV background when lyrics readability enhancement is enabled', async () => {
     const { container } = renderPanel(makeVideo(), true, {
       ...defaultMvSettings,

@@ -126,6 +126,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsAutoAcceptScore).toBe(0.5);
     expect(settings.lyricsBackfillAutoAcceptScore).toBe(0.45);
     expect(settings.lyricsRestartOnApplyEnabled).toBe(false);
+    expect(settings.lyricsAutoSaveSidecarEnabled).toBe(false);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
     expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
     expect(settings.lyricsTimelineCorrectionEnabled).toBe(true);
@@ -175,6 +176,7 @@ describe('app settings normalization', () => {
     expect(settings.mvAutoApplyThreshold).toBe(0.7);
     expect(settings.mvPreferHighestViewCount).toBe(false);
     expect(settings.mvImmersiveBackground).toBe(true);
+    expect(settings.mvImmersiveBackgroundAutoScale).toBe(true);
     expect(settings.mvImmersiveBackgroundScalePercent).toBe(115);
     expect(settings.mvImmersiveBackgroundOffsetXPercent).toBe(50);
     expect(settings.mvImmersiveBackgroundOffsetYPercent).toBe(50);
@@ -1394,6 +1396,7 @@ describe('app settings normalization', () => {
         lyricsAutoSearch: false,
         lyricsAutoAcceptScore: 2,
         lyricsBackfillAutoAcceptScore: 2,
+        lyricsAutoSaveSidecarEnabled: true,
         lyricsDefaultOffsetMs: -24000,
         lyricsGlobalSyncOffsetMs: 24000,
         lyricsTimelineCorrectionEnabled: false,
@@ -1442,6 +1445,7 @@ describe('app settings normalization', () => {
       lyricsAutoSearch: false,
       lyricsAutoAcceptScore: 1,
       lyricsBackfillAutoAcceptScore: 0.95,
+      lyricsAutoSaveSidecarEnabled: true,
       lyricsDefaultOffsetMs: -10000,
       lyricsGlobalSyncOffsetMs: 1000,
       lyricsTimelineCorrectionEnabled: false,
@@ -1649,6 +1653,7 @@ describe('app settings normalization', () => {
         mvAutoApplyThreshold: 0.82,
         mvPreferHighestViewCount: true,
         mvImmersiveBackground: false,
+        mvImmersiveBackgroundAutoScale: false,
         mvImmersiveBackgroundScalePercent: 180,
         mvImmersiveBackgroundOffsetXPercent: 18,
         mvImmersiveBackgroundOffsetYPercent: 76,
@@ -1669,6 +1674,7 @@ describe('app settings normalization', () => {
       mvAutoApplyThreshold: 0.82,
       mvPreferHighestViewCount: true,
       mvImmersiveBackground: false,
+      mvImmersiveBackgroundAutoScale: false,
       mvImmersiveBackgroundScalePercent: 180,
       mvImmersiveBackgroundOffsetXPercent: 18,
       mvImmersiveBackgroundOffsetYPercent: 76,
@@ -1687,6 +1693,7 @@ describe('app settings normalization', () => {
         mvAutoApplyThreshold: 0.1,
         mvMaxQuality: '8k' as never,
         mvImmersiveBackgroundScalePercent: 999,
+        mvImmersiveBackgroundAutoScale: 'yes' as never,
         mvImmersiveBackgroundOffsetXPercent: -10,
         mvImmersiveBackgroundOffsetYPercent: 140,
         mvImmersiveBackgroundBlurPx: 99,
@@ -1701,6 +1708,7 @@ describe('app settings normalization', () => {
       mvAutoApplyThreshold: 0.3,
       mvPreferHighestViewCount: false,
       mvImmersiveBackground: true,
+      mvImmersiveBackgroundAutoScale: true,
       mvImmersiveBackgroundScalePercent: 220,
       mvImmersiveBackgroundOffsetXPercent: 0,
       mvImmersiveBackgroundOffsetYPercent: 100,

@@ -919,6 +919,7 @@ const sidebarSettingsRouteItems: SidebarSettingsRouteItem[] = [
   { id: 'folders', labelKey: 'route.folders.label', placement: 'main' },
   { id: 'remote', labelKey: 'route.remote.label', placement: 'main' },
   { id: 'connect', labelKey: 'route.connect.label', placement: 'main' },
+  { id: 'dsp', labelKey: 'route.dsp.label', placement: 'main' },
   { id: 'streaming', labelKey: 'route.streaming.label', placement: 'main' },
   { id: 'queue', labelKey: 'route.queue.label', placement: 'main' },
   { id: 'history', labelKey: 'route.history.label', placement: 'main' },
@@ -3997,6 +3998,8 @@ export const SettingsPage = (): JSX.Element => {
   const sidebarRouteOrder = useMemo(() => normalizeSidebarRouteOrder(appSettings?.sidebarRouteOrder), [appSettings?.sidebarRouteOrder]);
   const sidebarHiddenRouteIds = useMemo(() => normalizeSidebarHiddenRouteIds(appSettings?.sidebarHiddenRouteIds), [appSettings?.sidebarHiddenRouteIds]);
   const sidebarHiddenRouteIdSet = useMemo(() => new Set(sidebarHiddenRouteIds), [sidebarHiddenRouteIds]);
+  const sidebarLayoutExpanded = appSettings?.appearanceSidebarLayoutExpanded === true;
+  const sidebarLayoutSummary = sidebarHiddenRouteIds.length > 0 ? t('settings.appearance.sidebar.summary.hidden', { count: sidebarHiddenRouteIds.length }) : t('settings.appearance.sidebar.summary.allVisible');
   const sidebarSettingsGroups = useMemo(() => {
     const groups: Record<SidebarSettingsRouteItem['placement'], SidebarSettingsRouteItem[]> = {
       main: [],
@@ -4662,6 +4665,28 @@ export const SettingsPage = (): JSX.Element => {
           '封面取色',
           '播放界面',
           '正在播放',
+        ],
+      },
+      {
+        id: 'row-album-cover-shape',
+        sectionKey: 'appearance',
+        targetId: 'settings-row-album-cover-shape',
+        title: t('settings.appearance.albumCoverShape.title'),
+        description: t('settings.appearance.albumCoverShape.description'),
+        terms: [
+          t('settings.appearance.albumCoverShape.title'),
+          t('settings.appearance.albumCoverShape.description'),
+          t('settings.appearance.albumCoverShape.rounded'),
+          t('settings.appearance.albumCoverShape.square'),
+          'album cover shape',
+          'cover radius',
+          'rounded cover',
+          'square cover',
+          '专辑封面',
+          '封面圆角',
+          '封面方角',
+          '方角',
+          '圆角',
         ],
       },
       {
@@ -6806,6 +6831,10 @@ export const SettingsPage = (): JSX.Element => {
       sidebarHiddenRouteIds: [],
     });
   }, [patchAppSettings]);
+
+  const handleSidebarLayoutToggle = useCallback((): void => {
+    patchAppSettings({ appearanceSidebarLayoutExpanded: !sidebarLayoutExpanded });
+  }, [patchAppSettings, sidebarLayoutExpanded]);
 
   const applyMiniPlayerState = useCallback(
     (state: MiniPlayerState): void => {
@@ -12102,70 +12131,82 @@ export const SettingsPage = (): JSX.Element => {
               >
                 <div className="settings-sidebar-layout-panel">
                   <div className="settings-sidebar-layout-toolbar">
-                    <span>{sidebarHiddenRouteIds.length > 0 ? t('settings.appearance.sidebar.summary.hidden', { count: sidebarHiddenRouteIds.length }) : t('settings.appearance.sidebar.summary.allVisible')}</span>
+                    <button
+                      aria-expanded={sidebarLayoutExpanded}
+                      className="settings-sidebar-layout-toggle"
+                      type="button"
+                      disabled={!appSettings}
+                      onClick={handleSidebarLayoutToggle}
+                    >
+                      <ChevronDown size={16} />
+                      <span>{sidebarLayoutSummary}</span>
+                      <em>{sidebarLayoutExpanded ? sidebarSettingsText.collapse : sidebarSettingsText.expand}</em>
+                    </button>
                     <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleSidebarRoutesReset}>
                       <RotateCcw size={15} />
                       {sidebarSettingsText.reset}
                     </button>
                   </div>
-                  {(['main', 'utility'] as const).map((placement) => {
-                    const groupItems = sidebarSettingsGroups[placement];
+                  {sidebarLayoutExpanded
+                    ? (['main', 'utility'] as const).map((placement) => {
+                        const groupItems = sidebarSettingsGroups[placement];
 
-                    return (
-                      <section className="settings-sidebar-layout-group" key={placement}>
-                        <div className="settings-sidebar-layout-group-title">
-                          <strong>{placement === 'main' ? sidebarSettingsText.mainGroup : sidebarSettingsText.utilityGroup}</strong>
-                          <span>{t('settings.appearance.sidebar.count', { count: groupItems.length })}</span>
-                        </div>
-                        <div className="settings-sidebar-route-list">
-                          {groupItems.length > 0 ? (
-                            groupItems.map((item) => {
-                              const label = t(item.labelKey);
-                              const isLockedVisible = lockedVisibleSidebarRouteIdSet.has(item.id);
-                              const isVisible = isLockedVisible || !sidebarHiddenRouteIdSet.has(item.id);
+                        return (
+                          <section className="settings-sidebar-layout-group" key={placement}>
+                            <div className="settings-sidebar-layout-group-title">
+                              <strong>{placement === 'main' ? sidebarSettingsText.mainGroup : sidebarSettingsText.utilityGroup}</strong>
+                              <span>{t('settings.appearance.sidebar.count', { count: groupItems.length })}</span>
+                            </div>
+                            <div className="settings-sidebar-route-list">
+                              {groupItems.length > 0 ? (
+                                groupItems.map((item) => {
+                                  const label = t(item.labelKey);
+                                  const isLockedVisible = lockedVisibleSidebarRouteIdSet.has(item.id);
+                                  const isVisible = isLockedVisible || !sidebarHiddenRouteIdSet.has(item.id);
 
-                              return (
-                                <div
-                                  className="settings-sidebar-route-item"
-                                  data-dragging={draggingSidebarRouteId === item.id ? 'true' : undefined}
-                                  data-hidden={isVisible ? undefined : 'true'}
-                                  draggable={Boolean(appSettings)}
-                                  key={item.id}
-                                  onDragEnd={handleSidebarRouteDragEnd}
-                                  onDragOver={handleSidebarRouteDragOver}
-                                  onDragStart={(event) => handleSidebarRouteDragStart(event, item.id)}
-                                  onDrop={(event) => handleSidebarRouteDrop(event, item.id, placement)}
-                                >
-                                  <span className="settings-sidebar-route-drag-handle" aria-hidden="true">
-                                    <GripVertical size={15} />
-                                  </span>
-                                  <span className="settings-sidebar-route-copy">
-                                    <strong>{label}</strong>
-                                    <em>{isLockedVisible ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}</em>
-                                  </span>
-                                  <span className="settings-sidebar-route-actions">
-                                    <button
-                                      aria-label={isVisible ? t('settings.appearance.sidebar.hideAria', { label }) : t('settings.appearance.sidebar.showAria', { label })}
-                                      aria-pressed={isVisible}
-                                      className="settings-icon-button settings-sidebar-visibility-button"
-                                      disabled={!appSettings || isLockedVisible}
-                                      title={isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}
-                                      type="button"
-                                      onClick={() => handleSidebarRouteVisibilityToggle(item.id)}
+                                  return (
+                                    <div
+                                      className="settings-sidebar-route-item"
+                                      data-dragging={draggingSidebarRouteId === item.id ? 'true' : undefined}
+                                      data-hidden={isVisible ? undefined : 'true'}
+                                      draggable={Boolean(appSettings)}
+                                      key={item.id}
+                                      onDragEnd={handleSidebarRouteDragEnd}
+                                      onDragOver={handleSidebarRouteDragOver}
+                                      onDragStart={(event) => handleSidebarRouteDragStart(event, item.id)}
+                                      onDrop={(event) => handleSidebarRouteDrop(event, item.id, placement)}
                                     >
-                                      {isVisible ? <Eye size={15} /> : <EyeOff size={15} />}
-                                    </button>
-                                  </span>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <p className="settings-sidebar-layout-empty">{sidebarSettingsText.noItems}</p>
-                          )}
-                        </div>
-                      </section>
-                    );
-                  })}
+                                      <span className="settings-sidebar-route-drag-handle" aria-hidden="true">
+                                        <GripVertical size={15} />
+                                      </span>
+                                      <span className="settings-sidebar-route-copy">
+                                        <strong>{label}</strong>
+                                        <em>{isLockedVisible ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}</em>
+                                      </span>
+                                      <span className="settings-sidebar-route-actions">
+                                        <button
+                                          aria-label={isVisible ? t('settings.appearance.sidebar.hideAria', { label }) : t('settings.appearance.sidebar.showAria', { label })}
+                                          aria-pressed={isVisible}
+                                          className="settings-icon-button settings-sidebar-visibility-button"
+                                          disabled={!appSettings || isLockedVisible}
+                                          title={isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}
+                                          type="button"
+                                          onClick={() => handleSidebarRouteVisibilityToggle(item.id)}
+                                        >
+                                          {isVisible ? <Eye size={15} /> : <EyeOff size={15} />}
+                                        </button>
+                                      </span>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <p className="settings-sidebar-layout-empty">{sidebarSettingsText.noItems}</p>
+                              )}
+                            </div>
+                          </section>
+                        );
+                      })
+                    : null}
                 </div>
               </SettingRow>
               <SettingRow
@@ -12826,6 +12867,27 @@ export const SettingsPage = (): JSX.Element => {
                   value={appearancePreferences.textDepth}
                   onChange={(textDepth) => handleAppearanceChange({ ...appearancePreferences, textDepth })}
                 />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-album-cover-shape"
+                highlighted={highlightedSettingId === 'settings-row-album-cover-shape'}
+                title={t('settings.appearance.albumCoverShape.title')}
+                description={t('settings.appearance.albumCoverShape.description')}
+              >
+                <div className="settings-chip-row settings-chip-row--left">
+                  <ChipButton
+                    active={appearancePreferences.albumCoverShape !== 'square'}
+                    onClick={() => handleAppearanceChange({ ...appearancePreferences, albumCoverShape: 'rounded' })}
+                  >
+                    {t('settings.appearance.albumCoverShape.rounded')}
+                  </ChipButton>
+                  <ChipButton
+                    active={appearancePreferences.albumCoverShape === 'square'}
+                    onClick={() => handleAppearanceChange({ ...appearancePreferences, albumCoverShape: 'square' })}
+                  >
+                    {t('settings.appearance.albumCoverShape.square')}
+                  </ChipButton>
+                </div>
               </SettingRow>
               <SettingRow title={t('settings.appearance.reset.title')} description={t('settings.appearance.reset.description')}>
                 <button className="settings-action-button" type="button" onClick={handleAppearanceReset}>

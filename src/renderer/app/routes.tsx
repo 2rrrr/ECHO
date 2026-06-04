@@ -170,7 +170,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'dsp',
     label: 'DSP',
+    labelKey: 'route.dsp.label',
     description: 'Signal-chain tuning workbench.',
+    descriptionKey: 'route.dsp.description',
     icon: EchoDspIcon,
     placement: 'main',
     element: <DspPage />,

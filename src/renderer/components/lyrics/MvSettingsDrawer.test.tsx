@@ -217,6 +217,10 @@ const renderDrawer = (
   );
 };
 
+const expandNetworkSection = async (): Promise<void> => {
+  fireEvent.click(await screen.findByRole('button', { name: /Expand network sources/ }));
+};
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -247,6 +251,7 @@ describe('MvSettingsDrawer', () => {
 
   it('can hide lyrics only while the MV view is open', async () => {
     renderDrawer({ ...defaultMvSettings, hideLyrics: false });
+    await expandNetworkSection();
 
     const hideLyricsToggle = (await screen.findByText('Hide lyrics in MV view')).closest('button');
     expect(hideLyricsToggle).toBeTruthy();
@@ -335,6 +340,7 @@ describe('MvSettingsDrawer', () => {
 
   it('updates the max network quality from the drawer menu', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     fireEvent.click(await screen.findByRole('button', { name: /Max quality Max/ }));
     fireEvent.click(screen.getByRole('menuitem', { name: '4K' }));
@@ -344,6 +350,7 @@ describe('MvSettingsDrawer', () => {
 
   it('places the max quality control before the network source order list', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     const maxQualityTrigger = await screen.findByRole('button', { name: /Max quality Max/ });
     const bilibiliToggle = await screen.findByRole('button', { name: 'Bilibili' });
@@ -353,6 +360,7 @@ describe('MvSettingsDrawer', () => {
 
   it('toggles automatic MV search from the drawer', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     fireEvent.click(await screen.findByRole('button', { name: /Auto search network MV/ }));
 
@@ -370,8 +378,16 @@ describe('MvSettingsDrawer', () => {
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ enabled: false }));
   });
 
+  it('keeps network sources collapsed by default', async () => {
+    renderDrawer();
+
+    expect((await screen.findByRole('button', { name: /Expand network sources/ })).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: /Auto search network MV/ })).toBeNull();
+  });
+
   it('updates the automatic MV apply threshold from the drawer', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     const slider = await screen.findByRole('slider', { name: /Auto-apply match/ });
     expect((slider as HTMLInputElement).value).toBe('70');
@@ -384,6 +400,7 @@ describe('MvSettingsDrawer', () => {
 
   it('toggles MV preload, restart sync, and replay on change from the drawer', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     fireEvent.click(await screen.findByRole('button', { name: /Preload MV/ }));
     fireEvent.click(await screen.findByRole('button', { name: /Follow music progress/ }));
@@ -398,6 +415,7 @@ describe('MvSettingsDrawer', () => {
 
   it('shows immersive MV controls and updates zoom', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     expect(await screen.findByRole('button', { name: /Immersive MV background/ })).toBeTruthy();
     expect(screen.queryByRole('slider', { name: /Background zoom/ })).toBeNull();
@@ -405,14 +423,17 @@ describe('MvSettingsDrawer', () => {
     expect(window.localStorage.getItem('echo-next.mv.immersive-controls-open')).toBe('true');
     const slider = screen.getByRole('slider', { name: /Background zoom/ });
     expect((slider as HTMLInputElement).value).toBe('115');
+    fireEvent.click(await screen.findByRole('button', { name: /Auto scale/ }));
 
     fireEvent.change(slider, { target: { value: '140' } });
 
+    await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ immersiveBackgroundAutoScale: false }));
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ immersiveBackgroundScalePercent: 140 }));
   });
 
   it('updates immersive MV visual tuning controls', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     fireEvent.click(await screen.findByRole('button', { name: /Immersive background tuning/ }));
     const blur = await screen.findByRole('slider', { name: /Glass blur/ });
@@ -436,6 +457,7 @@ describe('MvSettingsDrawer', () => {
 
   it('does not show lyrics readability enhancement in the MV drawer', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     expect(await screen.findByRole('button', { name: /Immersive MV background/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Lyrics readability boost/ })).toBeNull();
@@ -508,12 +530,14 @@ describe('MvSettingsDrawer', () => {
       immersiveBackgroundBrightnessPercent: 70,
       immersiveBackgroundOverlayOpacityPercent: 80,
     });
+    await expandNetworkSection();
 
     fireEvent.click(await screen.findByRole('button', { name: /Immersive background tuning/ }));
     fireEvent.click(await screen.findByRole('button', { name: /Reset immersive background/ }));
 
     await waitFor(() =>
       expect(window.echo.mv.setSettings).toHaveBeenCalledWith({
+        immersiveBackgroundAutoScale: true,
         immersiveBackgroundScalePercent: 115,
         immersiveBackgroundOffsetXPercent: 50,
         immersiveBackgroundOffsetYPercent: 50,
@@ -526,6 +550,7 @@ describe('MvSettingsDrawer', () => {
 
   it('reorders network sources by dragging the priority handle', async () => {
     renderDrawer();
+    await expandNetworkSection();
 
     const dragData = {
       effectAllowed: '',
@@ -546,6 +571,7 @@ describe('MvSettingsDrawer', () => {
 
   it('refreshes the current MV when automatic MV search is enabled', async () => {
     renderDrawer({ ...defaultMvSettings, autoSearch: false });
+    await expandNetworkSection();
 
     fireEvent.click(await screen.findByRole('button', { name: /Auto search network MV/ }));
 

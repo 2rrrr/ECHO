@@ -1156,6 +1156,8 @@ export type TranslationKey =
   | 'route.audioSettings.label'
   | 'route.connect.description'
   | 'route.connect.label'
+  | 'route.dsp.description'
+  | 'route.dsp.label'
   | 'route.downloads.description'
   | 'route.downloads.label'
   | 'route.folders.description'
@@ -1456,6 +1458,8 @@ export type TranslationKey =
   | 'lyricsSettings.display.desktopFont'
   | 'lyricsSettings.display.desktopLyrics'
   | 'lyricsSettings.display.desktopLyricsDescription'
+  | 'lyricsSettings.display.desktopOpacity'
+  | 'lyricsSettings.display.desktopOpacityDescription'
   | 'lyricsSettings.display.desktopRomanization'
   | 'lyricsSettings.display.desktopTranslation'
   | 'lyricsSettings.display.disableMvTrackInfoAutoShow'
@@ -1532,6 +1536,8 @@ export type TranslationKey =
   | 'lyricsSettings.preview.secondary'
   | 'lyricsSettings.online.autoSearch'
   | 'lyricsSettings.online.autoSearchDescription'
+  | 'lyricsSettings.online.autoSaveSidecar'
+  | 'lyricsSettings.online.autoSaveSidecarDescription'
   | 'lyricsSettings.online.deepSearch'
   | 'lyricsSettings.online.deepSearchDescription'
   | 'lyricsSettings.online.enable'
@@ -1625,6 +1631,8 @@ export type TranslationKey =
   | 'mvSettings.error.noNetworkCandidates'
   | 'mvSettings.general.enabled'
   | 'mvSettings.immersive.blur'
+  | 'mvSettings.immersive.autoScale'
+  | 'mvSettings.immersive.autoScaleDescription'
   | 'mvSettings.immersive.brightness'
   | 'mvSettings.immersive.description'
   | 'mvSettings.immersive.dragHint'
@@ -1855,6 +1863,10 @@ export type TranslationKey =
   | 'settings.appearance.artistAvatars.message.queued'
   | 'settings.appearance.artistAvatars.title'
   | 'settings.appearance.artistAvatars.toggle'
+  | 'settings.appearance.albumCoverShape.description'
+  | 'settings.appearance.albumCoverShape.rounded'
+  | 'settings.appearance.albumCoverShape.square'
+  | 'settings.appearance.albumCoverShape.title'
   | 'settings.appearance.font.choose'
   | 'settings.appearance.font.chinese.description'
   | 'settings.appearance.font.chinese.title'
@@ -4163,6 +4175,8 @@ const zhCN: TranslationMap = {
   'route.audioSettings.label': '音频设置',
   'route.connect.description': 'DLNA / AirPlay 无线播放。',
   'route.connect.label': '连接',
+  'route.dsp.description': '信号链调音工作台。',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '断开',
   'connectPage.controls.pause': '暂停',
@@ -4545,6 +4559,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.desktopFont': '桌面歌词字体',
   'lyricsSettings.display.desktopLyrics': '桌面歌词',
   'lyricsSettings.display.desktopLyricsDescription': '开启后用独立透明窗口在桌面置顶显示当前歌词。',
+  'lyricsSettings.display.desktopOpacity': '桌面歌词透明度',
+  'lyricsSettings.display.desktopOpacityDescription': '当前 {opacity}%，调低可减少遮挡。',
   'lyricsSettings.display.desktopRomanization': '桌面歌词显示罗马音',
   'lyricsSettings.display.desktopTranslation': '桌面歌词显示翻译',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '关闭MV自动显示歌曲信息',
@@ -4621,6 +4637,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.preview.secondary': '辅助歌词行',
   'lyricsSettings.online.autoSearch': '自动匹配歌词',
   'lyricsSettings.online.autoSearchDescription': '本地歌词始终优先；在线结果达到阈值才会自动应用。',
+  'lyricsSettings.online.autoSaveSidecar': '自动保存本地歌词文件',
+  'lyricsSettings.online.autoSaveSidecarDescription': '默认关闭；在线或手动应用的歌词会保存为歌曲同名旁挂文件，不覆盖已有 .lrc / .ttml / .txt。',
   'lyricsSettings.online.deepSearch': '深度优先搜索',
   'lyricsSettings.online.deepSearchDescription': '开启后多个在线平台会并发搜索；任一结果达到自动应用阈值就立即停止其他源并返回。',
   'lyricsSettings.online.enable': '启用在线歌词匹配',
@@ -4714,6 +4732,8 @@ const zhCN: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': '没有找到网络 MV 候选',
   'mvSettings.general.enabled': '启用 MV',
   'mvSettings.immersive.blur': '毛玻璃模糊',
+  'mvSettings.immersive.autoScale': '自动缩放',
+  'mvSettings.immersive.autoScaleDescription': '根据 MV 宽高自动补偿缩放，尽量避免背景黑边。',
   'mvSettings.immersive.brightness': '背景亮度',
   'mvSettings.immersive.description': '开启后，歌词页使用当前 MV 作为背景。',
   'mvSettings.immersive.dragHint': '也可以在歌词页空白处拖动调整。',
@@ -4944,6 +4964,10 @@ const zhCN: TranslationMap = {
   'settings.appearance.artistAvatars.message.queued': '已加入 {queued} 个歌手头像。跳过 {skipped} 个。',
   'settings.appearance.artistAvatars.title': '歌手头像',
   'settings.appearance.artistAvatars.toggle': '自动获取歌手头像',
+  'settings.appearance.albumCoverShape.title': '专辑封面形状',
+  'settings.appearance.albumCoverShape.description': '选择专辑封面显示为圆角或方角；该设置优先于主题预设。默认圆角。',
+  'settings.appearance.albumCoverShape.rounded': '圆角',
+  'settings.appearance.albumCoverShape.square': '方角',
   'settings.appearance.font.choose': '选择',
   'settings.appearance.font.chinese.description': '当主字体缺少中文字符时，优先使用这个中文字体补齐。',
   'settings.appearance.font.chinese.title': '中文字体',
@@ -4958,7 +4982,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '播放界面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
   'settings.appearance.reset.action': '恢复默认',
-  'settings.appearance.reset.description': '恢复 Monocraft、站酷快乐体、字号、行距与文字深浅。',
+  'settings.appearance.reset.description': '恢复 Monocraft、站酷快乐体、字号、行距、文字深浅与圆角封面。',
   'settings.appearance.reset.title': '外观默认值',
   'settings.appearance.sidebar.title': '左侧栏',
   'settings.appearance.sidebar.description': '调整左侧入口的顺序和显示状态，不会改动页面或播放链路。',
@@ -7175,6 +7199,8 @@ const zhTW: TranslationMap = {
   'route.audioSettings.label': '音訊設定',
   'route.connect.description': 'DLNA / AirPlay 無線播放。',
   'route.connect.label': '連接',
+  'route.dsp.description': '訊號鏈調音工作台。',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '中斷連接',
   'connectPage.controls.pause': '暫停',
@@ -7551,6 +7577,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.desktopFont': '桌面歌詞字體',
   'lyricsSettings.display.desktopLyrics': '桌面歌詞',
   'lyricsSettings.display.desktopLyricsDescription': '開啟後用獨立透明視窗在桌面置頂顯示目前歌詞。',
+  'lyricsSettings.display.desktopOpacity': '桌面歌詞透明度',
+  'lyricsSettings.display.desktopOpacityDescription': '目前 {opacity}%，調低可減少遮擋。',
   'lyricsSettings.display.desktopRomanization': '桌面歌詞顯示羅馬音',
   'lyricsSettings.display.desktopTranslation': '桌面歌詞顯示翻譯',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '關閉 MV 自動顯示歌曲資訊',
@@ -7627,6 +7655,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.preview.secondary': '輔助歌詞行',
   'lyricsSettings.online.autoSearch': '自動匹配歌詞',
   'lyricsSettings.online.autoSearchDescription': '本地歌詞始終優先；線上結果達到閾值才會自動套用。',
+  'lyricsSettings.online.autoSaveSidecar': '自動儲存本地歌詞檔',
+  'lyricsSettings.online.autoSaveSidecarDescription': '預設關閉；線上或手動套用的歌詞會儲存為歌曲同名旁掛檔，不覆蓋既有 .lrc / .ttml / .txt。',
   'lyricsSettings.online.deepSearch': '深度優先搜尋',
   'lyricsSettings.online.deepSearchDescription': '開啟後多個線上平台會並行搜尋；任一結果達到自動套用門檻就會立即停止其他來源並返回。',
   'lyricsSettings.online.enable': '啟用線上歌詞匹配',
@@ -7720,6 +7750,8 @@ const zhTW: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': '沒有找到網路 MV 候選',
   'mvSettings.general.enabled': '啟用 MV',
   'mvSettings.immersive.blur': '毛玻璃模糊',
+  'mvSettings.immersive.autoScale': '自動縮放',
+  'mvSettings.immersive.autoScaleDescription': '依照 MV 寬高自動補償縮放，盡量避免背景黑邊。',
   'mvSettings.immersive.brightness': '背景亮度',
   'mvSettings.immersive.description': '開啟後，歌詞頁使用目前 MV 作為背景。',
   'mvSettings.immersive.dragHint': '也可以在歌詞頁空白處拖動調整。',
@@ -8730,6 +8762,10 @@ const zhTW: TranslationMap = {
   'settings.appearance.sidebar.showAria': '顯示 {label}',
   'settings.appearance.nowPlayingCoverColor.title': '播放介面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
+  'settings.appearance.albumCoverShape.title': '專輯封面形狀',
+  'settings.appearance.albumCoverShape.description': '選擇專輯封面顯示為圓角或方角；此設定優先於主題預設。預設圓角。',
+  'settings.appearance.albumCoverShape.rounded': '圓角',
+  'settings.appearance.albumCoverShape.square': '方角',
   'settings.appearance.wallpaper.title': '自訂背景',
   'settings.appearance.wallpaper.description': '橫向與直向背景會分開儲存；直向視窗只會套用直向背景。支援圖片與本地影片。',
   'settings.appearance.wallpaper.choose': '選擇橫向背景',
@@ -10010,6 +10046,8 @@ const jaJP: TranslationMap = {
   'route.audioSettings.label': '音声設定',
   'route.connect.description': 'DLNA / AirPlay ワイヤレス再生。',
   'route.connect.label': '接続',
+  'route.dsp.description': '信号チェーン調整ワークベンチ。',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect controls',
   'connectPage.controls.disconnect': '切断',
   'connectPage.controls.pause': '一時停止',
@@ -10392,6 +10430,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.desktopFont': 'デスクトップ歌詞フォント',
   'lyricsSettings.display.desktopLyrics': 'デスクトップ歌詞',
   'lyricsSettings.display.desktopLyricsDescription': '独立した透明ウィンドウで現在の歌詞をデスクトップ最前面に表示します。',
+  'lyricsSettings.display.desktopOpacity': 'デスクトップ歌詞の透明度',
+  'lyricsSettings.display.desktopOpacityDescription': '現在 {opacity}%。下げると画面を遮りにくくなります。',
   'lyricsSettings.display.desktopRomanization': 'デスクトップ歌詞にローマ字を表示',
   'lyricsSettings.display.desktopTranslation': 'デスクトップ歌詞に翻訳を表示',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'MV で曲情報を自動表示しない',
@@ -10468,6 +10508,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.preview.secondary': 'サブ歌詞行',
   'lyricsSettings.online.autoSearch': '歌詞を自動マッチ',
   'lyricsSettings.online.autoSearchDescription': 'ローカル歌詞を常に優先します。オンライン結果はしきい値に達した場合だけ自動適用します。',
+  'lyricsSettings.online.autoSaveSidecar': 'ローカル歌詞ファイルを自動保存',
+  'lyricsSettings.online.autoSaveSidecarDescription': '既定ではオフです。オンラインまたは手動で適用した歌詞を曲と同名のサイドカーファイルとして保存し、既存の .lrc / .ttml / .txt は上書きしません。',
   'lyricsSettings.online.deepSearch': '深度優先検索',
   'lyricsSettings.online.deepSearchDescription': 'オンにすると複数のオンラインプラットフォームを並列検索し、いずれかが自動適用しきい値に達した時点で他のソースを停止して返します。',
   'lyricsSettings.online.enable': 'オンライン歌詞マッチングを有効化',
@@ -10561,6 +10603,8 @@ const jaJP: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': 'ネットワーク MV 候補が見つかりません',
   'mvSettings.general.enabled': 'MV を有効化',
   'mvSettings.immersive.blur': '背景ぼかし',
+  'mvSettings.immersive.autoScale': '自動ズーム',
+  'mvSettings.immersive.autoScaleDescription': 'MV の縦横比に合わせて背景を拡大し、黒帯をできるだけ避けます。',
   'mvSettings.immersive.brightness': '背景の明るさ',
   'mvSettings.immersive.description': 'オンにすると、歌詞ページで現在の MV を背景として使います。',
   'mvSettings.immersive.dragHint': '歌詞ページの空き領域をドラッグして調整できます。',
@@ -11604,6 +11648,10 @@ const jaJP: TranslationMap = {
   'settings.appearance.sidebar.showAria': '{label} を表示',
   'settings.appearance.nowPlayingCoverColor.title': '再生画面のカバー色',
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
+  'settings.appearance.albumCoverShape.title': 'アルバムカバー形状',
+  'settings.appearance.albumCoverShape.description': 'アルバムアートを角丸または四角で表示します。この設定はテーマプリセットより優先されます。既定は角丸です。',
+  'settings.appearance.albumCoverShape.rounded': '角丸',
+  'settings.appearance.albumCoverShape.square': '四角',
   'settings.appearance.wallpaper.title': 'カスタム背景',
   'settings.appearance.wallpaper.description': '横向きと縦向きの背景を別々に保存します。縦向きウィンドウでは縦向き背景だけを適用します。画像とローカル動画に対応します。',
   'settings.appearance.wallpaper.choose': '横向き背景を選択',
@@ -12916,6 +12964,8 @@ const enUS: TranslationMap = {
   'route.audioSettings.label': 'Audio Settings',
   'route.connect.description': 'DLNA / AirPlay wireless playback.',
   'route.connect.label': 'Connect',
+  'route.dsp.description': 'Signal-chain tuning workbench.',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect controls',
   'connectPage.controls.disconnect': 'Disconnect',
   'connectPage.controls.pause': 'Pause',
@@ -13298,6 +13348,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.desktopFont': 'Desktop lyrics font',
   'lyricsSettings.display.desktopLyrics': 'Desktop Lyrics',
   'lyricsSettings.display.desktopLyricsDescription': 'Shows the current lyrics in an independent transparent always-on-top desktop window.',
+  'lyricsSettings.display.desktopOpacity': 'Desktop lyrics opacity',
+  'lyricsSettings.display.desktopOpacityDescription': 'Currently {opacity}%; lower it to reduce visual blocking.',
   'lyricsSettings.display.desktopRomanization': 'Show romanization in desktop lyrics',
   'lyricsSettings.display.desktopTranslation': 'Show translation in desktop lyrics',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'Disable MV auto track info',
@@ -13374,6 +13426,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.preview.secondary': 'Secondary lyric line',
   'lyricsSettings.online.autoSearch': 'Auto match lyrics',
   'lyricsSettings.online.autoSearchDescription': 'Local lyrics always take priority; online results are applied automatically only when they reach the threshold.',
+  'lyricsSettings.online.autoSaveSidecar': 'Auto-save local lyrics files',
+  'lyricsSettings.online.autoSaveSidecarDescription': 'Off by default; online or manually applied lyrics are saved as same-name sidecar files without overwriting existing .lrc / .ttml / .txt files.',
   'lyricsSettings.online.deepSearch': 'Deep priority search',
   'lyricsSettings.online.deepSearchDescription': 'When enabled, online sources search in parallel; the first result that reaches the auto-apply threshold stops the rest and returns immediately.',
   'lyricsSettings.online.enable': 'Enable online lyrics matching',
@@ -13467,6 +13521,8 @@ const enUS: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': 'No network MV candidates found',
   'mvSettings.general.enabled': 'Enable MV',
   'mvSettings.immersive.blur': 'Glass blur',
+  'mvSettings.immersive.autoScale': 'Auto scale',
+  'mvSettings.immersive.autoScaleDescription': 'Automatically compensates for the MV aspect ratio to reduce background black bars.',
   'mvSettings.immersive.brightness': 'Background brightness',
   'mvSettings.immersive.description': 'Use the current MV as the lyrics page background.',
   'mvSettings.immersive.dragHint': 'Drag empty space on the lyrics page to fine tune it.',
@@ -14878,6 +14934,10 @@ const enUS: TranslationMap = {
   'settings.appearance.artistAvatars.message.queued': 'Queued {queued} artist avatars. Skipped {skipped}.',
   'settings.appearance.artistAvatars.title': 'Artist Avatars',
   'settings.appearance.artistAvatars.toggle': 'Auto Fetch Artist Avatars',
+  'settings.appearance.albumCoverShape.title': 'Album Cover Shape',
+  'settings.appearance.albumCoverShape.description': 'Show album artwork with rounded or square corners. This preference overrides theme presets. Rounded is the default.',
+  'settings.appearance.albumCoverShape.rounded': 'Rounded',
+  'settings.appearance.albumCoverShape.square': 'Square',
   'settings.appearance.font.choose': 'Choose',
   'settings.appearance.font.chinese.description': 'Used first when the main font does not include Chinese glyphs.',
   'settings.appearance.font.chinese.title': 'Chinese Font',
@@ -14890,7 +14950,7 @@ const enUS: TranslationMap = {
   'settings.appearance.lineHeight.description': 'Adjust default UI text spacing for denser or airier reading.',
   'settings.appearance.lineHeight.title': 'Interface Line Height',
   'settings.appearance.reset.action': 'Reset',
-  'settings.appearance.reset.description': 'Restore Monocraft, ZCOOL Happy, base size, line height, and text depth.',
+  'settings.appearance.reset.description': 'Restore Monocraft, ZCOOL Happy, base size, line height, text depth, and rounded covers.',
   'settings.appearance.reset.title': 'Appearance Defaults',
   'settings.appearance.textDepth.description': 'Adjust interface text darkness. Lower values make text lighter.',
   'settings.appearance.textDepth.title': 'Text Depth',

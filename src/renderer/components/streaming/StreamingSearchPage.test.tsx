@@ -143,6 +143,14 @@ const trackSearchResult: StreamingSearchResult = {
   artists: [],
 };
 
+const albumSearchResult: StreamingSearchResult = {
+  ...searchResult,
+  query: 'album',
+  tracks: [],
+  albums: [qqArtistAlbum],
+  artists: [],
+};
+
 const resetStreamingMemory = (): void => {
   updateStreamingSearchMemory({
     provider: 'netease',
@@ -402,6 +410,103 @@ describe('StreamingSearchPage download visibility', () => {
 
     expect(await screen.findByText('晴天')).toBeTruthy();
     expect(await screen.findByTitle('下载')).toBeTruthy();
+  });
+  it('queues every downloadable track from a streaming album detail', async () => {
+    const albumTracks: StreamingTrack[] = [
+      { ...track, provider: 'qqmusic', providerTrackId: 'song-mid-1', stableKey: 'streaming:qqmusic:song-mid-1', title: 'Album Track 1', album: qqArtistAlbum.title },
+      { ...track, provider: 'qqmusic', providerTrackId: 'song-mid-2', stableKey: 'streaming:qqmusic:song-mid-2', title: 'Album Track 2', album: qqArtistAlbum.title },
+    ];
+    const albumDetail = { ...qqArtistAlbum, tracks: albumTracks };
+    const resolvePlayback = vi.fn(async ({ providerTrackId }: { providerTrackId: string }) => ({
+      provider: 'qqmusic',
+      providerTrackId,
+      url: `https://cdn.example/${providerTrackId}.m4a`,
+      headers: { Referer: 'https://y.qq.com/' },
+      mimeType: 'audio/mp4',
+      codec: 'm4a',
+      quality: 'lossless',
+      bitrate: null,
+      expiresAt: null,
+      downloadAuthorizationToken: `download-token-${providerTrackId}`,
+    }));
+    const createUrlJob = vi.fn(async (url: string, options: Record<string, unknown>) => ({
+      id: `job-${String(createUrlJob.mock.calls.length)}`,
+      sourceUrl: url,
+      provider: 'unknown',
+      audioStrategy: 'best_available',
+      status: 'queued',
+      title: options.title,
+      durationSeconds: null,
+      thumbnailUrl: null,
+      webpageUrl: options.webpageUrl,
+      outputPath: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      speedBytesPerSecond: null,
+      etaSeconds: null,
+      importedTrackId: null,
+      progress: 0,
+      error: null,
+      createdAt: '2026-06-04T00:00:00.000Z',
+      updatedAt: '2026-06-04T00:00:00.000Z',
+      completedAt: null,
+    }));
+    const noticeHandler = vi.fn();
+    window.addEventListener('app:show-chrome-notice', noticeHandler);
+
+    updateStreamingSearchMemory({
+      provider: 'qqmusic',
+      quality: 'lossless',
+      activeTab: 'album',
+      input: 'album',
+      query: 'album',
+      result: albumSearchResult,
+      failedCoverUrls: {},
+      scrollTop: 0,
+    });
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ downloadsFeatureUnlocked: true, streamingDownloadActionsEnabled: true } as AppSettings),
+      },
+      streaming: {
+        getProviders: vi.fn().mockResolvedValue([qqProvider]),
+        search: vi.fn().mockResolvedValue(albumSearchResult),
+        getAlbum: vi.fn().mockResolvedValue(albumDetail),
+        resolvePlayback,
+      },
+      downloads: {
+        createUrlJob,
+        onJobsUpdated: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window['echo'];
+
+    try {
+      renderStreamingSearchPage();
+
+      fireEvent.click(await screen.findByText(qqArtistAlbum.title));
+      expect(await screen.findByText('Album Track 1')).toBeTruthy();
+
+      fireEvent.click(await screen.findByRole('button', { name: /下载专辑|涓嬭浇涓撹緫/u }));
+
+      await waitFor(() => expect(createUrlJob).toHaveBeenCalledTimes(2));
+      expect(resolvePlayback).toHaveBeenCalledWith({
+        provider: 'qqmusic',
+        providerTrackId: 'song-mid-1',
+        quality: 'lossless',
+      });
+      expect(createUrlJob.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+        title: 'Album Track 1',
+        album: qqArtistAlbum.title,
+        outputSubdirectory: `${qqArtistAlbum.artist} - ${qqArtistAlbum.title}`,
+        streamingProvider: 'qqmusic',
+        streamingProviderTrackId: 'song-mid-1',
+        downloadAuthorizationToken: 'download-token-song-mid-1',
+      }));
+      expect(noticeHandler).toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('app:show-chrome-notice', noticeHandler);
+    }
   });
 });
 

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -84,6 +84,7 @@ const settings = (patch: Partial<AppSettings> = {}): AppSettings => ({
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.7,
+  lyricsAutoSaveSidecarEnabled: false,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,
@@ -729,6 +730,39 @@ describe('LyricsService', () => {
     expect(lyrics?.kind).toBe('synced');
     expect(lyrics?.lines[0].text).toBe('Local line');
     expect(online.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-save sidecar lyrics by default', async () => {
+    const root = makeTempRoot();
+    const audioPath = join(root, 'Echo Song.flac');
+    const sidecarPath = join(root, 'Echo Song.lrc');
+    writeFileSync(audioPath, 'audio');
+    const { service } = createHarness({
+      currentTrack: track(audioPath),
+      onlineProvider: { getLyrics: vi.fn(async () => trackLyrics()), searchCandidates: vi.fn(async () => []) },
+    });
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.provider).toBe('lrclib');
+    expect(existsSync(sidecarPath)).toBe(false);
+  });
+
+  it('auto-saves accepted online lyrics as a same-name sidecar when enabled', async () => {
+    const root = makeTempRoot();
+    const audioPath = join(root, 'Echo Song.flac');
+    const sidecarPath = join(root, 'Echo Song.lrc');
+    writeFileSync(audioPath, 'audio');
+    const { service } = createHarness({
+      currentTrack: track(audioPath),
+      appSettings: settings({ lyricsAutoSaveSidecarEnabled: true }),
+      onlineProvider: { getLyrics: vi.fn(async () => trackLyrics()), searchCandidates: vi.fn(async () => []) },
+    });
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.provider).toBe('lrclib');
+    expect(readFileSync(sidecarPath, 'utf8')).toBe('[00:01.00]Line\n');
   });
 
   it('prefers local TTML sidecar over network', async () => {

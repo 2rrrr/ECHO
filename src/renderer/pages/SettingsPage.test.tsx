@@ -916,6 +916,7 @@ describe('SettingsPage', () => {
     const row = screen.getByText('settings.appearance.sidebar.title').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: /settings\.appearance\.sidebar\.summary\.allVisible/ }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenLastCalledWith({ appearanceSidebarLayoutExpanded: true }));
+    expect(within(row).getByText('route.dsp.label')).toBeTruthy();
     const streamingItem = within(row).getByText('route.streaming.label').closest('.settings-sidebar-route-item') as HTMLElement;
     fireEvent.click(streamingItem.querySelector('.settings-sidebar-visibility-button') as HTMLButtonElement);
 
