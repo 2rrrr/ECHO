@@ -105,10 +105,10 @@ const audioStatus: AudioStatus = {
   error: null,
 };
 
-const renderEqPanel = (status: AudioStatus | null = audioStatus): ReturnType<typeof render> =>
+const renderEqPanel = (status: AudioStatus | null = audioStatus, options: { surface?: 'full' | 'eq-only' } = {}): ReturnType<typeof render> =>
   render(
     <I18nProvider>
-      <EqPanel audioStatus={status} />
+      <EqPanel audioStatus={status} surface={options.surface} />
     </I18nProvider>,
   );
 
@@ -267,6 +267,21 @@ describe('EqPanel', () => {
     expect(screen.getByRole('button', { name: 'AirBrighter space' })).toBeTruthy();
     expect(screen.getAllByText('Headroom').length).toBeGreaterThan(0);
     expect(screen.getByText('Bit-perfect')).toBeTruthy();
+  });
+
+  it('keeps detached DSP modules out of the EQ-only surface', async () => {
+    const { container } = renderEqPanel(audioStatus, { surface: 'eq-only' });
+
+    await screen.findByRole('img', { name: 'Draggable 31-band EQ frequency response' });
+    expect(screen.getByLabelText('Quick EQ preamp')).toBeTruthy();
+    expect(screen.queryByLabelText('Balance')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Quick -6 dB headroom' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Quick native direct' })).toBeNull();
+
+    await showAdvancedEqTools();
+    expect(container.querySelector('.channel-balance-panel')).toBeNull();
+    expect(container.querySelector('.eq-room-correction')).toBeNull();
+    expect(container.querySelector('.eq-dsp-headroom-control')).toBeNull();
   });
 
   it('updates preamp from the quick strip slider', async () => {
@@ -639,7 +654,7 @@ describe('EqPanel', () => {
     fireEvent.pointerMove(curve, { clientX: 410, clientY: 94, pointerId: 1 });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1 });
 
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 400 }));
 
     await showAdvancedEqTools();
@@ -681,7 +696,7 @@ describe('EqPanel', () => {
     fireEvent.pointerUp(curve, { clientX: 510, clientY: 94, pointerId: 1 });
 
     expect(point.matrixTransform).toHaveBeenCalled();
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 400 }));
   });
 
@@ -708,7 +723,7 @@ describe('EqPanel', () => {
     fireEvent.pointerMove(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
 
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.7 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: expect.any(Number) }));
   });
 
@@ -1024,13 +1039,13 @@ describe('EqPanel', () => {
     const node = await screen.findByTestId('eq-curve-node-2');
     fireEvent.pointerDown(node, { clientX: 410, clientY: 94, pointerId: 1 });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1 });
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0 }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
   });
 
   it('keeps APO-style filter stack controls inside Pro mode', async () => {

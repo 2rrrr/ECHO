@@ -39,6 +39,7 @@ import {
 type EqPanelProps = {
   audioStatus: AudioStatus | null;
   onAudioStatusRefresh?: () => void;
+  surface?: 'full' | 'eq-only';
 };
 
 type EqUiMode = 'simple' | 'pro';
@@ -432,7 +433,7 @@ const resolveImportCompatibility = (metadata: EqPresetImportMetadata): EqImportC
   return 'clean';
 };
 
-export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JSX.Element => {
+export const EqPanel = ({ audioStatus, onAudioStatusRefresh, surface = 'full' }: EqPanelProps): JSX.Element => {
   const { t } = useI18n();
   const [state, setState] = useState<EqState>(fallbackState);
   const [channelBalance, setChannelBalance] = useState<ChannelBalanceState>(fallbackChannelBalanceState);
@@ -477,6 +478,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const autoGainManualHoldUntilMs = useRef(0);
   const autoGainApplying = useRef(false);
   const showAdvancedTools = eqUiMode === 'pro';
+  const showEmbeddedDspModules = surface !== 'eq-only';
 
   const selectedPreset = presets.find((preset) => preset.id === state.presetId);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
@@ -508,6 +510,8 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const clippingRisk = Boolean(state.clippingRisk || roomCorrection.clippingRisk || channelBalance.clippingRisk || audioStatus?.clippingRisk || audioStatus?.dspClippingRisk || dspLimiterProtecting || realtimeLevelClippingRisk || realtimeLevelClipped);
   const eqOrBalanceEnabled = state.enabled || roomCorrection.enabled || channelBalance.enabled;
   const dspActive = Boolean(audioStatus?.dspActive || eqOrBalanceEnabled);
+  const surfaceDspActive = showEmbeddedDspModules ? dspActive : state.enabled;
+  const surfaceClippingRisk = showEmbeddedDspModules ? clippingRisk : Boolean(state.clippingRisk || audioStatus?.clippingRisk || audioStatus?.dspClippingRisk || dspLimiterProtecting || realtimeLevelClippingRisk || realtimeLevelClipped);
   const dspHeadroomArmed = Math.abs(state.dspHeadroomDb ?? 0) > 0.05;
   const dspHeadroomActive = dspActive && dspHeadroomArmed;
   const recommendedPreampDb = computeRecommendedPreamp(state);
@@ -542,7 +546,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       : t('settings.eq.preset.modified')
     : state.presetName;
   const canSaveSimplePreset = state.presetId === 'custom' && hasCustomEqShape;
-  const needsSafePreamp = estimatedPeakGainDb > 0 || clippingRisk;
+  const needsSafePreamp = estimatedPeakGainDb > 0 || surfaceClippingRisk;
   const simpleInsightVibe = activeSimpleTone
     ? state.presetName
     : hasCustomEqShape
@@ -2216,7 +2220,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </div>
       </header>
 
-      <div className="eq-quick-strip" data-risk={clippingRisk} data-active={dspActive}>
+      <div className="eq-quick-strip" data-risk={surfaceClippingRisk} data-active={surfaceDspActive}>
         <button
           className="eq-quick-action eq-quick-action--primary"
           data-active={state.enabled}
@@ -2270,28 +2274,32 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <span>{t('settings.eq.autoGain.toggle')}</span>
           <strong>{formatDb(autoGainAdjustmentDb)}</strong>
         </button>
-        <button
-          aria-label="Quick -6 dB headroom"
-          className="eq-quick-action"
-          data-active={Math.abs((state.dspHeadroomDb ?? 0) + 6) <= 0.05}
-          type="button"
-          onClick={() => handleDspHeadroomChange(-6)}
-        >
-          <ShieldCheck size={15} aria-hidden="true" />
-          <span>{t('settings.eq.status.headroom')}</span>
-          <strong>-6 dB</strong>
-        </button>
-        <button
-          aria-label="Quick native direct"
-          className="eq-quick-action"
-          disabled={!eqOrBalanceEnabled}
-          type="button"
-          onClick={handleNativeDirect}
-        >
-          <RadioTower size={15} aria-hidden="true" />
-          <span>{t('settings.eq.routing.playbackPath')}</span>
-          <strong>{t('settings.eq.routing.nativeDirect')}</strong>
-        </button>
+        {showEmbeddedDspModules ? (
+          <button
+            aria-label="Quick -6 dB headroom"
+            className="eq-quick-action"
+            data-active={Math.abs((state.dspHeadroomDb ?? 0) + 6) <= 0.05}
+            type="button"
+            onClick={() => handleDspHeadroomChange(-6)}
+          >
+            <ShieldCheck size={15} aria-hidden="true" />
+            <span>{t('settings.eq.status.headroom')}</span>
+            <strong>-6 dB</strong>
+          </button>
+        ) : null}
+        {showEmbeddedDspModules ? (
+          <button
+            aria-label="Quick native direct"
+            className="eq-quick-action"
+            disabled={!eqOrBalanceEnabled}
+            type="button"
+            onClick={handleNativeDirect}
+          >
+            <RadioTower size={15} aria-hidden="true" />
+            <span>{t('settings.eq.routing.playbackPath')}</span>
+            <strong>{t('settings.eq.routing.nativeDirect')}</strong>
+          </button>
+        ) : null}
       </div>
 
       {!showAdvancedTools ? (
@@ -2404,6 +2412,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </>
       ) : null}
 
+      {showEmbeddedDspModules ? (
       <div className="eq-dsp-guard" data-mode={dspGuardMode}>
         <div className="eq-dsp-guard__main">
           <span className="eq-dsp-guard__icon">
@@ -2421,7 +2430,9 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <small>{dspGuardModules}</small>
         </div>
       </div>
+      ) : null}
 
+      {showEmbeddedDspModules ? (
       <div className="eq-routing-summary" data-active={dspActive} data-risk={clippingRisk}>
         <span>
           <em>{t('settings.eq.routing.playbackPath')}</em>
@@ -2453,8 +2464,9 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           </button>
         </div>
       </div>
+      ) : null}
 
-      <div className="eq-simple-summary" data-risk={clippingRisk} data-mode={eqUiMode}>
+      <div className="eq-simple-summary" data-risk={surfaceClippingRisk} data-mode={eqUiMode}>
         <span>
           <em>{t('settings.eq.status.preset')}</em>
           <strong>{displayPresetName}</strong>
@@ -2465,12 +2477,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </span>
         <span>
           <em>{t('settings.eq.status.bitPerfect')}</em>
-          <strong>{dspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
+          <strong>{surfaceDspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
         </span>
-        <span>
-          <em>{t('settings.eq.room.short')}</em>
-          <strong>{roomCorrectionStatusLabel}</strong>
-        </span>
+        {showEmbeddedDspModules ? (
+          <span>
+            <em>{t('settings.eq.room.short')}</em>
+            <strong>{roomCorrectionStatusLabel}</strong>
+          </span>
+        ) : null}
         <span>
           <em>{t('settings.eq.mode.current')}</em>
           <strong>{eqUiMode === 'pro' ? t('settings.eq.mode.pro') : t('settings.eq.mode.simple')}</strong>
@@ -2481,7 +2495,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         <div className="eq-signal-heading">
           <Activity size={16} aria-hidden="true" />
           <span>{t('settings.eq.signal.title')}</span>
-          <strong>{dspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
+          <strong>{surfaceDspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
         </div>
         <div className="eq-signal-chain">
           <span className="eq-signal-node" data-active="true">
@@ -2494,30 +2508,34 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <em>{t('settings.eq.signal.preamp')}</em>
             <strong>{formatDb(state.preampDb)}</strong>
           </span>
-          <span className="eq-signal-node" data-active={dspHeadroomActive} data-standby={dspHeadroomArmed && !dspHeadroomActive}>
-            <ShieldCheck size={14} aria-hidden="true" />
-            <em>{t('settings.eq.status.headroom')}</em>
-            <strong>{dspHeadroomArmed ? formatDb(state.dspHeadroomDb ?? 0) : t('settings.eq.channel.bypassed')}</strong>
-          </span>
+          {showEmbeddedDspModules ? (
+            <span className="eq-signal-node" data-active={dspHeadroomActive} data-standby={dspHeadroomArmed && !dspHeadroomActive}>
+              <ShieldCheck size={14} aria-hidden="true" />
+              <em>{t('settings.eq.status.headroom')}</em>
+              <strong>{dspHeadroomArmed ? formatDb(state.dspHeadroomDb ?? 0) : t('settings.eq.channel.bypassed')}</strong>
+            </span>
+          ) : null}
           <span className="eq-signal-node" data-active={state.enabled}>
             <SlidersHorizontal size={14} aria-hidden="true" />
             <em>{t('settings.eq.signal.peq')}</em>
             <strong>{state.enabled ? `${activeBandCount}/${state.bands.length}` : t('settings.eq.channel.bypassed')}</strong>
           </span>
-          <span className="eq-signal-node" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk}>
-            <Waves size={14} aria-hidden="true" />
-            <em>{t('settings.eq.room.short')}</em>
-            <strong>{roomCorrection.enabled ? formatDb(roomCorrection.trimDb) : roomCorrectionStatusLabel}</strong>
-          </span>
-          <span className="eq-signal-node" data-active={state.enabled || roomCorrection.enabled || channelBalance.enabled} data-risk={clippingRisk}>
+          {showEmbeddedDspModules ? (
+            <span className="eq-signal-node" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk}>
+              <Waves size={14} aria-hidden="true" />
+              <em>{t('settings.eq.room.short')}</em>
+              <strong>{roomCorrection.enabled ? formatDb(roomCorrection.trimDb) : roomCorrectionStatusLabel}</strong>
+            </span>
+          ) : null}
+          <span className="eq-signal-node" data-active={showEmbeddedDspModules ? state.enabled || roomCorrection.enabled || channelBalance.enabled : state.enabled} data-risk={surfaceClippingRisk}>
             <ShieldCheck size={14} aria-hidden="true" />
             <em>{t('settings.eq.signal.limiter')}</em>
-            <strong>{dspLimiterProtecting ? t('settings.eq.signal.protecting') : clippingRisk ? t('settings.eq.status.warning') : t('settings.eq.signal.armed')}</strong>
+            <strong>{dspLimiterProtecting ? t('settings.eq.signal.protecting') : surfaceClippingRisk ? t('settings.eq.status.warning') : t('settings.eq.signal.armed')}</strong>
           </span>
-          <span className="eq-signal-node" data-active={dspActive}>
+          <span className="eq-signal-node" data-active={surfaceDspActive}>
             <Waves size={14} aria-hidden="true" />
             <em>{t('settings.eq.signal.output')}</em>
-            <strong>{dspActive ? t('settings.eq.signal.dspOutput') : t('settings.eq.status.bitPerfect')}</strong>
+            <strong>{surfaceDspActive ? t('settings.eq.signal.dspOutput') : t('settings.eq.status.bitPerfect')}</strong>
           </span>
         </div>
       </div>
@@ -2540,17 +2558,19 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <span>{t('settings.eq.status.processor')}</span>
           <strong>{t('settings.eq.status.realtimeIir')}</strong>
         </div>
-        <div className="eq-status-card" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
-          <span>{t('settings.eq.room.title')}</span>
-          <strong>{roomCorrectionStatusLabel}</strong>
+        {showEmbeddedDspModules ? (
+          <div className="eq-status-card" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
+            <span>{t('settings.eq.room.title')}</span>
+            <strong>{roomCorrectionStatusLabel}</strong>
+          </div>
+        ) : null}
+        <div className="eq-status-card" data-risk={surfaceClippingRisk}>
+          <span>{surfaceClippingRisk ? t('settings.eq.status.clippingRisk') : t('settings.eq.status.headroom')}</span>
+          <strong>{surfaceClippingRisk ? t('settings.eq.status.warning') : t('settings.eq.status.safe')}</strong>
         </div>
-        <div className="eq-status-card" data-risk={clippingRisk}>
-          <span>{clippingRisk ? t('settings.eq.status.clippingRisk') : t('settings.eq.status.headroom')}</span>
-          <strong>{clippingRisk ? t('settings.eq.status.warning') : t('settings.eq.status.safe')}</strong>
-        </div>
-        <div className="eq-status-card" data-active={dspActive}>
+        <div className="eq-status-card" data-active={surfaceDspActive}>
           <span>{t('settings.eq.status.bitPerfect')}</span>
-          <strong>{dspActive ? t('common.disabled') : t('common.ready')}</strong>
+          <strong>{surfaceDspActive ? t('common.disabled') : t('common.ready')}</strong>
         </div>
       </div>
       ) : null}
@@ -2580,7 +2600,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               <span>{t('settings.eq.status.estimatedPeak')}</span>
               <strong>{formatDb(estimatedPeakGainDb)}</strong>
             </div>
-            <div className="eq-level-meter" data-risk={clippingRisk}>
+            <div className="eq-level-meter" data-risk={surfaceClippingRisk}>
               <span>
                 <em>{t('settings.eq.level.inputPeak')}</em>
                 <strong>{formatLevelDb(audioLevels?.inputPeakDb)}</strong>
@@ -2614,6 +2634,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <button className="eq-soft-button" data-risk={needsSafePreamp} type="button" disabled={!canAutoPreamp && !needsSafePreamp} onClick={() => handlePreampChange(recommendedPreampDb)}>
               {needsSafePreamp ? t('settings.eq.action.applySafePreamp') : t('settings.eq.action.autoPreamp', { value: formatDb(recommendedPreampDb) })}
             </button>
+            {showEmbeddedDspModules ? (
             <div className="eq-dsp-headroom-control" data-active={dspHeadroomActive}>
               <div>
                 <span>{t('settings.eq.headroom.dsp')}</span>
@@ -2643,6 +2664,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </div>
               <p>{t('settings.eq.headroom.nativeBypassNote')}</p>
             </div>
+            ) : null}
             <div className="eq-auto-gain-controls">
               <button
                 className="eq-soft-button eq-auto-gain-toggle"
@@ -2686,7 +2708,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                 </span>
               </div>
             ) : null}
-            {showAdvancedTools ? (
+            {showAdvancedTools && showEmbeddedDspModules ? (
               <section className="eq-room-correction" data-enabled={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
                 <div className="eq-room-correction-header">
                   <span>
@@ -3089,14 +3111,15 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <button className="eq-soft-button" type="button" onClick={() => setEnabled(!state.enabled)}>
               {state.enabled ? t('settings.eq.action.toggleBypassOn') : t('settings.eq.action.toggleBypassOff')}
             </button>
-            <span className="eq-compare-health" data-risk={clippingRisk}>
-              {clippingRisk ? t('settings.eq.warning.lowerPreamp') : <><ShieldCheck size={14} /> {t('settings.eq.status.safeHeadroomShort')}</>}
+            <span className="eq-compare-health" data-risk={surfaceClippingRisk}>
+              {surfaceClippingRisk ? t('settings.eq.warning.lowerPreamp') : <><ShieldCheck size={14} /> {t('settings.eq.status.safeHeadroomShort')}</>}
             </span>
           </div>
         </div>
         </details>
       ) : null}
 
+      {showEmbeddedDspModules ? (
       <details className="eq-pro-section" open>
         <summary>{t('settings.eq.section.channel')}</summary>
       <section className="channel-balance-panel" aria-label="Channel balance panel" data-enabled={channelBalance.enabled}>
@@ -3455,6 +3478,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </div>
       </section>
       </details>
+      ) : null}
 
       <footer className="eq-preset-tools eq-preset-console">
         <div className="eq-preset-console-main">

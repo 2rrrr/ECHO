@@ -9,7 +9,6 @@ import {
   clamp,
   computeEqBandGainDbAtFrequency,
   computeEqBandNodePoint,
-  computeEqCurvePoints,
   computeEqResponseGainDbAtFrequency,
   computeEqSpectrumBars,
   type EqAnalyzerMode,
@@ -57,7 +56,9 @@ const paddingTop = 30;
 const paddingBottom = 42;
 const plotWidth = width - paddingLeft - paddingRight;
 const plotHeight = height - paddingTop - paddingBottom;
-const axisGains = [12, 9, 6, 3, 0, -3, -6, -9, -12];
+const responsePointCount = 180;
+const defaultAxisLimitDb = 12;
+const axisLimitStepsDb = [12, 18, 24, 36];
 const eqFilterLabelKeys: Record<EqFilterType, TranslationKey> = {
   peaking: 'settings.eq.filter.peaking',
   lowShelf: 'settings.eq.filter.lowShelf',
@@ -85,21 +86,58 @@ const filterNodeGlyphs: Record<EqFilterType, string> = {
   notch: 'N',
 };
 
-const toSvgPoint = (point: { x: number; y: number }): { x: number; y: number } => ({
-  x: paddingLeft + point.x * plotWidth,
-  y: paddingTop + point.y * plotHeight,
-});
+const bandToSvgPoint = (band: EqBand, axisLimitDb = defaultAxisLimitDb): { x: number; y: number } => {
+  const basePoint = computeEqBandNodePoint(band);
+  const gainDb = band.enabled === false || !isEqFilterGainEditable(band.filterType) ? 0 : band.gainDb;
+  return {
+    x: paddingLeft + basePoint.x * plotWidth,
+    y: gainToY(gainDb, axisLimitDb),
+  };
+};
 
-const bandToSvgPoint = (band: EqBand): { x: number; y: number } => toSvgPoint(computeEqBandNodePoint(band));
+const resolveAxisLimitDb = (maxAbsGainDb: number): number => {
+  const steppedLimitDb = axisLimitStepsDb.find((limitDb) => maxAbsGainDb <= limitDb - 0.5);
+  if (steppedLimitDb) {
+    return steppedLimitDb;
+  }
 
-const gainToY = (gainDb: number): number => {
-  const normalized = (gainDb - eqMinGainDb) / (eqMaxGainDb - eqMinGainDb);
+  return Math.min(72, Math.ceil((maxAbsGainDb + 1) / 12) * 12);
+};
+
+const buildAxisGains = (axisLimitDb: number): number[] => {
+  const stepDb = axisLimitDb <= 12 ? 3 : axisLimitDb <= 24 ? 6 : 12;
+  const values: number[] = [];
+
+  for (let gainDb = axisLimitDb; gainDb >= -axisLimitDb; gainDb -= stepDb) {
+    values.push(gainDb);
+  }
+
+  if (!values.includes(0)) {
+    values.push(0);
+    values.sort((left, right) => right - left);
+  }
+
+  return values;
+};
+
+const frequencyAtNormalizedX = (normalized: number): number => {
+  const minLog = Math.log10(eqMinFrequencyHz);
+  const maxLog = Math.log10(eqMaxFrequencyHz);
+  return 10 ** (minLog + clamp(normalized, 0, 1) * (maxLog - minLog));
+};
+
+const gainToY = (gainDb: number, axisLimitDb = defaultAxisLimitDb): number => {
+  const minGainDb = -axisLimitDb;
+  const maxGainDb = axisLimitDb;
+  const normalized = (clamp(gainDb, minGainDb, maxGainDb) - minGainDb) / (maxGainDb - minGainDb);
   return paddingTop + (1 - normalized) * plotHeight;
 };
 
-const yToGain = (y: number): number => {
+const yToGain = (y: number, axisLimitDb = defaultAxisLimitDb): number => {
   const normalized = 1 - clamp((y - paddingTop) / plotHeight, 0, 1);
-  return Math.round((eqMinGainDb + normalized * (eqMaxGainDb - eqMinGainDb)) * 10) / 10;
+  const minGainDb = -axisLimitDb;
+  const maxGainDb = axisLimitDb;
+  return Math.round(clamp(minGainDb + normalized * (maxGainDb - minGainDb), eqMinGainDb, eqMaxGainDb) * 10) / 10;
 };
 
 const xToFrequency = (x: number): number => {
@@ -196,16 +234,52 @@ export const EqCurveView = ({
     () => (dragPreview ? bands.map((band, index) => (index === dragPreview.index ? dragPreview.band : band)) : bands),
     [bands, dragPreview],
   );
-  const points = useMemo(() => computeEqCurvePoints(displayBands).map(toSvgPoint), [displayBands]);
+  const responsePoints = useMemo(
+    () => Array.from({ length: responsePointCount }, (_unused, index) => {
+      const normalized = index / (responsePointCount - 1);
+      return {
+        x: normalized,
+        gainDb: computeEqResponseGainDbAtFrequency(displayBands, frequencyAtNormalizedX(normalized)),
+      };
+    }),
+    [displayBands],
+  );
+  const axisLimitDb = useMemo(() => {
+    const responseMaxAbsGainDb = responsePoints.reduce((maxGainDb, point) => Math.max(maxGainDb, Math.abs(point.gainDb)), defaultAxisLimitDb);
+    const bandMaxAbsGainDb = displayBands.reduce((maxGainDb, band) => (
+      band.enabled === false || !isEqFilterGainEditable(band.filterType) ? maxGainDb : Math.max(maxGainDb, Math.abs(band.gainDb))
+    ), defaultAxisLimitDb);
+    return resolveAxisLimitDb(Math.max(responseMaxAbsGainDb, bandMaxAbsGainDb));
+  }, [displayBands, responsePoints]);
+  const axisGains = useMemo(() => buildAxisGains(axisLimitDb), [axisLimitDb]);
+  const points = useMemo(
+    () => responsePoints.map((point) => ({
+      x: paddingLeft + point.x * plotWidth,
+      y: gainToY(point.gainDb, axisLimitDb),
+    })),
+    [axisLimitDb, responsePoints],
+  );
   const path = makeSmoothPath(points);
-  const zeroY = gainToY(0);
+  const zeroY = gainToY(0, axisLimitDb);
   const fillPath = path ? `${path} L ${paddingLeft + plotWidth} ${zeroY.toFixed(1)} L ${paddingLeft} ${zeroY.toFixed(1)} Z` : '';
   const readoutBandIndex = activeBand ?? hoverBand ?? selectedBandIndex;
   const selectedBand = displayBands[readoutBandIndex];
-  const selectedPoint = selectedBand ? bandToSvgPoint(selectedBand) : null;
+  const selectedPoint = selectedBand ? bandToSvgPoint(selectedBand, axisLimitDb) : null;
   const selectedBandPath = useMemo(
-    () => (selectedBand ? makeSmoothPath(computeEqCurvePoints([selectedBand]).map(toSvgPoint)) : ''),
-    [selectedBand],
+    () => {
+      if (!selectedBand) {
+        return '';
+      }
+
+      return makeSmoothPath(Array.from({ length: responsePointCount }, (_unused, index) => {
+        const normalized = index / (responsePointCount - 1);
+        return {
+          x: paddingLeft + normalized * plotWidth,
+          y: gainToY(computeEqResponseGainDbAtFrequency([selectedBand], frequencyAtNormalizedX(normalized)), axisLimitDb),
+        };
+      }));
+    },
+    [axisLimitDb, selectedBand],
   );
   const spectrumBars = useMemo(
     () => (spectrumEnabled ? computeEqSpectrumBars(visualSpectrum, displayBands, analyzerMode) : []),
@@ -235,7 +309,7 @@ export const EqCurveView = ({
     return {
       rawFrequencyHz,
       frequencyHz: resolveBandFrequency(rawFrequencyHz, frequencyUnlocked),
-      gainDb: quantizeGain(yToGain(y), event.shiftKey),
+      gainDb: quantizeGain(yToGain(y, axisLimitDb), event.shiftKey),
     };
   };
 
@@ -384,7 +458,7 @@ export const EqCurveView = ({
         </defs>
 
         {axisGains.map((gainDb) => {
-          const y = gainToY(gainDb);
+          const y = gainToY(gainDb, axisLimitDb);
           return (
             <g key={gainDb}>
               <line className="eq-grid-line" data-major={gainDb % 6 === 0} x1={paddingLeft} x2={paddingLeft + plotWidth} y1={y} y2={y} />
@@ -422,7 +496,7 @@ export const EqCurveView = ({
         <path className="eq-curve-hit-area" d={path} />
 
         {displayBands.map((band, index) => {
-          const point = bandToSvgPoint(band);
+          const point = bandToSvgPoint(band, axisLimitDb);
           const selected = selectedBandIndex === index;
           return (
             <g
@@ -459,7 +533,7 @@ export const EqCurveView = ({
         })}
 
         {displayBands.map((band, index) => {
-          const point = bandToSvgPoint(band);
+          const point = bandToSvgPoint(band, axisLimitDb);
           return (
             <text className="eq-x-label" x={point.x} y={height - 14} key={`${band.frequencyHz}-${index}-label`}>
               {formatFrequencyLabel(band.frequencyHz)}

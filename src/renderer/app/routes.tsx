@@ -3,6 +3,7 @@ import { AlbumsPage } from '../pages/AlbumsPage';
 import { ArtistsPage } from '../pages/ArtistsPage';
 import { ConnectPage } from '../pages/ConnectPage';
 import { DownloadsPage } from '../pages/DownloadsPage';
+import { DspPage } from '../pages/DspPage';
 import { FoldersPage } from '../pages/FoldersPage';
 import { HistoryPage } from '../pages/HistoryPage';
 import { HomePage } from '../pages/HomePage';
@@ -23,6 +24,7 @@ import {
   EchoAudioSettingsIcon,
   EchoConnectIcon,
   EchoDownloadsIcon,
+  EchoDspIcon,
   EchoFoldersIcon,
   EchoHistoryIcon,
   EchoHomeIcon,
@@ -164,6 +166,14 @@ export const appRoutes: AppRoute[] = [
     icon: EchoConnectIcon,
     placement: 'main',
     element: <ConnectPage />,
+  },
+  {
+    id: 'dsp',
+    label: 'DSP',
+    description: 'Signal-chain tuning workbench.',
+    icon: EchoDspIcon,
+    placement: 'main',
+    element: <DspPage />,
   },
   {
     id: 'streaming',

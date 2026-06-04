@@ -164,17 +164,49 @@ const baseUrlFor = (value: string | null): string => {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 };
 
+const normalizeVirtualPath = (remotePath: string | null | undefined): string =>
+  (remotePath ?? '').trim().replace(/^\/+/u, '').replace(/\/+$/u, '');
+
+const lastVirtualPathSegment = (remotePath: string | null | undefined): string =>
+  normalizeVirtualPath(remotePath).split('/').filter(Boolean).at(-1) ?? '';
+
+const decodeVirtualId = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
 const parseItemId = (provider: MediaServerProvider, remotePath: string): string => {
-  const normalized = remotePath.replace(/^\/+/u, '');
+  const normalized = lastVirtualPathSegment(remotePath);
   const prefix = `${provider}:item:`;
   if (!normalized.startsWith(prefix)) {
     throw new Error(`无效的 ${provider} 远程路径`);
   }
-  return normalized.slice(prefix.length);
+  return decodeVirtualId(normalized.slice(prefix.length));
 };
 
-const virtualItemPath = (provider: MediaServerProvider, id: string): string => `${provider}:item:${id}`;
-const virtualLibraryPath = (provider: MediaServerProvider, id: string): string => `${provider}:library:${id}`;
+const parseBrowseParentId = (provider: MediaServerProvider, remotePath: string | null | undefined): string | null => {
+  const normalized = lastVirtualPathSegment(remotePath);
+  for (const kind of ['library', 'folder'] as const) {
+    const prefix = `${provider}:${kind}:`;
+    if (normalized.startsWith(prefix)) {
+      return decodeVirtualId(normalized.slice(prefix.length));
+    }
+  }
+
+  return null;
+};
+
+const virtualPathWithParent = (parentPath: string, childPath: string): string => {
+  const normalizedParent = normalizeVirtualPath(parentPath);
+  return normalizedParent ? `${normalizedParent}/${childPath}` : childPath;
+};
+
+const virtualItemPath = (provider: MediaServerProvider, id: string): string => `${provider}:item:${encodeURIComponent(id)}`;
+const virtualLibraryPath = (provider: MediaServerProvider, id: string): string => `${provider}:library:${encodeURIComponent(id)}`;
+const virtualFolderPath = (provider: MediaServerProvider, id: string): string => `${provider}:folder:${encodeURIComponent(id)}`;
 
 const friendlyStatus = (provider: MediaServerProvider, status: number): string => {
   if (status === 401) {
@@ -229,6 +261,25 @@ export class MediaServerRemoteSourceAdapter implements RemoteSourceAdapter {
 
   async browse(input: RemoteBrowseInput): Promise<RemoteDirectoryItem[]> {
     const auth = await this.authenticate(input);
+    const parentId = parseBrowseParentId(this.provider, input.path);
+    if (parentId) {
+      const items: MediaServerItem[] = [];
+      let startIndex = 0;
+      const limit = 500;
+      while (!input.signal?.aborted) {
+        const page = await this.fetchChildItems(input, auth, parentId, startIndex, limit);
+        items.push(...(page.Items ?? []));
+        startIndex += limit;
+        if (startIndex >= Number(page.TotalRecordCount ?? 0) || (page.Items ?? []).length === 0) {
+          break;
+        }
+      }
+
+      return items
+        .map((item) => this.itemToDirectoryItem(input.source.id, item, normalizeVirtualPath(input.path)))
+        .filter((item): item is RemoteDirectoryItem => Boolean(item));
+    }
+
     const libraries = await this.fetchLibraries(input, auth);
     return libraries.map((library) => ({
       sourceId: input.source.id,
@@ -465,12 +516,69 @@ export class MediaServerRemoteSourceAdapter implements RemoteSourceAdapter {
     );
   }
 
+  private async fetchChildItems(
+    input: RemoteAdapterInput,
+    auth: AuthContext,
+    parentId: string,
+    startIndex: number,
+    limit: number,
+  ): Promise<{ Items?: MediaServerItem[]; TotalRecordCount?: number }> {
+    const basePath = auth.userId ? `/Users/${encodeURIComponent(auth.userId)}/Items` : '/Items';
+    const url = new URL(`${baseUrlFor(input.source.baseUrl)}${basePath}`);
+    url.searchParams.set('ParentId', parentId);
+    url.searchParams.set('Recursive', 'false');
+    url.searchParams.set('IncludeItemTypes', 'Audio,Folder,CollectionFolder');
+    url.searchParams.set('Fields', 'MediaSources,DateCreated,DateModified,Path,RunTimeTicks,ImageTags');
+    url.searchParams.set('StartIndex', String(startIndex));
+    url.searchParams.set('Limit', String(limit));
+
+    return jsonOrError<{ Items?: MediaServerItem[]; TotalRecordCount?: number }>(
+      await this.fetch(input, url, { headers: auth.headers }, 12000),
+      this.provider,
+    );
+  }
+
   private async fetchItem(input: RemoteAdapterInput, auth: AuthContext, itemId: string): Promise<MediaServerItem> {
     const basePath = auth.userId ? `/Users/${encodeURIComponent(auth.userId)}/Items/${encodeURIComponent(itemId)}` : `/Items/${encodeURIComponent(itemId)}`;
     return jsonOrError<MediaServerItem>(
       await this.fetch(input, `${baseUrlFor(input.source.baseUrl)}${basePath}`, { headers: auth.headers }, 8000),
       this.provider,
     );
+  }
+
+  private itemToDirectoryItem(sourceId: string, item: MediaServerItem, parentPath: string): RemoteDirectoryItem | null {
+    const itemId = cleanText(item.Id);
+    if (!itemId) {
+      return null;
+    }
+
+    const itemType = cleanText(item.Type)?.toLowerCase();
+    const isAudio = itemType === 'audio';
+    const isDirectory = itemType === 'folder' || itemType === 'collectionfolder';
+    if (!isAudio && !isDirectory) {
+      return null;
+    }
+
+    const path = virtualPathWithParent(parentPath, isAudio ? virtualItemPath(this.provider, itemId) : virtualFolderPath(this.provider, itemId));
+    return {
+      sourceId,
+      provider: this.provider,
+      path,
+      name: cleanText(item.Name) ?? itemId,
+      kind: isAudio ? 'file' : 'directory',
+      sizeBytes: this.sizeFor(item),
+      modifiedAt: cleanText(item.DateModified) ?? cleanText(item.DateCreated),
+      etag: cleanText(item.Etag) ?? sha1({
+        id: item.Id,
+        name: item.Name,
+        type: item.Type,
+        runtime: item.RunTimeTicks,
+        image: item.ImageTags?.Primary,
+        size: this.sizeFor(item),
+      }),
+      contentType: isAudio ? 'audio/*' : null,
+      audio: isAudio,
+    };
   }
 
   private itemToScanItem(sourceId: string, item: MediaServerItem): RemoteScanItem | null {

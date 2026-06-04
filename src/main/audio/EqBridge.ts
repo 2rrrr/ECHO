@@ -153,95 +153,11 @@ type BuiltInPresetDefinition = {
 };
 
 const builtInPresetDefinitions: BuiltInPresetDefinition[] = [
-  { id: 'flat', name: '原音如初', preampDb: 0, gains: [] },
-  { id: 'bass-boost', name: '深海低频', preampDb: -8, gains: [4.8, 5.5, 6.4, 7.2, 7.5, 7.2, 6.6, 5.5, 4.1, 2.8, 1.5, 0.6, 0, -0.3, -0.6, -0.8, -1, -1.1, -1.2, -1.4, -1.5, -1.6, -1.8, -2, -2.2, -2.4, -2.6, -2.8, -3, -3.2, -3.4] },
-  { id: 'vocal-clear', name: '人声如绸', preampDb: -6, gains: [-6.5, -6.2, -5.8, -5.2, -4.7, -4.2, -3.5, -2.8, -2, -1.2, -0.4, 0.5, 1.4, 2.3, 3.2, 4.1, 4.8, 5.2, 5, 4.5, 3.8, 3, 2.1, 1.2, 0.2, -0.8, -1.6, -2.2, -2.8, -3.2, -3.6] },
-  { id: 'treble-sparkle', name: '银砂高频', preampDb: -7, gains: [-3.2, -3, -2.8, -2.5, -2.2, -1.8, -1.4, -1, -0.7, -0.4, -0.2, 0, 0.3, 0.5, 0.8, 1.1, 1.5, 2, 2.6, 3.2, 3.8, 4.4, 5, 5.6, 6.1, 6.4, 6.2, 5.8, 5.2, 4.6, 3.8] },
-  { id: 'loudness', name: '暮色响度', preampDb: -8, gains: [5, 5.8, 6.6, 7.2, 7.5, 7.2, 6.5, 5.4, 4, 2.2, 0.6, -0.8, -1.6, -2, -2.2, -2, -1.5, -0.8, 0, 0.7, 1.4, 2.2, 3, 3.8, 4.5, 5, 5.3, 5.2, 4.8, 4.2, 3.5] },
-  { id: 'night', name: '月下轻听', preampDb: -2, gains: [-6.5, -6.3, -6, -5.5, -5, -4.4, -3.7, -3, -2.3, -1.6, -1, -0.5, 0, 0.6, 1, 1.3, 1.4, 1.2, 0.9, 0.3, -0.4, -1.2, -2.2, -3.2, -4.2, -5, -5.8, -6.4, -6.8, -7, -7.2] },
-  { id: 'headphone-warm', name: '绒暖耳机', preampDb: -6, gains: [3.8, 4.4, 5, 5.3, 5.1, 4.7, 4.1, 3.4, 2.7, 2, 1.3, 0.8, 0.4, 0.1, -0.2, -0.5, -0.8, -1, -1.2, -1.4, -1.7, -2, -2.3, -2.6, -2.9, -3.1, -3.3, -3.5, -3.7, -3.8, -4] },
-  { id: 'anime-jpop', name: '樱色电波', preampDb: -6, gains: [2.5, 3, 3.3, 3.2, 2.8, 2.2, 1.4, 0.5, -0.4, -1.2, -1.8, -2.2, -2.4, -2.2, -1.4, -0.4, 0.8, 1.8, 2.8, 3.7, 4.5, 5.2, 5.7, 5.5, 5, 4.3, 3.5, 2.7, 2, 1.3, 0.8] },
-  { id: 'rock', name: '黑曜摇滚', preampDb: -6, gains: [4.2, 4.8, 5.3, 5.5, 5.2, 4.6, 3.8, 2.6, 1.2, -0.5, -1.8, -2.7, -3.2, -3, -2.3, -1.4, -0.4, 0.8, 1.8, 2.8, 3.6, 4.4, 4.9, 4.7, 4.2, 3.6, 3, 2.4, 2, 1.6, 1.2] },
-  { id: 'classical', name: '星厅古典', preampDb: -4, gains: [1.2, 1.4, 1.6, 1.8, 1.7, 1.5, 1.2, 0.9, 0.5, 0.1, -0.3, -0.6, -0.9, -1, -0.9, -0.7, -0.4, 0, 0.5, 1, 1.5, 2.1, 2.6, 3, 3.3, 3.5, 3.4, 3, 2.4, 1.8, 1.2] },
-  { id: 'harman-target', name: '暖场哈曼', preampDb: -6, gains: [5.5, 5.9, 6.2, 6.1, 5.7, 5.2, 4.6, 3.8, 3, 2.2, 1.4, 0.8, 0.4, 0.1, 0, -0.1, 0.2, 0.6, 1.1, 1.8, 2.5, 3.1, 3.6, 3.8, 3.5, 3, 2.4, 1.8, 1.2, 0.7, 0.3] },
-  { id: 'harman-in-ear', name: '入耳晨光', preampDb: -8, gains: [7.2, 7.7, 8, 7.8, 7.2, 6.5, 5.8, 4.8, 3.8, 2.6, 1.4, 0.6, 0.1, -0.2, -0.5, -0.4, 0, 0.7, 1.5, 2.4, 3.2, 4, 4.5, 4.2, 3.7, 3.3, 3, 2.5, 2, 1.4, 0.8] },
-  { id: 'diffuse-field', name: '漫野扩散', preampDb: -7, gains: [-5.8, -5.5, -5.2, -4.8, -4.2, -3.6, -3, -2.4, -1.8, -1.2, -0.6, 0, 0.6, 1.2, 1.8, 2.4, 3.2, 4, 4.8, 5.5, 6.1, 6.3, 6, 5.2, 4.3, 3.4, 2.5, 1.6, 0.8, 0.2, -0.4] },
-  { id: 'bk-room-curve', name: '木厅曲线', preampDb: -6, gains: [5.8, 5.6, 5.4, 5.1, 4.8, 4.5, 4.1, 3.7, 3.2, 2.7, 2.2, 1.6, 1, 0.4, 0, -0.5, -1, -1.5, -2, -2.5, -3, -3.5, -4, -4.5, -5, -5.4, -5.8, -6, -6.2, -6.4, -6.6] },
-  { id: 'studio-neutral', name: '录音室白描', preampDb: -2, gains: [-1.5, -1.6, -1.6, -1.5, -1.4, -1.2, -1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9, 2, 1.8, 1.5, 1.1, 0.7, 0.3, -0.2, -0.7, -1.2] },
-  { id: 'classic-smiley', name: '晨弧微笑', preampDb: -8, gains: [6.2, 6.7, 7, 7.2, 7, 6.5, 5.8, 4.7, 3.2, 1.4, -0.8, -2.5, -3.8, -4.5, -4.6, -4.2, -3.4, -2.2, -0.8, 0.6, 1.8, 3, 4.2, 5.2, 6, 6.5, 6.8, 7, 7, 6.7, 6.2] },
-  { id: 'vinyl-warmth', name: '黑胶余温', preampDb: -6, gains: [4.2, 4.7, 5, 5, 4.7, 4.2, 3.5, 2.8, 2, 1.2, 0.5, 0.1, -0.2, -0.4, -0.6, -0.8, -1, -1.2, -1.5, -1.8, -2.2, -2.6, -3, -3.4, -3.8, -4.2, -4.6, -5, -5.4, -5.8, -6] },
-  { id: 'broadcast-voice', name: '电台近语', preampDb: -6, gains: [-8, -7.6, -7.1, -6.5, -5.8, -5, -4.2, -3.2, -2, -0.5, 1, 2.5, 3.8, 4.8, 5.4, 5.8, 5.6, 5.2, 4.5, 3.6, 2.4, 1.2, 0, -1.4, -2.8, -4, -5.2, -6.2, -7, -7.6, -8] },
-  { id: 'city-pop', name: '霓虹夜航', preampDb: -6, gains: [3, 3.4, 3.6, 3.4, 3, 2.4, 1.5, 0.5, -0.5, -1.2, -1.8, -2, -1.8, -1.3, -0.6, 0.2, 1, 1.8, 2.6, 3.5, 4.3, 4.9, 5.2, 5, 4.5, 3.8, 3.2, 2.7, 2.2, 1.6, 1] },
-  { id: 'acoustic-silk', name: '弦木柔光', preampDb: -4, gains: [1.8, 2, 2.2, 2.1, 1.9, 1.6, 1.2, 0.8, 0.3, 0, -0.2, 0, 0.4, 0.9, 1.4, 1.8, 2.1, 2.3, 2.1, 1.8, 1.5, 1.1, 0.8, 0.4, 0, -0.6, -1.2, -1.8, -2.3, -2.8, -3] },
-  { id: 'piano-room', name: '琴房微光', preampDb: -5, gains: [0.8, 1, 1.2, 1.4, 1.5, 1.4, 1.2, 0.8, 0.3, -0.2, -0.6, -0.8, -0.6, -0.2, 0.4, 1, 1.6, 2.2, 2.8, 3.3, 3.8, 4.1, 4, 3.5, 2.8, 2.1, 1.3, 0.4, -0.4, -1.1, -1.8] },
-  { id: 'lofi-dusk', name: '雨窗低保真', preampDb: -4, gains: [3, 3.2, 3.3, 3.1, 2.8, 2.4, 1.8, 1.2, 0.6, 0.1, -0.4, -0.8, -1, -1.2, -1.2, -1, -0.8, -0.6, -0.5, -0.6, -0.8, -1.2, -1.8, -2.6, -3.5, -4.4, -5.2, -5.8, -6.3, -6.8, -7] },
-  { id: 'cinema-orchestra', name: '银幕纵深', preampDb: -7, gains: [5, 5.5, 5.9, 6.2, 6, 5.6, 5, 4.2, 3.2, 2.1, 1, 0.2, -0.3, -0.5, -0.4, 0, 0.6, 1.4, 2.3, 3.2, 4, 4.7, 5.2, 5.5, 5.4, 5, 4.5, 3.8, 3, 2.1, 1.2] },
-  { id: 'live-house', name: '小馆现场', preampDb: -6, gains: [4, 4.5, 4.8, 4.6, 4, 3.2, 2.2, 1.1, -0.2, -1.4, -2.4, -3, -3.2, -2.8, -2, -1, 0.2, 1.4, 2.6, 3.8, 4.8, 5.4, 5.6, 5.2, 4.6, 3.8, 3, 2.3, 1.8, 1.2, 0.7] },
-  { id: 'female-vocal-air', name: '清露女声', preampDb: -6, gains: [-5, -4.8, -4.5, -4.1, -3.6, -3, -2.3, -1.6, -0.8, 0, 0.8, 1.8, 2.8, 3.8, 4.8, 5.5, 5.8, 5.6, 5, 4.3, 3.6, 3.1, 3, 3.2, 3.6, 4, 4.2, 3.8, 3, 2, 1] },
-  {
-    id: 'sub-cleanup',
-    name: '潜波净化',
-    preampDb: -2,
-    bands: createParametricBands({
-      0: { frequencyHz: 28, gainDb: 0, q: 0.7, filterType: 'highPass' },
-      1: { frequencyHz: 70, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' },
-      3: { frequencyHz: 240, gainDb: -2.5, q: 1.1, filterType: 'peaking' },
-    }),
-  },
-  {
-    id: 'vocal-de-ess',
-    name: '雪绒去齿',
-    preampDb: -3,
-    bands: createParametricBands({
-      2: { frequencyHz: 180, gainDb: -1.5, q: 1.0, filterType: 'peaking' },
-      6: { frequencyHz: 3200, gainDb: 1.5, q: 0.9, filterType: 'peaking' },
-      8: { frequencyHz: 7200, gainDb: -4.5, q: 4.2, filterType: 'peaking' },
-      9: { frequencyHz: 18000, gainDb: 0, q: 0.7, filterType: 'lowPass' },
-    }),
-  },
-  {
-    id: 'headphone-notch',
-    name: '耳峰细修',
-    preampDb: -3,
-    bands: createParametricBands({
-      0: { frequencyHz: 35, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' },
-      5: { frequencyHz: 2800, gainDb: -2, q: 1.4, filterType: 'peaking' },
-      7: { frequencyHz: 6200, gainDb: 0, q: 7.5, filterType: 'notch' },
-      8: { frequencyHz: 9000, gainDb: -2.5, q: 2.2, filterType: 'peaking' },
-    }),
-  },
-  {
-    id: 'subsonic-filter',
-    name: '暗涌滤波',
-    preampDb: -2,
-    bands: createParametricBands({
-      0: { frequencyHz: 24, gainDb: 0, q: 0.7, filterType: 'highPass' },
-      1: { frequencyHz: 80, gainDb: 0.8, q: 0.7, filterType: 'lowShelf' },
-    }),
-  },
-  {
-    id: 'sibilance-tamer',
-    name: '齿音柔化',
-    preampDb: -4,
-    bands: createParametricBands({
-      2: { frequencyHz: 180, gainDb: -1.2, q: 1.0, filterType: 'peaking' },
-      7: { frequencyHz: 5600, gainDb: -2.8, q: 3.5, filterType: 'peaking' },
-      8: { frequencyHz: 8200, gainDb: 0, q: 6.0, filterType: 'notch' },
-      9: { frequencyHz: 12500, gainDb: -1.0, q: 0.8, filterType: 'highShelf' },
-    }),
-  },
-  {
-    id: 'bluetooth-speaker-cleanup',
-    name: '蓝牙清场',
-    preampDb: -3,
-    bands: createParametricBands({
-      0: { frequencyHz: 55, gainDb: 0, q: 0.7, filterType: 'highPass' },
-      1: { frequencyHz: 120, gainDb: -2.0, q: 0.8, filterType: 'lowShelf' },
-      3: { frequencyHz: 420, gainDb: -2.0, q: 1.2, filterType: 'peaking' },
-      7: { frequencyHz: 8500, gainDb: 2.0, q: 0.8, filterType: 'highShelf' },
-      9: { frequencyHz: 18000, gainDb: 0, q: 0.7, filterType: 'lowPass' },
-    }),
-  },
+  { id: 'flat', name: 'Flat', preampDb: 0, gains: [] },
+  { id: 'harman-target', name: 'Harman 2018', preampDb: -3, gains: [2.3, 2.5, 2.6, 2.6, 2.4, 2.1, 1.8, 1.4, 1, 0.6, 0.3, 0.1, 0, 0, 0, 0, 0.1, 0.3, 0.6, 0.9, 1.2, 1.5, 1.7, 1.8, 1.7, 1.5, 1.2, 0.9, 0.6, 0.3, 0.1] },
+  { id: 'harman-in-ear', name: 'Harman IE 2019', preampDb: -3, gains: [2.6, 2.8, 3, 2.9, 2.7, 2.4, 2, 1.5, 1, 0.5, 0.2, 0, -0.1, -0.1, 0, 0.2, 0.5, 0.9, 1.2, 1.5, 1.7, 1.8, 1.7, 1.5, 1.3, 1.1, 0.9, 0.6, 0.4, 0.2, 0] },
+  { id: 'diffuse-field', name: 'Diffuse Field', preampDb: -3, gains: [-1.6, -1.5, -1.4, -1.2, -1, -0.8, -0.5, -0.2, 0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.6, 2.7, 2.6, 2.4, 2.1, 1.7, 1.3, 0.9, 0.5, 0.2, 0, -0.2, -0.4, -0.6] },
+  { id: 'bk-room-curve', name: 'B&K Room', preampDb: -2, gains: [2, 1.9, 1.8, 1.7, 1.5, 1.3, 1.1, 0.9, 0.6, 0.4, 0.2, 0, -0.2, -0.4, -0.6, -0.8, -1, -1.1, -1.2, -1.3, -1.4, -1.5, -1.6, -1.7, -1.8, -1.8, -1.9, -1.9, -2, -2, -2] },
 ];
 
 const builtInPresets: EqPreset[] = builtInPresetDefinitions.map((preset) => ({
@@ -260,7 +176,7 @@ const defaultState = (): EqState => ({
   dspHeadroomDb: 0,
   bands: createBands(),
   presetId: 'flat',
-  presetName: '原音如初',
+  presetName: 'Flat',
   clippingRisk: false,
 });
 
@@ -284,7 +200,7 @@ const normalizeState = (value: unknown): EqState | null => {
     dspHeadroomDb: clamp(dspHeadroomDb, dspHeadroomMinDb, dspHeadroomMaxDb),
     bands,
     presetId: typeof input.presetId === 'string' && input.presetId.trim() ? input.presetId.trim().slice(0, 64) : 'flat',
-    presetName: typeof input.presetName === 'string' && input.presetName.trim() ? input.presetName.trim().slice(0, 64) : '原音如初',
+    presetName: typeof input.presetName === 'string' && input.presetName.trim() ? input.presetName.trim().slice(0, 64) : 'Flat',
     clippingRisk: false,
   };
 };

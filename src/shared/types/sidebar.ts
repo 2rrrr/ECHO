@@ -7,6 +7,7 @@ export const sidebarRouteIds = [
   'folders',
   'remote',
   'connect',
+  'dsp',
   'streaming',
   'queue',
   'history',

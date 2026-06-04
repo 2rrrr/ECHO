@@ -108,7 +108,6 @@ import type {
   ReplayGainAnalysisJobStatus,
 } from '../../shared/types/library';
 import type { UpdateStatus } from '../../shared/types/updates';
-import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryHealthReportPanel } from '../components/library/LibraryHealthReportPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
@@ -7326,6 +7325,10 @@ export const SettingsPage = (): JSX.Element => {
     window.dispatchEvent(new Event('app:navigate:plugins'));
   };
 
+  const handleOpenDspPage = (): void => {
+    window.dispatchEvent(new Event('app:navigate:dsp'));
+  };
+
   const handleOpenPluginDirectory = async (): Promise<void> => {
     const plugins = getPluginsBridge();
 
@@ -11973,7 +11976,44 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={SlidersHorizontal} id="eq" title={t('settings.nav.eq.label')}>
-              <EqPanel audioStatus={status} onAudioStatusRefresh={refreshStatus} />
+              <SettingRow
+                title="DSP 工作台"
+                description="EQ、余量、声道与输出保护已经搬到侧栏里的调音工作区。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--dsp-workbench">
+                  <div className="settings-status-grid settings-status-grid--audio">
+                    <span>
+                      <em>Signal path</em>
+                      <strong>{status?.dspActive ? 'DSP path' : 'Native direct'}</strong>
+                    </span>
+                    <span>
+                      <em>EQ</em>
+                      <strong>{status?.eqEnabled ? 'Enabled' : 'Bypassed'}</strong>
+                    </span>
+                    <span>
+                      <em>Preset</em>
+                      <strong>{status?.eqPresetName ?? 'Flat'}</strong>
+                    </span>
+                    <span>
+                      <em>Safety</em>
+                      <strong>{status?.clippingRisk ? 'Headroom risk' : 'Protected'}</strong>
+                    </span>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={handleOpenDspPage}>
+                      <SlidersHorizontal size={15} />
+                      打开 DSP 工作台
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void refreshStatus()}>
+                      <RefreshCw size={15} />
+                      刷新状态
+                    </button>
+                  </div>
+                  <p className="settings-inline-note">
+                    这里保留状态摘要；具体调音请从左侧 DSP 进入，布局更接近 Roon 的链路式工作流。
+                  </p>
+                </div>
+              </SettingRow>
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Palette} id="appearance" title={t('settings.nav.appearance.label')}>

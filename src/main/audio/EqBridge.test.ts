@@ -17,41 +17,13 @@ const createBridge = (): EqBridge => {
   return new EqBridge(dir);
 };
 
-const padGains = (gains: number[]): number[] => [...gains, ...Array(Math.max(0, eqBandCount - gains.length)).fill(0)].slice(0, eqBandCount);
-
-const expectedBuiltInCurves: Record<string, { preampDb: number; gains: number[] }> = {
-  flat: { preampDb: 0, gains: padGains([]) },
-  'bass-boost': { preampDb: -8, gains: [4.8, 5.5, 6.4, 7.2, 7.5, 7.2, 6.6, 5.5, 4.1, 2.8, 1.5, 0.6, 0, -0.3, -0.6, -0.8, -1, -1.1, -1.2, -1.4, -1.5, -1.6, -1.8, -2, -2.2, -2.4, -2.6, -2.8, -3, -3.2, -3.4] },
-  'vocal-clear': { preampDb: -6, gains: [-6.5, -6.2, -5.8, -5.2, -4.7, -4.2, -3.5, -2.8, -2, -1.2, -0.4, 0.5, 1.4, 2.3, 3.2, 4.1, 4.8, 5.2, 5, 4.5, 3.8, 3, 2.1, 1.2, 0.2, -0.8, -1.6, -2.2, -2.8, -3.2, -3.6] },
-  'treble-sparkle': { preampDb: -7, gains: [-3.2, -3, -2.8, -2.5, -2.2, -1.8, -1.4, -1, -0.7, -0.4, -0.2, 0, 0.3, 0.5, 0.8, 1.1, 1.5, 2, 2.6, 3.2, 3.8, 4.4, 5, 5.6, 6.1, 6.4, 6.2, 5.8, 5.2, 4.6, 3.8] },
-  loudness: { preampDb: -8, gains: [5, 5.8, 6.6, 7.2, 7.5, 7.2, 6.5, 5.4, 4, 2.2, 0.6, -0.8, -1.6, -2, -2.2, -2, -1.5, -0.8, 0, 0.7, 1.4, 2.2, 3, 3.8, 4.5, 5, 5.3, 5.2, 4.8, 4.2, 3.5] },
-  night: { preampDb: -2, gains: [-6.5, -6.3, -6, -5.5, -5, -4.4, -3.7, -3, -2.3, -1.6, -1, -0.5, 0, 0.6, 1, 1.3, 1.4, 1.2, 0.9, 0.3, -0.4, -1.2, -2.2, -3.2, -4.2, -5, -5.8, -6.4, -6.8, -7, -7.2] },
-  'headphone-warm': { preampDb: -6, gains: [3.8, 4.4, 5, 5.3, 5.1, 4.7, 4.1, 3.4, 2.7, 2, 1.3, 0.8, 0.4, 0.1, -0.2, -0.5, -0.8, -1, -1.2, -1.4, -1.7, -2, -2.3, -2.6, -2.9, -3.1, -3.3, -3.5, -3.7, -3.8, -4] },
-  'anime-jpop': { preampDb: -6, gains: [2.5, 3, 3.3, 3.2, 2.8, 2.2, 1.4, 0.5, -0.4, -1.2, -1.8, -2.2, -2.4, -2.2, -1.4, -0.4, 0.8, 1.8, 2.8, 3.7, 4.5, 5.2, 5.7, 5.5, 5, 4.3, 3.5, 2.7, 2, 1.3, 0.8] },
-  rock: { preampDb: -6, gains: [4.2, 4.8, 5.3, 5.5, 5.2, 4.6, 3.8, 2.6, 1.2, -0.5, -1.8, -2.7, -3.2, -3, -2.3, -1.4, -0.4, 0.8, 1.8, 2.8, 3.6, 4.4, 4.9, 4.7, 4.2, 3.6, 3, 2.4, 2, 1.6, 1.2] },
-  classical: { preampDb: -4, gains: [1.2, 1.4, 1.6, 1.8, 1.7, 1.5, 1.2, 0.9, 0.5, 0.1, -0.3, -0.6, -0.9, -1, -0.9, -0.7, -0.4, 0, 0.5, 1, 1.5, 2.1, 2.6, 3, 3.3, 3.5, 3.4, 3, 2.4, 1.8, 1.2] },
-  'harman-target': { preampDb: -6, gains: [5.5, 5.9, 6.2, 6.1, 5.7, 5.2, 4.6, 3.8, 3, 2.2, 1.4, 0.8, 0.4, 0.1, 0, -0.1, 0.2, 0.6, 1.1, 1.8, 2.5, 3.1, 3.6, 3.8, 3.5, 3, 2.4, 1.8, 1.2, 0.7, 0.3] },
-  'harman-in-ear': { preampDb: -8, gains: [7.2, 7.7, 8, 7.8, 7.2, 6.5, 5.8, 4.8, 3.8, 2.6, 1.4, 0.6, 0.1, -0.2, -0.5, -0.4, 0, 0.7, 1.5, 2.4, 3.2, 4, 4.5, 4.2, 3.7, 3.3, 3, 2.5, 2, 1.4, 0.8] },
-  'diffuse-field': { preampDb: -7, gains: [-5.8, -5.5, -5.2, -4.8, -4.2, -3.6, -3, -2.4, -1.8, -1.2, -0.6, 0, 0.6, 1.2, 1.8, 2.4, 3.2, 4, 4.8, 5.5, 6.1, 6.3, 6, 5.2, 4.3, 3.4, 2.5, 1.6, 0.8, 0.2, -0.4] },
-  'bk-room-curve': { preampDb: -6, gains: [5.8, 5.6, 5.4, 5.1, 4.8, 4.5, 4.1, 3.7, 3.2, 2.7, 2.2, 1.6, 1, 0.4, 0, -0.5, -1, -1.5, -2, -2.5, -3, -3.5, -4, -4.5, -5, -5.4, -5.8, -6, -6.2, -6.4, -6.6] },
-  'studio-neutral': { preampDb: -2, gains: [-1.5, -1.6, -1.6, -1.5, -1.4, -1.2, -1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9, 2, 1.8, 1.5, 1.1, 0.7, 0.3, -0.2, -0.7, -1.2] },
-  'classic-smiley': { preampDb: -8, gains: [6.2, 6.7, 7, 7.2, 7, 6.5, 5.8, 4.7, 3.2, 1.4, -0.8, -2.5, -3.8, -4.5, -4.6, -4.2, -3.4, -2.2, -0.8, 0.6, 1.8, 3, 4.2, 5.2, 6, 6.5, 6.8, 7, 7, 6.7, 6.2] },
-  'vinyl-warmth': { preampDb: -6, gains: [4.2, 4.7, 5, 5, 4.7, 4.2, 3.5, 2.8, 2, 1.2, 0.5, 0.1, -0.2, -0.4, -0.6, -0.8, -1, -1.2, -1.5, -1.8, -2.2, -2.6, -3, -3.4, -3.8, -4.2, -4.6, -5, -5.4, -5.8, -6] },
-  'broadcast-voice': { preampDb: -6, gains: [-8, -7.6, -7.1, -6.5, -5.8, -5, -4.2, -3.2, -2, -0.5, 1, 2.5, 3.8, 4.8, 5.4, 5.8, 5.6, 5.2, 4.5, 3.6, 2.4, 1.2, 0, -1.4, -2.8, -4, -5.2, -6.2, -7, -7.6, -8] },
-  'city-pop': { preampDb: -6, gains: [3, 3.4, 3.6, 3.4, 3, 2.4, 1.5, 0.5, -0.5, -1.2, -1.8, -2, -1.8, -1.3, -0.6, 0.2, 1, 1.8, 2.6, 3.5, 4.3, 4.9, 5.2, 5, 4.5, 3.8, 3.2, 2.7, 2.2, 1.6, 1] },
-  'acoustic-silk': { preampDb: -4, gains: [1.8, 2, 2.2, 2.1, 1.9, 1.6, 1.2, 0.8, 0.3, 0, -0.2, 0, 0.4, 0.9, 1.4, 1.8, 2.1, 2.3, 2.1, 1.8, 1.5, 1.1, 0.8, 0.4, 0, -0.6, -1.2, -1.8, -2.3, -2.8, -3] },
-  'piano-room': { preampDb: -5, gains: [0.8, 1, 1.2, 1.4, 1.5, 1.4, 1.2, 0.8, 0.3, -0.2, -0.6, -0.8, -0.6, -0.2, 0.4, 1, 1.6, 2.2, 2.8, 3.3, 3.8, 4.1, 4, 3.5, 2.8, 2.1, 1.3, 0.4, -0.4, -1.1, -1.8] },
-  'lofi-dusk': { preampDb: -4, gains: [3, 3.2, 3.3, 3.1, 2.8, 2.4, 1.8, 1.2, 0.6, 0.1, -0.4, -0.8, -1, -1.2, -1.2, -1, -0.8, -0.6, -0.5, -0.6, -0.8, -1.2, -1.8, -2.6, -3.5, -4.4, -5.2, -5.8, -6.3, -6.8, -7] },
-  'cinema-orchestra': { preampDb: -7, gains: [5, 5.5, 5.9, 6.2, 6, 5.6, 5, 4.2, 3.2, 2.1, 1, 0.2, -0.3, -0.5, -0.4, 0, 0.6, 1.4, 2.3, 3.2, 4, 4.7, 5.2, 5.5, 5.4, 5, 4.5, 3.8, 3, 2.1, 1.2] },
-  'live-house': { preampDb: -6, gains: [4, 4.5, 4.8, 4.6, 4, 3.2, 2.2, 1.1, -0.2, -1.4, -2.4, -3, -3.2, -2.8, -2, -1, 0.2, 1.4, 2.6, 3.8, 4.8, 5.4, 5.6, 5.2, 4.6, 3.8, 3, 2.3, 1.8, 1.2, 0.7] },
-  'female-vocal-air': { preampDb: -6, gains: [-5, -4.8, -4.5, -4.1, -3.6, -3, -2.3, -1.6, -0.8, 0, 0.8, 1.8, 2.8, 3.8, 4.8, 5.5, 5.8, 5.6, 5, 4.3, 3.6, 3.1, 3, 3.2, 3.6, 4, 4.2, 3.8, 3, 2, 1] },
-  'sub-cleanup': { preampDb: -2, gains: padGains([0, 1.5, 0, -2.5, 0, 0, 0, 0, 0, 0]) },
-  'vocal-de-ess': { preampDb: -3, gains: padGains([0, 0, -1.5, 0, 0, 0, 1.5, 0, -4.5, 0]) },
-  'headphone-notch': { preampDb: -3, gains: padGains([1.5, 0, 0, 0, 0, -2, 0, 0, -2.5, 0]) },
-  'subsonic-filter': { preampDb: -2, gains: padGains([0, 0.8, 0, 0, 0, 0, 0, 0, 0, 0]) },
-  'sibilance-tamer': { preampDb: -4, gains: padGains([0, 0, -1.2, 0, 0, 0, 0, -2.8, 0, -1]) },
-  'bluetooth-speaker-cleanup': { preampDb: -3, gains: padGains([0, -2, 0, -2, 0, 0, 0, 2, 0, 0]) },
-};
+const expectedBuiltInPresetIds = [
+  'flat',
+  'harman-target',
+  'harman-in-ear',
+  'diffuse-field',
+  'bk-room-curve',
+];
 
 afterEach(() => {
   tempDirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }));
@@ -186,7 +158,7 @@ describe('EqBridge protocol validation', () => {
 
   it('keeps the intended EQ curve when a fresh native host answers enable with Flat state', async () => {
     const bridge = createBridge();
-    await bridge.setPreset('rock');
+    await bridge.setPreset('harman-target');
     await bridge.setEnabled(true);
     const intendedBands = bridge.getState().bands;
     const server = await createEqControlServer({ responseBands: createBridge().getState().bands });
@@ -387,7 +359,7 @@ describe('EqBridge protocol validation', () => {
     tempDirs.push(dir);
     const bridge = new EqBridge(dir);
 
-    await bridge.setPreset('rock');
+    await bridge.setPreset('harman-target');
     await bridge.setEnabled(true);
     await bridge.setBandGain({ band: 0, gainDb: 3.5 });
     await bridge.setPreamp(-3);
@@ -414,7 +386,7 @@ describe('EqBridge protocol validation', () => {
       enabled: false,
       preampDb: 0,
       presetId: 'flat',
-      presetName: '原音如初',
+      presetName: 'Flat',
     });
   });
 
@@ -472,54 +444,49 @@ describe('EqBridge protocol validation', () => {
     const bridge = createBridge();
     const presets = bridge.listPresets();
     const harman = presets.find((preset) => preset.id === 'harman-target');
-    const classicSmiley = presets.find((preset) => preset.id === 'classic-smiley');
 
     expect(harman).toMatchObject({
-      name: '暖场哈曼',
-      preampDb: -6,
+      name: 'Harman 2018',
+      preampDb: -3,
       readonly: true,
     });
-    expect(harman?.bands.map((band) => band.gainDb)).toEqual(expectedBuiltInCurves['harman-target'].gains);
-    expect(classicSmiley).toMatchObject({
-      name: '晨弧微笑',
-      readonly: true,
-    });
+    expect(harman?.bands[0].gainDb).toBe(2.3);
+    expect(harman?.bands[23].gainDb).toBe(1.8);
 
     await bridge.setPreset('harman-target');
 
     expect(bridge.getState()).toMatchObject({
       presetId: 'harman-target',
-      presetName: '暖场哈曼',
-      preampDb: -6,
+      presetName: 'Harman 2018',
+      preampDb: -3,
     });
   });
 
-  it('keeps every built-in preset locked to intentional 31-band curve data', () => {
+  it('keeps every built-in preset locked to listenable curve guardrails', () => {
     const bridge = createBridge();
     const builtInPresets = bridge.listPresets().filter((preset) => preset.readonly);
 
-    expect(builtInPresets).toHaveLength(Object.keys(expectedBuiltInCurves).length);
+    expect(builtInPresets.map((preset) => preset.id)).toEqual(expectedBuiltInPresetIds);
     for (const preset of builtInPresets) {
-      const expected = expectedBuiltInCurves[preset.id];
-      expect(expected, preset.name).toBeDefined();
-      expect(preset.preampDb, preset.name).toBe(expected.preampDb);
       expect(preset.bands).toHaveLength(eqBandCount);
-      expect(preset.bands.map((band) => band.gainDb), preset.name).toEqual(expected.gains);
-
-      const usesParametricFilter = preset.bands.some((band) => band.filterType && band.filterType !== 'peaking');
-
-      if (usesParametricFilter) {
-        expect(preset.bands.some((band) => band.filterType === 'lowPass' || band.filterType === 'highPass' || band.filterType === 'notch'), preset.name).toBe(true);
-        continue;
-      }
-
-      if (preset.id === 'flat') {
-        continue;
-      }
+      expect(preset.preampDb, preset.name).toBeGreaterThanOrEqual(-3);
+      expect(preset.preampDb, preset.name).toBeLessThanOrEqual(0);
+      expect(preset.bands.every((band) => band.filterType !== 'lowPass' && band.filterType !== 'highPass' && band.filterType !== 'notch'), preset.name).toBe(true);
 
       const gains = preset.bands.map((band) => band.gainDb);
-      expect(Math.max(...gains) - Math.min(...gains), preset.name).toBeGreaterThanOrEqual(3.5);
-      expect(gains.filter((gainDb) => Math.abs(gainDb) >= 1).length, preset.name).toBeGreaterThanOrEqual(6);
+      expect(Math.max(...gains), preset.name).toBeLessThanOrEqual(3);
+      expect(Math.min(...gains), preset.name).toBeGreaterThanOrEqual(-3);
+
+      if (preset.id === 'flat') {
+        expect(gains.every((gainDb) => gainDb === 0), preset.name).toBe(true);
+        continue;
+      }
+
+      const usesParametricShelf = preset.bands.some((band) => band.filterType === 'lowShelf' || band.filterType === 'highShelf');
+      const minimumShapeRangeDb = usesParametricShelf ? 1.0 : 1.5;
+      const minimumActiveBands = usesParametricShelf ? 1 : 4;
+      expect(Math.max(...gains) - Math.min(...gains), preset.name).toBeGreaterThanOrEqual(minimumShapeRangeDb);
+      expect(gains.filter((gainDb) => Math.abs(gainDb) >= 0.5).length, preset.name).toBeGreaterThanOrEqual(minimumActiveBands);
     }
   });
 

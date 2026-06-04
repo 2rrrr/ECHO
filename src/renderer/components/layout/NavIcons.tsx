@@ -112,6 +112,20 @@ export const EchoConnectIcon = createNavIcon(
   </>,
 );
 
+export const EchoDspIcon = createNavIcon(
+  'EchoDspIcon',
+  <>
+    <path d="M5.2 7.3h6.2" />
+    <circle cx="15.3" cy="7.3" r="1.7" />
+    <path d="M17 7.3h1.8" />
+    <path d="M5.2 12h2.1" />
+    <circle cx="10.6" cy="12" r="1.7" />
+    <path d="M12.3 12h6.5" />
+    <path d="M5.2 16.7h8.8" />
+    <circle cx="17" cy="16.7" r="1.7" />
+  </>,
+);
+
 export const EchoStreamingIcon = createNavIcon(
   'EchoStreamingIcon',
   <>
