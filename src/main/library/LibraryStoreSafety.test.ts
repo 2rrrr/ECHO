@@ -265,4 +265,34 @@ describe('LibraryStore track metadata safety', () => {
     expect(tracks.hasMore).toBe(false);
     expect(tracks.items.map((track) => track.id)).toEqual(['track-1']);
   });
+
+  it('seeds album rows for newly scanned tracks before the full grouping refresh runs', () => {
+    const store = makeStore();
+    const folder = store.addFolder('D:\\Music');
+    const albumService = new AlbumService();
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\one.flac', { id: 'track-1', title: 'One', trackNo: 1 }));
+
+    expect(store.getAlbums({ pageSize: 10 }).total).toBe(0);
+
+    store.seedAlbumsForTracks(['track-1'], albumService, '2026-01-01T00:00:00.000Z');
+
+    const seededAlbum = store.getAlbums({ pageSize: 10 }).items[0];
+    expect(seededAlbum).toMatchObject({
+      title: 'Safe Album',
+      albumArtist: 'Safe Artist',
+      trackCount: 1,
+    });
+    expect(store.getAlbumTracks(seededAlbum.id, { pageSize: 10 }).items.map((track) => track.id)).toEqual(['track-1']);
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\two.flac', { id: 'track-2', title: 'Two', trackNo: 2 }));
+    store.seedAlbumsForTracks(['track-2'], albumService, '2026-01-01T00:00:01.000Z');
+
+    expect(store.getAlbums({ pageSize: 10 }).items[0]).toMatchObject({
+      title: 'Safe Album',
+      trackCount: 2,
+      duration: 240,
+    });
+    expect(store.getFolderOverviews()[0]).toMatchObject({ albumCount: 1, trackCount: 2 });
+  });
 });

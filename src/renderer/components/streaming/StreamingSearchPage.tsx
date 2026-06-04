@@ -116,7 +116,7 @@ const writeCachedProviders = (items: StreamingProviderDescriptor[]): StreamingPr
 };
 
 const readStreamingDownloadActionsEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
-  settings?.downloadsFeatureUnlocked === true && settings.streamingDownloadActionsEnabled === true;
+  settings?.downloadsFeatureUnlocked === true;
 
 const formatDuration = (duration: number | null): string => {
   if (!duration || !Number.isFinite(duration) || duration <= 0) {

@@ -23,6 +23,7 @@ import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type Library
 
 const pageSize = 60;
 const priorityAlbumWallImageCount = 24;
+const albumCoverRetryDelaysMs = [600, 1800, 3600];
 const maxPreservedRefreshPageSize = 500;
 const preserveScrollThresholdPx = 80;
 const isPreserveScrollLibraryEvent = (event: Event): boolean =>
@@ -81,6 +82,7 @@ export const AlbumsPage = (): JSX.Element => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedCoverUrls, setFailedCoverUrls] = useState<Record<string, string>>({});
+  const [coverRetryKeys, setCoverRetryKeys] = useState<Record<string, number>>({});
   const pageRootRef = useRef<HTMLDivElement | null>(null);
   const pageScrollTopRef = useRef(0);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
@@ -88,6 +90,8 @@ export const AlbumsPage = (): JSX.Element => {
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
   const tagEditorCloseTimerRef = useRef<number | null>(null);
+  const coverRetryTimersRef = useRef<Record<string, number>>({});
+  const coverErrorAttemptsRef = useRef<Record<string, { url: string; count: number }>>({});
   const pauseDeferredAlbumImages = useScrollImagePause(pageRootRef);
 
   useEffect(() => {
@@ -152,6 +156,10 @@ export const AlbumsPage = (): JSX.Element => {
         setHasMore(result.hasMore);
         if (mode === 'replace') {
           setFailedCoverUrls({});
+          setCoverRetryKeys({});
+          Object.values(coverRetryTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+          coverRetryTimersRef.current = {};
+          coverErrorAttemptsRef.current = {};
         }
         if (typeof options.restoreScrollTop === 'number') {
           const restoreScrollTop = options.restoreScrollTop;
@@ -592,6 +600,24 @@ export const AlbumsPage = (): JSX.Element => {
       return;
     }
 
+    const previousAttempt = coverErrorAttemptsRef.current[album.id];
+    const nextCount = previousAttempt?.url === album.coverThumb ? previousAttempt.count + 1 : 1;
+    coverErrorAttemptsRef.current[album.id] = { url: album.coverThumb, count: nextCount };
+
+    const retryDelay = albumCoverRetryDelaysMs[nextCount - 1];
+    if (typeof retryDelay === 'number') {
+      if (!coverRetryTimersRef.current[album.id]) {
+        coverRetryTimersRef.current[album.id] = window.setTimeout(() => {
+          delete coverRetryTimersRef.current[album.id];
+          setCoverRetryKeys((current) => ({
+            ...current,
+            [album.id]: (current[album.id] ?? 0) + 1,
+          }));
+        }, retryDelay);
+      }
+      return;
+    }
+
     if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
       console.warn('Failed to load album cover', {
         url: album.coverThumb,
@@ -607,6 +633,40 @@ export const AlbumsPage = (): JSX.Element => {
             [album.id]: album.coverThumb!,
           },
     );
+  }, []);
+
+  const handleAlbumCoverLoad = useCallback((album: LibraryAlbum): void => {
+    if (!album.coverThumb) {
+      return;
+    }
+
+    const retryTimer = coverRetryTimersRef.current[album.id];
+    if (retryTimer) {
+      window.clearTimeout(retryTimer);
+      delete coverRetryTimersRef.current[album.id];
+    }
+
+    const previousAttempt = coverErrorAttemptsRef.current[album.id];
+    if (previousAttempt?.url === album.coverThumb) {
+      delete coverErrorAttemptsRef.current[album.id];
+    }
+
+    setFailedCoverUrls((current) => {
+      if (current[album.id] !== album.coverThumb) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[album.id];
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(coverRetryTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      coverRetryTimersRef.current = {};
+    };
   }, []);
 
   return (
@@ -689,6 +749,7 @@ export const AlbumsPage = (): JSX.Element => {
                 <div className="album-cover" data-empty={!shouldShowCover} aria-hidden="true">
                   {shouldShowCover ? (
                     <DeferredWallImage
+                      key={`${album.coverThumb}:${coverRetryKeys[album.id] ?? 0}`}
                       alt=""
                       decoding="async"
                       draggable={false}
@@ -699,6 +760,7 @@ export const AlbumsPage = (): JSX.Element => {
                       src={album.coverThumb!}
                       width={320}
                       onError={() => handleAlbumCoverError(album)}
+                      onLoad={() => handleAlbumCoverLoad(album)}
                     />
                   ) : (
                     <Disc3 size={24} />

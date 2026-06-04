@@ -137,6 +137,7 @@ class FakeStore {
   readonly identityUpdates: Array<{ trackId: string; identity: Partial<TrackWrite> }> = [];
   readonly directorySnapshots: ScanDirectorySnapshot[] = [];
   readonly missingPaths: string[] = [];
+  readonly seededAlbumTrackIds: string[][] = [];
   markMissingCalls = 0;
   transactionCalls = 0;
   refreshAlbumsCalls = 0;
@@ -238,6 +239,10 @@ class FakeStore {
 
   refreshArtists(): void {
     this.refreshArtistsCalls += 1;
+  }
+
+  seedAlbumsForTracks(trackIds: readonly string[]): void {
+    this.seededAlbumTrackIds.push([...trackIds]);
   }
 
   finishFolderScan(): void {
@@ -414,8 +419,12 @@ const runQueue = async (
     { coverCacheDir: cacheRoot },
   );
   const job = queue.scanFolder(folder);
-  await queue.waitForIdle(job.id);
-  return store.getScanJob()!;
+  try {
+    await queue.waitForIdle(job.id);
+    return store.getScanJob()!;
+  } finally {
+    queue.dispose();
+  }
 };
 
 const statMtimeMs = (filePath: string): number => statSync(filePath).mtimeMs;
@@ -439,8 +448,12 @@ const runPathsQueue = async (
     { coverCacheDir: cacheRoot },
   );
   const job = queue.scanPaths(folder, paths, options);
-  await queue.waitForIdle(job.id);
-  return store.getScanJob()!;
+  try {
+    await queue.waitForIdle(job.id);
+    return store.getScanJob()!;
+  } finally {
+    queue.dispose();
+  }
 };
 
 const runStoredQueue = async (
@@ -461,8 +474,12 @@ const runStoredQueue = async (
     { coverCacheDir: cacheRoot },
   );
   const job = queue.scanStoredTracks(folder, options);
-  await queue.waitForIdle(job.id);
-  return store.getScanJob()!;
+  try {
+    await queue.waitForIdle(job.id);
+    return store.getScanJob()!;
+  } finally {
+    queue.dispose();
+  }
 };
 
 const identityObservation = (overrides: Partial<FileIdentityObservation> = {}): FileIdentityObservation => ({
@@ -855,6 +872,7 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     const job = queue.scanFolder(baseFolder(root));
     await queue.waitForIdle(job.id);
 
+    expect(store.seededAlbumTrackIds.flat()).toHaveLength(1);
     expect(store.refreshAlbumsCalls).toBe(0);
     expect(store.refreshArtistsCalls).toBe(0);
 

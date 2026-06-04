@@ -156,6 +156,7 @@ const defaultSidebarLayoutSettings: SidebarLayoutSettings = {
   sidebarAutoHideEnabled: false,
 };
 
+const downloadLibraryChangeDebounceMs = 250;
 const persistentRouteIds = new Set<AppRouteId>(['songs', 'albums', 'artists', 'streaming', 'playlists']);
 const readSongsNavigationRemoteSourceId = (event: Event): string | null => {
   if (!(event instanceof CustomEvent) || typeof event.detail !== 'object' || event.detail === null) {
@@ -436,6 +437,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const routeSwitchTraceRef = useRef<RouteSwitchTrace | null>(null);
   const routeSwitchCommittedRouteIdRef = useRef<AppRouteId>(activeRouteId);
   const downloadImportedTrackIdsRef = useRef<Map<string, string | null>>(new Map());
+  const downloadLibraryChangedTimerRef = useRef<number | null>(null);
   const notifiedUpdateKeysRef = useRef<Set<string>>(new Set());
   const visibleRoutes = useMemo(
     () =>
@@ -1810,6 +1812,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
 
     const importedTrackIds = downloadImportedTrackIdsRef.current;
+    const flushDownloadLibraryChanged = (): void => {
+      downloadLibraryChangedTimerRef.current = null;
+      clearSongsFirstPageSnapshot();
+      window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    };
     return downloads.onJobsUpdated((jobs: DownloadJob[]) => {
       let importedNewTrack = false;
       const nextJobIds = new Set<string>();
@@ -1833,11 +1841,18 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }
 
       if (importedNewTrack) {
-        clearSongsFirstPageSnapshot();
-        window.dispatchEvent(new Event('library:changed'));
-        window.dispatchEvent(new Event('library:playlists-changed'));
+        if (downloadLibraryChangedTimerRef.current === null) {
+          downloadLibraryChangedTimerRef.current = window.setTimeout(flushDownloadLibraryChanged, downloadLibraryChangeDebounceMs);
+        }
       }
     });
+  }, []);
+
+  useEffect(() => () => {
+    if (downloadLibraryChangedTimerRef.current !== null) {
+      window.clearTimeout(downloadLibraryChangedTimerRef.current);
+      downloadLibraryChangedTimerRef.current = null;
+    }
   }, []);
 
   const handleImportFolder = useCallback(async (): Promise<void> => {

@@ -2,6 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LibraryService } from './LibraryService';
 import type { LibraryDiagnostics } from './libraryTypes';
 
+const electronWindows = vi.hoisted(
+  () => [] as Array<{ webContents: { send: ReturnType<typeof vi.fn> } }>,
+);
+
+vi.mock('electron', () => ({
+  default: {
+    BrowserWindow: {
+      getAllWindows: () => electronWindows,
+    },
+  },
+}));
+
 let playbackState: 'idle' | 'loading' | 'playing' | 'paused' | 'stopped' = 'idle';
 
 vi.mock('../audio/AudioSession', () => ({
@@ -78,6 +90,7 @@ const createService = (store = new FakeStore()): LibraryService =>
     { hasRunningJobs: () => false } as never,
     {} as never,
     {
+      exec: () => undefined,
       prepare: () => ({
         all: () => [],
         get: () => null,
@@ -111,6 +124,7 @@ const createService = (store = new FakeStore()): LibraryService =>
 afterEach(() => {
   vi.useRealTimers();
   playbackState = 'idle';
+  electronWindows.length = 0;
 });
 
 describe('LibraryService grouping refresh scheduling', () => {
@@ -159,6 +173,25 @@ describe('LibraryService grouping refresh scheduling', () => {
 
     expect(store.refreshAlbumsCalls).toBe(1);
     expect(store.refreshArtistsCalls).toBe(1);
+    scheduled.close();
+  });
+
+  it('notifies library views after a deferred album grouping refresh completes', async () => {
+    const store = new FakeStore();
+    const webContents = { send: vi.fn() };
+    electronWindows.push({ webContents });
+    const service = createService(store);
+    const scheduled = service as unknown as {
+      groupingRefreshQueued: boolean;
+      runScheduledGroupingRefresh: () => Promise<void>;
+      close: () => void;
+    };
+
+    scheduled.groupingRefreshQueued = true;
+    await scheduled.runScheduledGroupingRefresh();
+
+    expect(store.refreshAlbumsCalls).toBe(1);
+    expect(webContents.send).toHaveBeenCalledWith('library:changed');
     scheduled.close();
   });
 

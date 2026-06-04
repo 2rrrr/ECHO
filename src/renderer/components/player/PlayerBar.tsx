@@ -142,8 +142,7 @@ const readStreamingDownloadActionsEnabled = (settings: unknown): boolean => {
     return false;
   }
 
-  const values = settings as { downloadsFeatureUnlocked?: unknown; streamingDownloadActionsEnabled?: unknown };
-  return values.downloadsFeatureUnlocked === true && values.streamingDownloadActionsEnabled === true;
+  return (settings as { downloadsFeatureUnlocked?: unknown }).downloadsFeatureUnlocked === true;
 };
 
 const readLowLoadPlaybackModeEnabledPatch = (patch: unknown): boolean | null => {

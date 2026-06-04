@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { ArtistDetailView } from './ArtistDetailView';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { ArtistInsights, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
-import type { StreamingAlbum } from '../../../shared/types/streaming';
+import type { StreamingAlbum, StreamingTrack } from '../../../shared/types/streaming';
 import { I18nProvider } from '../../i18n/I18nProvider';
 
 const queueMock = {
@@ -712,6 +712,129 @@ describe('ArtistDetailView', () => {
     expect(onBack).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Open mock album' })).toBeTruthy();
     expect(screen.getByText('Online Echo 1')).toBeTruthy();
+  });
+
+  it('shows a download album action inside artist streaming album details after downloads are unlocked', async () => {
+    const album = streamingAlbum(1, 'netease');
+    const albumTracks: StreamingTrack[] = [
+      {
+        id: 'streaming:netease:song:track-1',
+        provider: 'netease',
+        providerTrackId: 'track-1',
+        stableKey: 'streaming:netease:track-1',
+        title: 'Streaming Album Track 1',
+        artist: 'Echo Unit',
+        artists: album.artists,
+        album: album.title,
+        albumId: album.providerAlbumId,
+        albumArtist: 'Echo Unit',
+        duration: 180,
+        coverUrl: album.coverUrl,
+        coverThumb: album.coverThumb,
+        qualities: ['standard', 'high', 'lossless'],
+        explicit: false,
+        playable: true,
+        unavailableReason: null,
+        lyricsStatus: 'unknown',
+        mvStatus: 'unknown',
+      },
+    ];
+    const resolvePlayback = vi.fn().mockResolvedValue({
+      provider: 'netease',
+      providerTrackId: 'track-1',
+      url: 'https://cdn.example/track-1.flac',
+      headers: { Referer: 'https://music.163.com/' },
+      mimeType: 'audio/flac',
+      codec: 'flac',
+      quality: 'lossless',
+      bitrate: null,
+      expiresAt: null,
+      downloadAuthorizationToken: 'download-token-track-1',
+    });
+    const createUrlJob = vi.fn().mockResolvedValue({
+      id: 'download-job-1',
+      sourceUrl: 'https://cdn.example/track-1.flac',
+      provider: 'unknown',
+      audioStrategy: 'best_available',
+      status: 'queued',
+      title: 'Streaming Album Track 1',
+      durationSeconds: null,
+      thumbnailUrl: null,
+      webpageUrl: 'https://music.163.com/#/song?id=track-1',
+      outputPath: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      speedBytesPerSecond: null,
+      etaSeconds: null,
+      importedTrackId: null,
+      progress: 0,
+      error: null,
+      createdAt: '2026-06-04T00:00:00.000Z',
+      updatedAt: '2026-06-04T00:00:00.000Z',
+      completedAt: null,
+    });
+
+    installLibrary(vi.fn().mockResolvedValue(artist()), { artistStreamingAlbumsEnabled: true, downloadsFeatureUnlocked: true }, undefined, {
+      getProviders: vi.fn().mockResolvedValue([
+        {
+          name: 'netease',
+          displayName: 'NetEase',
+          enabled: true,
+          supportsSearch: true,
+          supportsLyrics: true,
+          supportsMv: true,
+          requiresAccount: false,
+          status: 'ready',
+        },
+      ]),
+      search: vi.fn().mockResolvedValue({
+        provider: 'netease',
+        query: 'Echo Unit',
+        page: 1,
+        pageSize: 20,
+        total: 1,
+        hasMore: false,
+        tracks: [],
+        albums: [album],
+        artists: [],
+        playlists: [],
+        mvs: [],
+      }),
+      getAlbum: vi.fn().mockResolvedValue({ ...album, tracks: albumTracks }),
+      resolvePlayback,
+    });
+    window.echo = {
+      ...window.echo,
+      downloads: {
+        createUrlJob,
+        onJobsUpdated: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window['echo'];
+
+    renderDetail(artist());
+    fireEvent.click(await screen.findByRole('button', { name: 'Albums' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Online Echo 1/ }));
+    expect(await screen.findByText('Streaming Album Track 1')).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole('button', { name: '下载专辑' }));
+
+    await waitFor(() => expect(createUrlJob).toHaveBeenCalledTimes(1));
+    expect(resolvePlayback).toHaveBeenCalledWith({
+      provider: 'netease',
+      providerTrackId: 'track-1',
+      quality: expect.any(String),
+    });
+    expect(createUrlJob).toHaveBeenCalledWith(
+      'https://cdn.example/track-1.flac',
+      expect.objectContaining({
+        title: 'Streaming Album Track 1',
+        album: album.title,
+        outputSubdirectory: `${album.artist} - ${album.title}`,
+        streamingProvider: 'netease',
+        streamingProviderTrackId: 'track-1',
+        downloadAuthorizationToken: 'download-token-track-1',
+      }),
+    );
   });
 
   it('shows configured concert provider status while online events are empty', async () => {

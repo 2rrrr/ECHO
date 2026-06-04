@@ -2327,6 +2327,7 @@ export class LibraryService {
       this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;
       this.lastGroupingRefreshAt = new Date().toISOString();
       this.lastGroupingRefreshError = null;
+      this.notifyLibraryChanged();
     } catch (error) {
       this.artistsDirty = true;
       this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;

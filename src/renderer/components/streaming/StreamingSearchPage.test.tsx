@@ -393,12 +393,12 @@ describe('StreamingSearchPage download visibility', () => {
     expect(screen.queryByTitle('下载')).toBeNull();
   });
 
-  it('shows streaming download actions when enabled in settings', async () => {
+  it('shows streaming download actions when downloads are unlocked', async () => {
     primeTrackSearch();
 
     window.echo = {
       app: {
-        getSettings: vi.fn().mockResolvedValue({ downloadsFeatureUnlocked: true, streamingDownloadActionsEnabled: true } as AppSettings),
+        getSettings: vi.fn().mockResolvedValue({ downloadsFeatureUnlocked: true, streamingDownloadActionsEnabled: false } as AppSettings),
       },
       streaming: {
         getProviders: vi.fn().mockResolvedValue([provider]),

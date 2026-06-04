@@ -229,6 +229,7 @@ const libraryInboxBatchLimit = 30;
 const libraryInboxPageSize = 50;
 const libraryInboxMaxPageSize = 100;
 const libraryInboxAlbumWallLimit = 24;
+const albumSeedTrackBatchSize = 250;
 const libraryInboxPlaylistTrackLimit = 1000;
 const variousArtistsDisplayName = 'Various Artists';
 const variousArtistsKey = 'various artists';
@@ -4543,6 +4544,95 @@ export class LibraryStore {
     });
   }
 
+  seedAlbumsForTracks(
+    trackIds: readonly string[],
+    albumService: AlbumService,
+    now = nowIso(),
+    _options: { albumMergeStrategy?: AlbumMergeStrategy } = {},
+  ): void {
+    const uniqueTrackIds = Array.from(
+      new Set(trackIds.filter((trackId) => typeof trackId === 'string' && trackId.trim()).map((trackId) => trackId.trim())),
+    );
+    if (uniqueTrackIds.length === 0) {
+      return;
+    }
+
+    this.transaction(() => {
+      const affectedAlbumIds = new Set<string>();
+      const rows: DbRow[] = [];
+
+      for (let index = 0; index < uniqueTrackIds.length; index += albumSeedTrackBatchSize) {
+        const batch = uniqueTrackIds.slice(index, index + albumSeedTrackBatchSize);
+        const placeholders = batch.map(() => '?').join(', ');
+
+        for (const row of this.allRows(`SELECT DISTINCT album_id FROM album_tracks WHERE track_id IN (${placeholders})`, ...batch)) {
+          const albumId = textOrNull(row.album_id);
+          if (albumId) {
+            affectedAlbumIds.add(albumId);
+          }
+        }
+
+        this.run(`DELETE FROM album_tracks WHERE track_id IN (${placeholders})`, ...batch);
+
+        rows.push(
+          ...this.allRows(
+            `SELECT
+              tracks.id, tracks.path, tracks.artist, tracks.album, tracks.album_artist,
+              tracks.year, tracks.duration, tracks.cover_id, tracks.disc_no, tracks.track_no,
+              tracks.field_sources_json, covers.source_type AS cover_source_type,
+              covers.source_hash AS cover_source_hash, covers.album_path AS cover_album_path
+             FROM tracks
+             LEFT JOIN covers ON covers.id = tracks.cover_id
+             WHERE tracks.missing = 0 AND tracks.id IN (${placeholders})
+             ORDER BY tracks.album_artist COLLATE NOCASE, tracks.album COLLATE NOCASE, tracks.disc_no, tracks.track_no, tracks.title COLLATE NOCASE`,
+            ...batch,
+          ),
+        );
+      }
+
+      const groups = this.buildStandardAlbumGroupsForRows(rows, albumService);
+
+      for (const group of groups.values()) {
+        const existing = this.getRow('SELECT id FROM albums WHERE album_key = ?', group.albumKey);
+        const albumId = textOrNull(existing?.id) ?? group.id;
+        affectedAlbumIds.add(albumId);
+
+        if (!existing) {
+          this.run(
+            `INSERT INTO albums (
+              id, album_key, title, album_artist, year, cover_id, track_count, duration, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            albumId,
+            group.albumKey,
+            group.title,
+            group.albumArtist,
+            group.year,
+            group.coverId,
+            group.trackCount,
+            group.duration,
+            now,
+            now,
+          );
+        }
+
+        for (const link of group.links) {
+          this.run(
+            'INSERT OR REPLACE INTO album_tracks (album_id, track_id, disc_no, track_no, position) VALUES (?, ?, ?, ?, ?)',
+            albumId,
+            link.trackId,
+            link.discNo,
+            link.trackNo,
+            link.position,
+          );
+        }
+      }
+
+      for (const albumId of affectedAlbumIds) {
+        this.refreshSeededAlbumStats(albumId, now);
+      }
+    });
+  }
+
   refreshAlbums(
     albumService: AlbumService,
     now = nowIso(),
@@ -4563,74 +4653,7 @@ export class LibraryStore {
        ORDER BY tracks.album_artist COLLATE NOCASE, tracks.album COLLATE NOCASE, tracks.disc_no, tracks.track_no, tracks.title COLLATE NOCASE`,
     );
 
-    const standardGroups = new Map<string, StandardAlbumGroup>();
-
-    tracks.forEach((track, index) => {
-      const trackId = String(track.id);
-      const title = String(track.album || '');
-      const albumArtist = String(track.album_artist || '');
-      const trackAlbumArtist = albumArtistCreditForTrack(albumArtist, String(track.artist || ''));
-      const year = numberOrNull(track.year);
-      const fieldSources = parseJsonObject(track.field_sources_json);
-      const keyInput: AlbumKeyInput = {
-        albumTitle: title,
-        albumArtist,
-        fallbackArtist: String(track.artist || ''),
-        albumArtistSource: fieldSources.albumArtist,
-        year,
-        filePath: String(track.path),
-        trackId,
-        coverId: textOrNull(track.cover_id),
-        coverSourceHash: textOrNull(track.cover_source_hash),
-        mergeStrategy: 'standard',
-      };
-      const standardAlbumKey = albumService.makeAlbumKey(keyInput);
-      const standardGroup =
-        standardGroups.get(standardAlbumKey) ??
-        {
-          id: randomUUID(),
-          albumKey: standardAlbumKey,
-          title: title || 'Unknown Album',
-          albumArtist: trackAlbumArtist,
-          albumArtistCredits: createAlbumArtistCreditStats(),
-          year,
-          trackCount: 0,
-          duration: 0,
-          coverId: textOrNull(track.cover_id),
-          keyInput,
-          coverFingerprints: new Map<string, number>(),
-          coverSourceHashes: new Map<string, number>(),
-          links: [],
-        };
-      const coverSourceHash = textOrNull(track.cover_source_hash);
-      const coverVisualFingerprint = coverFingerprint(
-        textOrNull(track.cover_source_type),
-        coverSourceHash,
-        textOrNull(track.cover_album_path),
-      );
-
-      addAlbumArtistCredit(standardGroup.albumArtistCredits, albumArtist, String(track.artist || ''), fieldSources.albumArtist);
-      standardGroup.albumArtist = displayAlbumArtistForCredits(standardGroup.albumArtist, standardGroup.albumArtistCredits);
-      standardGroup.trackCount += 1;
-      standardGroup.duration += Number(track.duration ?? 0);
-      standardGroup.coverId = standardGroup.coverId ?? textOrNull(track.cover_id);
-
-      if (coverVisualFingerprint) {
-        standardGroup.coverFingerprints.set(coverVisualFingerprint, (standardGroup.coverFingerprints.get(coverVisualFingerprint) ?? 0) + 1);
-      }
-
-      if (coverSourceHash) {
-        standardGroup.coverSourceHashes.set(coverSourceHash, (standardGroup.coverSourceHashes.get(coverSourceHash) ?? 0) + 1);
-      }
-
-      standardGroup.links.push({
-        trackId,
-        discNo: numberOrNull(track.disc_no),
-        trackNo: numberOrNull(track.track_no),
-        position: index,
-      });
-      standardGroups.set(standardAlbumKey, standardGroup);
-    });
+    const standardGroups = this.buildStandardAlbumGroupsForRows(tracks, albumService);
 
     const albumIdsByKey = new Map<string, string>();
     const albumStats = new Map<string, AlbumIndexStats>();
@@ -4700,6 +4723,136 @@ export class LibraryStore {
         link.position,
       );
     }
+  }
+
+  private buildStandardAlbumGroupsForRows(tracks: DbRow[], albumService: AlbumService): Map<string, StandardAlbumGroup> {
+    const standardGroups = new Map<string, StandardAlbumGroup>();
+
+    tracks.forEach((track, index) => {
+      const trackId = String(track.id);
+      const title = String(track.album || '');
+      const albumArtist = String(track.album_artist || '');
+      const trackAlbumArtist = albumArtistCreditForTrack(albumArtist, String(track.artist || ''));
+      const year = numberOrNull(track.year);
+      const fieldSources = parseJsonObject(track.field_sources_json);
+      const keyInput: AlbumKeyInput = {
+        albumTitle: title,
+        albumArtist,
+        fallbackArtist: String(track.artist || ''),
+        albumArtistSource: fieldSources.albumArtist,
+        year,
+        filePath: String(track.path),
+        trackId,
+        coverId: textOrNull(track.cover_id),
+        coverSourceHash: textOrNull(track.cover_source_hash),
+        mergeStrategy: 'standard',
+      };
+      const standardAlbumKey = albumService.makeAlbumKey(keyInput);
+      const standardGroup =
+        standardGroups.get(standardAlbumKey) ??
+        {
+          id: randomUUID(),
+          albumKey: standardAlbumKey,
+          title: title || 'Unknown Album',
+          albumArtist: trackAlbumArtist,
+          albumArtistCredits: createAlbumArtistCreditStats(),
+          year,
+          trackCount: 0,
+          duration: 0,
+          coverId: textOrNull(track.cover_id),
+          keyInput,
+          coverFingerprints: new Map<string, number>(),
+          coverSourceHashes: new Map<string, number>(),
+          links: [],
+        };
+      const coverSourceHash = textOrNull(track.cover_source_hash);
+      const coverVisualFingerprint = coverFingerprint(
+        textOrNull(track.cover_source_type),
+        coverSourceHash,
+        textOrNull(track.cover_album_path),
+      );
+
+      addAlbumArtistCredit(standardGroup.albumArtistCredits, albumArtist, String(track.artist || ''), fieldSources.albumArtist);
+      standardGroup.albumArtist = displayAlbumArtistForCredits(standardGroup.albumArtist, standardGroup.albumArtistCredits);
+      standardGroup.trackCount += 1;
+      standardGroup.duration += Number(track.duration ?? 0);
+      standardGroup.coverId = standardGroup.coverId ?? textOrNull(track.cover_id);
+
+      if (coverVisualFingerprint) {
+        standardGroup.coverFingerprints.set(coverVisualFingerprint, (standardGroup.coverFingerprints.get(coverVisualFingerprint) ?? 0) + 1);
+      }
+
+      if (coverSourceHash) {
+        standardGroup.coverSourceHashes.set(coverSourceHash, (standardGroup.coverSourceHashes.get(coverSourceHash) ?? 0) + 1);
+      }
+
+      standardGroup.links.push({
+        trackId,
+        discNo: numberOrNull(track.disc_no),
+        trackNo: numberOrNull(track.track_no),
+        position: index,
+      });
+      standardGroups.set(standardAlbumKey, standardGroup);
+    });
+
+    return standardGroups;
+  }
+
+  private refreshSeededAlbumStats(albumId: string, now: string): void {
+    const rows = this.allRows(
+      `SELECT
+        tracks.id, tracks.artist, tracks.album, tracks.album_artist,
+        tracks.year, tracks.duration, tracks.cover_id, tracks.field_sources_json,
+        album_tracks.position
+       FROM album_tracks
+       INNER JOIN tracks ON tracks.id = album_tracks.track_id
+       WHERE album_tracks.album_id = ? AND tracks.missing = 0
+       ORDER BY album_tracks.position ASC`,
+      albumId,
+    );
+
+    if (rows.length === 0) {
+      this.run('DELETE FROM artist_albums WHERE album_id = ?', albumId);
+      this.run('DELETE FROM album_tracks WHERE album_id = ?', albumId);
+      this.run('DELETE FROM albums WHERE id = ?', albumId);
+      return;
+    }
+
+    const first = rows[0]!;
+    const credits = createAlbumArtistCreditStats();
+    let albumArtist = albumArtistCreditForTrack(String(first.album_artist || ''), String(first.artist || ''));
+    let year = numberOrNull(first.year);
+    let duration = 0;
+    let coverId: string | null = null;
+
+    for (const row of rows) {
+      const fieldSources = parseJsonObject(row.field_sources_json);
+      addAlbumArtistCredit(credits, String(row.album_artist || ''), String(row.artist || ''), fieldSources.albumArtist);
+      albumArtist = displayAlbumArtistForCredits(albumArtist, credits);
+      year ??= numberOrNull(row.year);
+      duration += Number(row.duration ?? 0);
+      coverId ??= textOrNull(row.cover_id);
+    }
+
+    this.run(
+      `UPDATE albums SET
+        title = ?,
+        album_artist = ?,
+        year = ?,
+        cover_id = ?,
+        track_count = ?,
+        duration = ?,
+        updated_at = ?
+       WHERE id = ?`,
+      String(first.album || '') || 'Unknown Album',
+      albumArtist,
+      year,
+      coverId,
+      rows.length,
+      duration,
+      now,
+      albumId,
+    );
   }
 
   private makeLooseAlbumKeys(standardGroups: Map<string, StandardAlbumGroup>, albumService: AlbumService): Map<string, string> {

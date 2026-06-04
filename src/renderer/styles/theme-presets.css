@@ -12271,6 +12271,7 @@ html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .media-wall-scr
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto !important;
+  overflow-anchor: none;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
@@ -12278,6 +12279,23 @@ html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .media-wall-scr
 
 html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) :is(.album-wall, .artist-wall) {
   min-height: min-content;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall > .artist-card {
+  overflow-anchor: none;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall :is(
+  .artist-avatar,
+  .artist-avatar[data-visual="avatar"],
+  .artist-avatar[data-visual="cover"],
+  .artist-avatar[data-visual="letter"],
+  .artist-avatar .deferred-wall-image,
+  .artist-avatar img,
+  .artist-avatar > span:not(.deferred-wall-image)
+) {
+  border-radius: 6px !important;
+  clip-path: none !important;
 }
 
 /* FINAL hero character repair: remove the hard rectangular crop and let the edge fade naturally. */

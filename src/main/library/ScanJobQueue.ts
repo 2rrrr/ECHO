@@ -709,6 +709,7 @@ export class ScanJobQueue {
       });
 
       await runMainBackgroundTask('library-scan:writing_database', async () => {
+        const coverChangedTrackIds: string[] = [];
         this.store.transaction(() => {
           this.store.upsertScanDirectorySnapshots(folder.id, directorySnapshots, timestamp);
 
@@ -727,6 +728,7 @@ export class ScanJobQueue {
 
               if (repairedCoverId && repairedCoverId !== item.state.coverId) {
                 this.store.updateTrackCover(item.state.id, repairedCoverId, timestamp);
+                coverChangedTrackIds.push(item.state.id);
                 updatedTracks += 1;
               }
             }
@@ -741,10 +743,14 @@ export class ScanJobQueue {
             }
           }
         });
+        if (coverChangedTrackIds.length > 0) {
+          this.store.seedAlbumsForTracks(coverChangedTrackIds, this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+        }
 
         const writeBatchSize = reducedOrLargeScanPressure ? largeScanWriteBatchSize : normalScanWriteBatchSize;
         for (let index = 0; index < preparedParsedItems.length; index += writeBatchSize) {
           const batch = preparedParsedItems.slice(index, index + writeBatchSize);
+          const changedTrackIds: string[] = [];
           this.store.transaction(() => {
             for (const item of batch) {
               const coverId = item.cover ? this.store.upsertCover(item.cover, timestamp) : null;
@@ -769,8 +775,10 @@ export class ScanJobQueue {
               } else {
                 updatedTracks += 1;
               }
+              changedTrackIds.push(item.trackId);
             }
           });
+          this.store.seedAlbumsForTracks(changedTrackIds, this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
 
           progress.flushNow({
             phase: 'writing_database',
@@ -797,15 +805,6 @@ export class ScanJobQueue {
           coverCount,
           errors,
         });
-        if (!deferGroupingRefresh && !deferGroupingForPressure) {
-          const clearBackgroundTask = beginMainBackgroundTask('library-scan:grouping_albums');
-          try {
-            this.store.refreshAlbums(this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
-            this.store.refreshArtists();
-          } finally {
-            clearBackgroundTask();
-          }
-        }
         progress.flushNow({
           phase: 'writing_database',
           processedFiles,
@@ -841,7 +840,7 @@ export class ScanJobQueue {
           finishedAt: new Date().toISOString(),
         });
       });
-      if (deferGroupingForPressure) {
+      if (deferGroupingRefresh || deferGroupingForPressure || addedTracks > 0 || updatedTracks > 0 || removedTracks > 0) {
         this.scheduleDeferredGroupingRefresh();
       }
       try {

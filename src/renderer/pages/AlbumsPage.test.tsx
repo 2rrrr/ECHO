@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AlbumsPage } from './AlbumsPage';
 import type { LibraryAlbum, LibraryPage, LibraryTrack } from '../../shared/types/library';
 import { I18nProvider } from '../i18n/I18nProvider';
@@ -399,7 +399,7 @@ describe('AlbumsPage', () => {
     expect(outerPageSurface.scrollTop).toBe(640);
   });
 
-  it('renders album coverThumb as a lazy image and stops rendering it after error', async () => {
+  it('retries transient album coverThumb errors before falling back', async () => {
     const getAlbums = vi.fn().mockResolvedValue(
       page([
         album('1', {
@@ -422,7 +422,21 @@ describe('AlbumsPage', () => {
     expect(img.getAttribute('height')).toBe('320');
     expect(img.draggable).toBe(false);
 
+    vi.useFakeTimers();
     fireEvent.error(img);
+    expect(container.querySelector('.album-cover img')).toBeTruthy();
+    expect(container.querySelector('.album-cover')?.getAttribute('data-empty')).toBe('false');
+
+    for (const retryDelay of [600, 1800, 3600]) {
+      await act(async () => {
+        vi.advanceTimersByTime(retryDelay);
+      });
+      const retryImg = container.querySelector('.album-cover img') as HTMLImageElement;
+      expect(retryImg).toBeTruthy();
+      expect(retryImg.getAttribute('src')).toBe('echo-cover://album/cover-1');
+      fireEvent.error(retryImg);
+    }
+
     expect(container.querySelector('.album-cover img')).toBeNull();
     expect(container.querySelector('.album-cover')?.getAttribute('data-empty')).toBe('true');
   });

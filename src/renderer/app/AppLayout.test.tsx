@@ -870,6 +870,12 @@ describe('AppLayout standalone routes', () => {
     let jobsUpdated: ((jobs: Array<{ id: string; importedTrackId: string | null }>) => void) | null = null;
     const unsubscribeDownloads = vi.fn();
     const onLibraryChanged = vi.fn();
+    const onPlaylistsChanged = vi.fn();
+    const receivedEvents: Event[] = [];
+    const handleLibraryChanged = (event: Event): void => {
+      receivedEvents.push(event);
+      onLibraryChanged(event);
+    };
     window.echo = {
       downloads: {
         onJobsUpdated: vi.fn((handler) => {
@@ -878,7 +884,8 @@ describe('AppLayout standalone routes', () => {
         }),
       },
     } as unknown as Window['echo'];
-    window.addEventListener('library:changed', onLibraryChanged);
+    window.addEventListener('library:changed', handleLibraryChanged);
+    window.addEventListener('library:playlists-changed', onPlaylistsChanged);
 
     const { unmount } = render(
       <AppProviders>
@@ -887,6 +894,7 @@ describe('AppLayout standalone routes', () => {
     );
 
     await waitFor(() => expect(window.echo?.downloads?.onJobsUpdated).toHaveBeenCalledTimes(1));
+    vi.useFakeTimers();
 
     act(() => {
       jobsUpdated?.([{ id: 'job-1', importedTrackId: null }]);
@@ -896,16 +904,22 @@ describe('AppLayout standalone routes', () => {
     act(() => {
       jobsUpdated?.([{ id: 'job-1', importedTrackId: 'track-1' }]);
     });
-    expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+    expect(onLibraryChanged).not.toHaveBeenCalled();
 
     act(() => {
       jobsUpdated?.([{ id: 'job-1', importedTrackId: 'track-1' }]);
     });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
     expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+    expect((receivedEvents[0] as CustomEvent).detail).toEqual({ preserveScroll: true });
+    expect(onPlaylistsChanged).toHaveBeenCalledTimes(1);
 
     unmount();
     expect(unsubscribeDownloads).toHaveBeenCalledTimes(1);
-    window.removeEventListener('library:changed', onLibraryChanged);
+    window.removeEventListener('library:changed', handleLibraryChanged);
+    window.removeEventListener('library:playlists-changed', onPlaylistsChanged);
   });
 
   it('marks main-process library updates as scroll-preserving', async () => {
