@@ -12,6 +12,7 @@ export type DesktopLyricsStylePatch = Partial<Pick<
   | 'desktopLyricsColor'
   | 'desktopLyricsStrokeColor'
   | 'desktopLyricsOpacityPercent'
+  | 'desktopLyricsTextDirection'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
 >>;
@@ -32,6 +33,7 @@ export type DesktopLyricsState = {
     | 'desktopLyricsColor'
     | 'desktopLyricsStrokeColor'
     | 'desktopLyricsOpacityPercent'
+    | 'desktopLyricsTextDirection'
     | 'desktopLyricsRomanizationEnabled'
     | 'desktopLyricsTranslationEnabled'
     | 'desktopLyricsBounds'

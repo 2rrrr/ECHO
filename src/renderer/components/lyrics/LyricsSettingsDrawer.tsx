@@ -15,6 +15,7 @@ import {
   Monitor,
   Music2,
   Palette,
+  Rows3,
   RefreshCw,
   RotateCcw,
   Search,
@@ -99,6 +100,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsSecondaryFontSizePx'
   | 'lyricsFontFamily'
   | 'lyricsFontFilePath'
+  | 'lyricsTextDirection'
   | 'lyricsLineSpacingPercent'
   | 'lyricsLineMaxChars'
   | 'lyricsContextOpacityPercent'
@@ -114,6 +116,7 @@ type LyricsDrawerSettings = Pick<
   | 'desktopLyricsFontFamily'
   | 'desktopLyricsFontFilePath'
   | 'desktopLyricsOpacityPercent'
+  | 'desktopLyricsTextDirection'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
 >;
@@ -153,6 +156,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsSecondaryFontSizePx: 22,
   lyricsFontFamily: 'Microsoft YaHei',
   lyricsFontFilePath: null,
+  lyricsTextDirection: 'horizontal',
   lyricsLineSpacingPercent: 110,
   lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
@@ -168,6 +172,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
   desktopLyricsOpacityPercent: 96,
+  desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
 };
@@ -612,6 +617,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackSettings.lyricsSecondaryFontSizePx,
   lyricsFontFamily: settings.lyricsFontFamily ?? fallbackSettings.lyricsFontFamily,
   lyricsFontFilePath: settings.lyricsFontFilePath ?? fallbackSettings.lyricsFontFilePath,
+  lyricsTextDirection: settings.lyricsTextDirection ?? fallbackSettings.lyricsTextDirection,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackSettings.lyricsLineSpacingPercent,
   lyricsLineMaxChars: settings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
@@ -627,6 +633,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   desktopLyricsFontFamily: settings.desktopLyricsFontFamily ?? fallbackSettings.desktopLyricsFontFamily,
   desktopLyricsFontFilePath: settings.desktopLyricsFontFilePath ?? fallbackSettings.desktopLyricsFontFilePath,
   desktopLyricsOpacityPercent: settings.desktopLyricsOpacityPercent ?? fallbackSettings.desktopLyricsOpacityPercent,
+  desktopLyricsTextDirection: settings.desktopLyricsTextDirection ?? fallbackSettings.desktopLyricsTextDirection,
   desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled ?? fallbackSettings.desktopLyricsRomanizationEnabled,
   desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
 });
@@ -696,6 +703,11 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     desktopLyricsState?.settings.desktopLyricsTranslationEnabled ??
     effectiveSettings.desktopLyricsTranslationEnabled ??
     fallbackSettings.desktopLyricsTranslationEnabled;
+  const desktopLyricsTextDirection =
+    desktopLyricsState?.settings.desktopLyricsTextDirection ??
+    effectiveSettings.desktopLyricsTextDirection ??
+    fallbackSettings.desktopLyricsTextDirection ??
+    'horizontal';
   const wordHighlightClarityPercent = effectiveSettings.lyricsWordHighlightClarityPercent ?? fallbackSettings.lyricsWordHighlightClarityPercent ?? 70;
   const wordHighlightClarityLabel =
     wordHighlightClarityPercent === fallbackSettings.lyricsWordHighlightClarityPercent ? t('lyricsSettings.status.normal') : `${wordHighlightClarityPercent}%`;
@@ -1898,6 +1910,26 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   onChange={(event) => patchDesktopLyricsStyle({ desktopLyricsTranslationEnabled: event.currentTarget.checked })}
                 />
               </label>
+              <div className="lyrics-color-panel__header">
+                <span>
+                  <Rows3 size={15} />
+                  <strong>{t('lyricsSettings.display.desktopTextDirection')}</strong>
+                </span>
+                <em>{t(desktopLyricsTextDirection === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}</em>
+              </div>
+              <div className="lyrics-background-segmented" aria-label={t('lyricsSettings.display.desktopTextDirection')}>
+                {(['horizontal', 'vertical'] as const).map((direction) => (
+                  <button
+                    type="button"
+                    key={direction}
+                    aria-pressed={desktopLyricsTextDirection === direction}
+                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                    onClick={() => patchDesktopLyricsStyle({ desktopLyricsTextDirection: direction })}
+                  >
+                    {t(direction === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}
+                  </button>
+                ))}
+              </div>
 
               <label className="mv-threshold-control lyrics-desktop-opacity-control">
                 <span className="mv-threshold-copy">
@@ -2339,6 +2371,28 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
           {showPersistentControls ? (
             <div className="lyrics-style-range-grid" hidden={!isLyricsStyleControlsOpen}>
+              <div className="lyrics-color-panel lyrics-text-direction-panel">
+                <div className="lyrics-color-panel__header">
+                  <span>
+                    <Rows3 size={15} />
+                    <strong>{t('lyricsSettings.style.textDirection')}</strong>
+                  </span>
+                  <em>{t(effectiveSettings.lyricsTextDirection === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}</em>
+                </div>
+                <div className="lyrics-background-segmented" aria-label={t('lyricsSettings.style.textDirection')}>
+                  {(['horizontal', 'vertical'] as const).map((direction) => (
+                    <button
+                      type="button"
+                      key={direction}
+                      aria-pressed={(effectiveSettings.lyricsTextDirection ?? 'horizontal') === direction}
+                      disabled={isBusy}
+                      onClick={() => void patchSettings({ lyricsTextDirection: direction })}
+                    >
+                      {t(direction === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}
+                    </button>
+                  ))}
+                </div>
+              </div>
           {isSecondaryLyricsSizeOpen ? (
             <label className="lyrics-drawer-range lyrics-secondary-size-range">
               <span>

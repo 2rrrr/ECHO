@@ -1,16 +1,22 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectSessionStatus } from '../../shared/types/connect';
+import type { LibraryTrack } from '../../shared/types/library';
+import type { LyricLine, TrackLyrics } from '../../shared/types/lyrics';
+import type { PlaybackStatus } from '../../shared/types/playback';
 import {
   DesktopLyricsApp,
   getInterpolatedPositionMs,
+  getDesktopLyricsLineProgress,
   getDesktopLyricsTextFitScale,
   hqPlayerConnectStatusToDesktopLyricsClock,
+  selectDesktopLyricsActiveClock,
   shouldShowDesktopLyricsText,
 } from './DesktopLyricsApp';
 
-const makeDesktopLyricsSettings = (locked: boolean) => ({
+const makeDesktopLyricsSettingsBase = (locked: boolean) => ({
   desktopLyricsEnabled: true,
   desktopLyricsLocked: locked,
   desktopLyricsFontSizePx: 34,
@@ -23,14 +29,105 @@ const makeDesktopLyricsSettings = (locked: boolean) => ({
   desktopLyricsOpacityPercent: 96,
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
+  desktopLyricsTextDirection: 'horizontal',
   desktopLyricsBounds: null,
+});
+
+const makeDesktopLyricsSettings = (
+  locked: boolean,
+  overrides: Partial<ReturnType<typeof makeDesktopLyricsSettingsBase>> = {},
+) => ({
+  ...makeDesktopLyricsSettingsBase(locked),
+  ...overrides,
+});
+
+const makeDesktopLyricsTrack = (overrides: Partial<LibraryTrack> = {}): LibraryTrack => ({
+  id: 'track-1',
+  path: 'D:\\Music\\Song.flac',
+  title: 'Song',
+  artist: 'Artist',
+  album: '',
+  albumArtist: '',
+  trackNo: null,
+  discNo: null,
+  year: null,
+  genre: null,
+  duration: 188,
+  codec: null,
+  sampleRate: null,
+  bitDepth: null,
+  bitrate: null,
+  coverId: null,
+  coverThumb: null,
+  fieldSources: {},
+  mediaType: 'local',
+  ...overrides,
+});
+
+const makeDesktopTrackLyrics = (
+  lines: LyricLine[],
+  overrides: Partial<TrackLyrics> = {},
+): TrackLyrics => ({
+  id: 'lyrics-1',
+  trackId: 'track-1',
+  provider: 'lrclib',
+  kind: 'synced',
+  title: 'Song',
+  artist: 'Artist',
+  album: null,
+  durationSeconds: 188,
+  lines,
+  offsetMs: 0,
+  cachedAt: '2026-05-25T00:00:00.000Z',
+  updatedAt: '2026-05-25T00:00:00.000Z',
+  ...overrides,
 });
 
 const renderDesktopLyricsApp = (
   locked: boolean,
-): { container: HTMLElement; setMousePassthrough: ReturnType<typeof vi.fn> } => {
-  const settings = makeDesktopLyricsSettings(locked);
+  options: {
+    playbackStatus?: PlaybackStatus;
+    connectStatus?: ConnectSessionStatus | null;
+    settings?: Partial<ReturnType<typeof makeDesktopLyricsSettingsBase>>;
+    track?: LibraryTrack;
+    lyrics?: TrackLyrics | null;
+  } = {},
+): {
+  container: HTMLElement;
+  connectPause: ReturnType<typeof vi.fn>;
+  connectPlay: ReturnType<typeof vi.fn>;
+  playbackPause: ReturnType<typeof vi.fn>;
+  playbackPlay: ReturnType<typeof vi.fn>;
+  setMousePassthrough: ReturnType<typeof vi.fn>;
+  setStyle: ReturnType<typeof vi.fn>;
+} => {
+  const settings = makeDesktopLyricsSettings(locked, options.settings);
+  const track = options.track ?? null;
+  const lyrics = options.lyrics ?? null;
+  const playbackStatus = options.playbackStatus ?? {
+    currentTrackId: null,
+    filePath: null,
+    state: 'stopped',
+    positionMs: 0,
+    durationMs: 0,
+  };
+  const connectStatus = options.connectStatus ?? null;
+  const connectPlay = vi.fn().mockResolvedValue(connectStatus);
+  const connectPause = vi.fn().mockResolvedValue(connectStatus);
+  const playbackPlay = vi.fn().mockResolvedValue({ ...playbackStatus, state: 'playing' });
+  const playbackPause = vi.fn().mockResolvedValue({ ...playbackStatus, state: 'paused' });
   const setMousePassthrough = vi.fn();
+  const setStyle = vi.fn((patch: Partial<ReturnType<typeof makeDesktopLyricsSettingsBase>>) =>
+    Promise.resolve({
+      visible: true,
+      locked,
+      bounds: null,
+      settings: {
+        ...settings,
+        ...patch,
+      },
+    }),
+  );
 
   window.echo = {
     app: {
@@ -38,8 +135,10 @@ const renderDesktopLyricsApp = (
       loadFontFile: vi.fn(),
     },
     connect: {
-      getStatus: vi.fn().mockResolvedValue(null),
+      getStatus: vi.fn().mockResolvedValue(connectStatus),
       onStatus: vi.fn(() => () => undefined),
+      pause: connectPause,
+      play: connectPlay,
     },
     desktopLyrics: {
       getLastAudioStatus: vi.fn().mockResolvedValue(null),
@@ -52,21 +151,28 @@ const renderDesktopLyricsApp = (
       onAudioStatus: vi.fn(() => () => undefined),
       onStateChanged: vi.fn(() => () => undefined),
       setMousePassthrough,
+      setStyle,
     },
     playback: {
-      getStatus: vi.fn().mockResolvedValue({
-        currentTrackId: null,
-        filePath: null,
-        state: 'stopped',
-        positionMs: 0,
-        durationMs: 0,
-      }),
+      getStatus: vi.fn().mockResolvedValue(playbackStatus),
+      pause: playbackPause,
+      play: playbackPlay,
     },
   } as unknown as typeof window.echo;
+  if (track) {
+    window.echo.library = {
+      getTrack: vi.fn().mockResolvedValue(track),
+    } as unknown as typeof window.echo.library;
+  }
+  if (lyrics) {
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(lyrics),
+    } as unknown as typeof window.echo.lyrics;
+  }
 
   const { container } = render(<DesktopLyricsApp />);
 
-  return { container, setMousePassthrough };
+  return { container, connectPause, connectPlay, playbackPause, playbackPlay, setMousePassthrough, setStyle };
 };
 
 afterEach(() => {
@@ -77,6 +183,13 @@ afterEach(() => {
 });
 
 describe('desktop lyrics text fitting', () => {
+  it('keeps vertical desktop lyric columns close together', () => {
+    const css = readFileSync('src/renderer/styles/desktop-lyrics.css', 'utf8');
+
+    expect(css).toMatch(/\.desktop-lyrics-app\[data-text-direction="vertical"\] \.desktop-lyrics-line-text \{[\s\S]*?gap: clamp\(6px, 1\.4vw, 18px\);/);
+    expect(css).toMatch(/\.desktop-lyrics-upright-character\[data-sideways="true"\] \+ \.desktop-lyrics-upright-character\[data-sideways="true"\][\s\S]*?margin-top: 0\.28em;/);
+  });
+
   it('hides text that would overflow the desktop lyrics window', () => {
     expect(shouldShowDesktopLyricsText({
       text: '短歌词',
@@ -117,6 +230,97 @@ describe('desktop lyrics text fitting', () => {
     });
 
     expect(fitScale).toBeGreaterThanOrEqual(0.62);
+    expect(fitScale).toBeLessThan(1);
+  });
+
+  it('fits vertical desktop lyrics against the available height', () => {
+    expect(shouldShowDesktopLyricsText({
+      text: '短歌词',
+      availableWidthPx: 32,
+      availableHeightPx: 320,
+      fontSizePx: 34,
+      fontFamily: '"Microsoft YaHei", sans-serif',
+      fontWeight: 700,
+      scalePercent: 100,
+      textDirection: 'vertical',
+    })).toBe(true);
+
+    const fitScale = getDesktopLyricsTextFitScale({
+      text: 'Wonderland '.repeat(10),
+      availableWidthPx: 1200,
+      availableHeightPx: 180,
+      fontSizePx: 34,
+      fontFamily: '"Microsoft YaHei", sans-serif',
+      fontWeight: 700,
+      scalePercent: 100,
+      textDirection: 'vertical',
+    });
+
+    expect(fitScale).toBe(1);
+  });
+
+  it('fits sideways latin runs in vertical desktop lyrics without per-letter height', () => {
+    expect(shouldShowDesktopLyricsText({
+      text: 'The tenacity',
+      availableWidthPx: 32,
+      availableHeightPx: 240,
+      fontSizePx: 34,
+      fontFamily: '"Microsoft YaHei", sans-serif',
+      fontWeight: 700,
+      scalePercent: 100,
+      textDirection: 'vertical',
+    })).toBe(true);
+  });
+
+  it('keeps horizontal desktop lyrics on the existing minimum fit scale', () => {
+    const fitScale = getDesktopLyricsTextFitScale({
+      text: 'Wonderland '.repeat(20),
+      availableWidthPx: 120,
+      fontSizePx: 34,
+      fontFamily: '"Microsoft YaHei", sans-serif',
+      fontWeight: 700,
+      scalePercent: 100,
+    });
+
+    expect(fitScale).toBe(0.62);
+  });
+
+  it('computes vertical scroll progress from the active lyric timing', () => {
+    const performanceNow = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    const progress = getDesktopLyricsLineProgress(
+      [
+        { timeMs: 10_000, text: 'first line' },
+        { timeMs: 14_000, text: 'second line' },
+      ],
+      0,
+      {
+        source: 'playback',
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\Song.flac',
+        state: 'playing',
+        positionMs: 11_000,
+        durationMs: 180_000,
+        playbackRate: 1,
+        updatedAtMs: 0,
+      },
+      0,
+    );
+
+    expect(progress).toBe(0.5);
+    performanceNow.mockRestore();
+  });
+
+  it('uses the horizontal width when fitting horizontal desktop lyrics', () => {
+    const fitScale = getDesktopLyricsTextFitScale({
+      text: 'Wonderland '.repeat(10),
+      availableWidthPx: 320,
+      availableHeightPx: 1800,
+      fontSizePx: 34,
+      fontFamily: '"Microsoft YaHei", sans-serif',
+      fontWeight: 700,
+      scalePercent: 100,
+    });
+
     expect(fitScale).toBeLessThan(1);
   });
 
@@ -246,6 +450,422 @@ describe('desktop lyrics text fitting', () => {
     await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('false'));
   });
 
+  it('toggles the desktop lyrics text direction from the floating menu', async () => {
+    const { container, setStyle } = renderDesktopLyricsApp(false);
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+
+    await waitFor(() => expect(app?.getAttribute('data-text-direction')).toBe('horizontal'));
+    fireEvent.click(await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label="切换横排 / 竖排"]');
+      expect(button).toBeTruthy();
+      return button!;
+    }));
+
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsTextDirection: 'vertical' }));
+    expect(app?.getAttribute('data-text-direction')).toBe('vertical');
+  });
+
+  it('keeps romanization and translation grouped with vertical desktop lyrics', async () => {
+    const { container } = renderDesktopLyricsApp(false, {
+      settings: { desktopLyricsTextDirection: 'vertical' },
+      track: makeDesktopLyricsTrack(),
+      lyrics: makeDesktopTrackLyrics([{
+        timeMs: 0,
+        text: 'らくになる日はまず来ない',
+        romanization: 'ra ku ni na ru hi wa ma zu ko na i',
+        translation: '轻松的生活不会到来',
+      }]),
+      playbackStatus: {
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\Song.flac',
+        state: 'playing',
+        positionMs: 0,
+        durationMs: 188_000,
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('.desktop-lyrics-app')?.getAttribute('data-text-direction')).toBe('vertical'));
+    await waitFor(() => expect(container.querySelector('.desktop-lyrics-line-text strong')?.textContent).toBe('らくになる日はまず来ない'));
+    const lineText = container.querySelector('.desktop-lyrics-line-text');
+    const secondaryTextElements = Array.from(lineText?.children ?? []).filter((element) => element.tagName === 'SPAN');
+    expect(lineText?.querySelector('strong')?.textContent).toBe('らくになる日はまず来ない');
+    expect(secondaryTextElements[0]?.textContent).toBe('rakuninaruhiwamazukonai');
+    expect(secondaryTextElements[1]?.textContent).toBe('轻松的生活不会到来');
+    expect(secondaryTextElements[0]?.getAttribute('data-secondary-kind')).toBe('romanization');
+    expect(secondaryTextElements[1]?.getAttribute('data-secondary-kind')).toBe('translation');
+    expect(lineText?.querySelectorAll('strong .desktop-lyrics-upright-character').length).toBe(
+      Array.from('らくになる日はまず来ない').length,
+    );
+    const romanizationTokens = Array.from(
+      lineText?.querySelectorAll<HTMLElement>('[data-secondary-kind="romanization"] .desktop-lyrics-romanization-token') ?? [],
+    );
+    expect(romanizationTokens.map((token) => token.textContent)).toEqual([
+      'ra',
+      'ku',
+      'ni',
+      'na',
+      'ru',
+      'hi',
+      'wa',
+      'ma',
+      'zu',
+      'ko',
+      'na',
+      'i',
+    ]);
+    expect(lineText?.querySelectorAll('[data-secondary-kind="romanization"] .desktop-lyrics-romanization-character[data-sideways="true"]').length).toBeGreaterThan(0);
+    expect(lineText?.querySelectorAll('[data-secondary-kind="translation"] .desktop-lyrics-upright-character').length).toBe(
+      Array.from('轻松的生活不会到来').length,
+    );
+  });
+
+  it('renders latin text sideways in vertical desktop lyrics', async () => {
+    const { container } = renderDesktopLyricsApp(false, {
+      settings: { desktopLyricsTextDirection: 'vertical' },
+      track: makeDesktopLyricsTrack(),
+      lyrics: makeDesktopTrackLyrics([
+        { timeMs: 0, text: 'The tenacity', translation: '坚如磐石' },
+      ]),
+      playbackStatus: {
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\Song.flac',
+        state: 'playing',
+        positionMs: 0,
+        durationMs: 188_000,
+      },
+    });
+
+    const sidewaysTokens = await waitFor(() => {
+      const tokens = Array.from(container.querySelectorAll<HTMLElement>('strong .desktop-lyrics-upright-character[data-sideways="true"]'));
+      expect(tokens.map((token) => token.textContent)).toEqual(['The', 'tenacity']);
+      return tokens;
+    });
+
+    expect(sidewaysTokens).toHaveLength(2);
+    expect(container.querySelectorAll('strong .desktop-lyrics-upright-character')).toHaveLength(2);
+  });
+
+  it('keeps vertical desktop lyrics at the configured size when romanization is long', async () => {
+    const { container } = renderDesktopLyricsApp(false, {
+      settings: { desktopLyricsTextDirection: 'vertical' },
+      track: makeDesktopLyricsTrack(),
+      lyrics: makeDesktopTrackLyrics([{
+        timeMs: 0,
+        text: '短い歌詞',
+        romanization: 'ra ku ni na ru hi wa ma zu ko na i '.repeat(4).trim(),
+        translation: '很长的翻译文本'.repeat(8),
+      }]),
+      playbackStatus: {
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\Song.flac',
+        state: 'playing',
+        positionMs: 0,
+        durationMs: 188_000,
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('.desktop-lyrics-app')?.getAttribute('data-text-direction')).toBe('vertical'));
+    const lineText = container.querySelector<HTMLElement>('.desktop-lyrics-line-text');
+    expect(lineText?.style.getPropertyValue('--desktop-lyrics-text-fit-scale')).toBe('1.000');
+    expect(Number(lineText?.style.getPropertyValue('--desktop-lyrics-line-progress'))).toBeGreaterThanOrEqual(0);
+    expect(Number(lineText?.style.getPropertyValue('--desktop-lyrics-line-progress'))).toBeLessThan(0.01);
+    expect(lineText?.style.getPropertyValue('--desktop-lyrics-secondary-text-fit-scale')).toBe('');
+    expect(lineText?.querySelectorAll('.desktop-lyrics-scroll-track').length).toBe(lineText?.children.length);
+    expect(container.querySelector('.desktop-lyrics-lines strong')?.textContent).toBe('短い歌詞');
+  });
+
+  it('centers fitting vertical desktop columns and scrolls overflowing columns by lyric progress', async () => {
+    const resizeObserverDescriptor = Object.getOwnPropertyDescriptor(window, 'ResizeObserver');
+    const innerHeightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+    vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(1_000);
+      return 1;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 220,
+    });
+
+    const options = {
+      settings: { desktopLyricsTextDirection: 'vertical' as const },
+      track: makeDesktopLyricsTrack(),
+      lyrics: makeDesktopTrackLyrics([
+        {
+          timeMs: 0,
+          text: '短い歌詞',
+          romanization: 'ra ku ni na ru hi wa ma zu ko na i '.repeat(4).trim(),
+          translation: '居中翻译',
+        },
+        { timeMs: 4_000, text: 'next line' },
+      ]),
+      playbackStatus: {
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\Song.flac',
+        state: 'paused' as const,
+        positionMs: 2_000,
+        durationMs: 188_000,
+      },
+    };
+
+    try {
+      const { container } = renderDesktopLyricsApp(false, options);
+
+      await waitFor(() => {
+        const lineTextElement = container.querySelector('.desktop-lyrics-line-text');
+        expect(lineTextElement).toBeTruthy();
+        expect(lineTextElement?.textContent).toContain('居中翻译');
+      });
+      const lineText = container.querySelector<HTMLElement>('.desktop-lyrics-line-text');
+      const clips = Array.from(lineText?.querySelectorAll<HTMLElement>('.desktop-lyrics-scroll-clip') ?? []);
+      const tracks = Array.from(lineText?.querySelectorAll<HTMLElement>('.desktop-lyrics-scroll-track') ?? []);
+      expect(clips.length).toBe(2);
+
+      Object.defineProperty(clips[0], 'clientHeight', { configurable: true, value: 200 });
+      Object.defineProperty(tracks[0], 'scrollHeight', { configurable: true, value: 120 });
+      Object.defineProperty(clips[1], 'clientHeight', { configurable: true, value: 200 });
+      Object.defineProperty(tracks[1], 'scrollHeight', { configurable: true, value: 520 });
+
+      window.dispatchEvent(new Event('resize'));
+
+      await waitFor(() => expect(clips[1].dataset.overflow).toBe('true'));
+      expect(clips[0].dataset.overflow).toBe('false');
+      expect(tracks[1].style.getPropertyValue('--desktop-lyrics-scroll-offset')).toBe('-160.00px');
+      expect(tracks[0].style.getPropertyValue('--desktop-lyrics-scroll-offset')).toBe('0.00px');
+    } finally {
+      if (resizeObserverDescriptor) {
+        Object.defineProperty(window, 'ResizeObserver', resizeObserverDescriptor);
+      } else {
+        Reflect.deleteProperty(window, 'ResizeObserver');
+      }
+      if (innerHeightDescriptor) {
+        Object.defineProperty(window, 'innerHeight', innerHeightDescriptor);
+      }
+    }
+  });
+
+  it('pauses native playback from the floating menu while playing', async () => {
+    const { container, playbackPause, playbackPlay, connectPause } = renderDesktopLyricsApp(false, {
+      playbackStatus: {
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\Song.flac',
+        state: 'playing',
+        positionMs: 12_000,
+        durationMs: 180_000,
+      },
+    });
+
+    fireEvent.click(await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label="暂停"]');
+      expect(button).toBeTruthy();
+      return button!;
+    }));
+
+    await waitFor(() => expect(playbackPause).toHaveBeenCalledTimes(1));
+    expect(playbackPause).toHaveBeenCalledWith();
+    expect(playbackPlay).not.toHaveBeenCalled();
+    expect(connectPause).not.toHaveBeenCalled();
+  });
+
+  it('resumes native playback from the floating menu while paused', async () => {
+    const { container, playbackPause, playbackPlay } = renderDesktopLyricsApp(false, {
+      playbackStatus: {
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\Song.flac',
+        state: 'paused',
+        positionMs: 12_000,
+        durationMs: 180_000,
+      },
+    });
+
+    fireEvent.click(await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label="播放"]');
+      expect(button).toBeTruthy();
+      return button!;
+    }));
+
+    await waitFor(() => expect(playbackPlay).toHaveBeenCalledTimes(1));
+    expect(playbackPlay).toHaveBeenCalledWith();
+    expect(playbackPause).not.toHaveBeenCalled();
+  });
+
+  it('keeps the desktop lyric clock moving from the resume click while native playback is pending', async () => {
+    let frameId = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frameId += 1;
+      frames.set(frameId, callback);
+      return frameId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const performanceNow = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const settings = makeDesktopLyricsSettings(false);
+    const pausedStatus: PlaybackStatus = {
+      currentTrackId: 'track-1',
+      filePath: 'D:\\Music\\Song.flac',
+      state: 'paused',
+      positionMs: 12_000,
+      durationMs: 180_000,
+    };
+    let resolvePlay: ((status: PlaybackStatus) => void) | null = null;
+    const playbackPlay = vi.fn(() => new Promise<PlaybackStatus>((resolve) => {
+      resolvePlay = resolve;
+    }));
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(settings),
+        loadFontFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(null),
+        onStatus: vi.fn(() => () => undefined),
+      },
+      desktopLyrics: {
+        getLastAudioStatus: vi.fn().mockResolvedValue(null),
+        getState: vi.fn().mockResolvedValue({
+          visible: true,
+          locked: false,
+          bounds: null,
+          settings,
+        }),
+        onAudioStatus: vi.fn(() => () => undefined),
+        onStateChanged: vi.fn(() => () => undefined),
+        setMousePassthrough: vi.fn(),
+        setStyle: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue({
+          id: 'track-1',
+          path: 'D:\\Music\\Song.flac',
+          title: 'Song',
+          artist: 'Artist',
+          album: null,
+          albumArtist: null,
+          duration: 180,
+          mediaType: 'local',
+        }),
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue({
+          kind: 'synced',
+          provider: 'lrclib',
+          lines: [
+            { timeMs: 12_000, text: 'resume line' },
+            { timeMs: 12_600, text: 'on beat line' },
+          ],
+          offsetMs: 0,
+        }),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue(pausedStatus),
+        pause: vi.fn(),
+        play: playbackPlay,
+      },
+    } as unknown as typeof window.echo;
+
+    const { container } = render(<DesktopLyricsApp />);
+
+    await waitFor(() => expect(container.querySelector('.desktop-lyrics-lines strong')?.textContent).toBe('resume line'));
+
+    fireEvent.click(await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label="播放"]');
+      expect(button).toBeTruthy();
+      return button!;
+    }));
+    await waitFor(() => expect(playbackPlay).toHaveBeenCalledTimes(1));
+    expect(playbackPlay).toHaveBeenCalledWith();
+
+    performanceNow.mockReturnValue(700);
+    act(() => {
+      for (const [id, callback] of Array.from(frames.entries())) {
+        frames.delete(id);
+        callback(700);
+      }
+    });
+
+    await waitFor(() => expect(container.querySelector('.desktop-lyrics-lines strong')?.textContent).toBe('on beat line'));
+
+    await act(async () => {
+      resolvePlay?.({ ...pausedStatus, state: 'playing' });
+    });
+    performanceNow.mockReturnValue(800);
+    act(() => {
+      for (const [id, callback] of Array.from(frames.entries())) {
+        frames.delete(id);
+        callback(800);
+      }
+    });
+
+    expect(container.querySelector('.desktop-lyrics-lines strong')?.textContent).toBe('on beat line');
+  });
+
+  it('prefers Connect playback controls when the active desktop clock is from Connect', async () => {
+    const connectStatus: ConnectSessionStatus = {
+      deviceId: 'hqplayer:local-desktop',
+      protocol: 'hqplayer',
+      state: 'playing',
+      currentTrackId: 'connect-track',
+      metadata: {
+        title: 'Connect Track',
+        artist: 'Artist',
+        album: null,
+        albumArtist: null,
+        durationSeconds: 180,
+        coverHttpUrl: '',
+      },
+      positionSeconds: 12,
+      durationSeconds: 180,
+      latencyMs: null,
+      error: null,
+      updatedAt: '2026-05-25T00:00:00.000Z',
+    };
+    const { container, connectPause, playbackPause } = renderDesktopLyricsApp(false, { connectStatus });
+
+    fireEvent.click(await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label="暂停"]');
+      expect(button).toBeTruthy();
+      return button!;
+    }));
+
+    await waitFor(() => expect(connectPause).toHaveBeenCalledTimes(1));
+    expect(playbackPause).not.toHaveBeenCalled();
+  });
+
+  it('keeps a local playback command clock ahead of older forwarded desktop lyrics status', () => {
+    const playbackClock = {
+      source: 'playback' as const,
+      currentTrackId: 'track-1',
+      filePath: 'D:\\Music\\Song.flac',
+      state: 'playing',
+      positionMs: 12_700,
+      durationMs: 180_000,
+      playbackRate: 1,
+      updatedAtMs: 700,
+    };
+    const forwardedClock = {
+      ...playbackClock,
+      source: 'forwarded' as const,
+      positionMs: 12_000,
+      updatedAtMs: 100,
+    };
+
+    expect(selectDesktopLyricsActiveClock({
+      forwardedClock,
+      forwardedUpdatedAtMs: 100,
+      nowMs: 800,
+      playbackClock,
+      playbackClockPriorityUntilMs: 2_000,
+    })).toBe(playbackClock);
+  });
+
   it('does not reveal the desktop lyrics menu over transparent window space', async () => {
     const { container, setMousePassthrough } = renderDesktopLyricsApp(false);
     const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
@@ -286,7 +906,7 @@ describe('desktop lyrics text fitting', () => {
     expect(setMousePassthrough).toHaveBeenCalledWith(false);
   });
 
-  it('does not reveal the desktop lyrics menu over lyrics container empty space', async () => {
+  it('reveals the desktop lyrics menu over the whole unlocked lyrics container', async () => {
     const { container, setMousePassthrough } = renderDesktopLyricsApp(false);
     const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
     const lines = container.querySelector<HTMLElement>('.desktop-lyrics-lines');
@@ -302,7 +922,43 @@ describe('desktop lyrics text fitting', () => {
     });
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, clientY: 40 }));
 
-    expect(app?.getAttribute('data-menu-visible')).toBe('false');
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
+    expect(setMousePassthrough).toHaveBeenCalledWith(false);
+  });
+
+  it('reveals the desktop lyrics menu from the vertical lyrics hit rectangle', async () => {
+    const { container, setMousePassthrough } = renderDesktopLyricsApp(false, {
+      settings: { desktopLyricsTextDirection: 'vertical' },
+    });
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+    const lines = container.querySelector<HTMLElement>('.desktop-lyrics-lines');
+
+    expect(app).toBeTruthy();
+    expect(lines).toBeTruthy();
+    await waitFor(() => expect(setMousePassthrough).toHaveBeenCalledWith(true));
+    setMousePassthrough.mockClear();
+
+    Object.defineProperty(lines, 'getBoundingClientRect', {
+      configurable: true,
+      value: vi.fn(() => ({
+        bottom: 580,
+        height: 520,
+        left: 180,
+        right: 320,
+        top: 60,
+        width: 140,
+        x: 180,
+        y: 60,
+        toJSON: () => ({}),
+      })),
+    });
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => app),
+    });
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 250, clientY: 320 }));
+
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
     expect(setMousePassthrough).toHaveBeenCalledWith(false);
   });
 

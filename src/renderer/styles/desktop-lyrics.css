@@ -79,13 +79,42 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
   -webkit-app-region: drag;
 }
 
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-lines {
+  width: auto;
+  max-width: calc(100vw - 36px);
+  max-height: calc(100vh - 20px);
+  align-items: center;
+  justify-content: center;
+}
+
 .desktop-lyrics-app[data-locked="true"] .desktop-lyrics-lines {
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
 
+.desktop-lyrics-line-text {
+  display: grid;
+  width: fit-content;
+  justify-items: center;
+  gap: 3px;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text {
+  max-height: calc(100vh - 20px);
+  display: inline-flex;
+  width: fit-content;
+  height: calc(100vh - 20px);
+  min-width: 0;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, 1.4vw, 18px);
+  overflow: visible;
+}
+
 .desktop-lyrics-lines strong,
-.desktop-lyrics-lines span {
+.desktop-lyrics-line-text > span {
   display: block;
   max-width: none;
   overflow: visible;
@@ -97,6 +126,152 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
     0 0 3px color-mix(in srgb, var(--desktop-lyrics-stroke-color) 72%, transparent),
     0 3px 12px rgb(0 0 0 / 0.28);
   -webkit-font-smoothing: antialiased;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-lines strong,
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text > span {
+  display: inline-flex;
+  max-height: calc(100vh - 20px);
+  height: calc(100vh - 20px);
+  max-width: none;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  line-break: strict;
+  hyphens: none;
+  text-align: center;
+  writing-mode: horizontal-tb;
+}
+
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-lines strong {
+  width: calc(var(--desktop-lyrics-font-size) * 1.22);
+  font-size: calc(var(--desktop-lyrics-font-size) * var(--desktop-lyrics-text-fit-scale, 1));
+  font-weight: 700;
+  line-height: 1.02;
+}
+
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text > span {
+  width: calc(var(--desktop-lyrics-font-size) * 0.72);
+}
+
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text > span[data-secondary-kind="romanization"] {
+  width: calc(var(--desktop-lyrics-font-size) * 0.84);
+}
+
+.desktop-lyrics-upright-character {
+  display: block;
+  min-width: 1em;
+  min-height: 1em;
+  line-height: 1;
+  text-align: center;
+  white-space: pre;
+  writing-mode: horizontal-tb;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-upright-character[data-sideways="true"],
+.desktop-lyrics-romanization-character[data-sideways="true"] {
+  min-width: 1em;
+  min-height: auto;
+  line-height: 1;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.desktop-lyrics-upright-character[data-sideways="true"] + .desktop-lyrics-upright-character[data-sideways="true"],
+.desktop-lyrics-romanization-character[data-sideways="true"] + .desktop-lyrics-romanization-character[data-sideways="true"] {
+  margin-top: 0.28em;
+}
+
+.desktop-lyrics-romanization-text {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.22em;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-romanization-token {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0.96;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-romanization-character {
+  display: block;
+  min-width: 1em;
+  min-height: 0.86em;
+  line-height: 0.86;
+  text-align: center;
+  white-space: pre;
+  writing-mode: horizontal-tb;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-romanization-character[data-sideways="true"] {
+  min-height: auto;
+  line-height: 0.92;
+}
+
+.desktop-lyrics-scroll-clip {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  text-shadow: inherit;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-scroll-clip[data-overflow="true"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 7%,
+    #000 93%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 7%,
+    #000 93%,
+    transparent
+  );
+}
+
+.desktop-lyrics-scroll-track {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  font: inherit;
+  text-shadow: inherit;
+  transform: translateY(var(--desktop-lyrics-scroll-offset, 0px));
+  will-change: transform;
+  -webkit-app-region: inherit;
+}
+
+.desktop-lyrics-scroll-clip[data-overflow="true"] {
+  align-items: flex-start;
+}
+
+.desktop-lyrics-scroll-clip[data-overflow="true"] .desktop-lyrics-scroll-track {
+  justify-content: flex-start;
 }
 
 .desktop-lyrics-lines strong {
@@ -114,11 +289,25 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
   -webkit-text-fill-color: transparent;
 }
 
-.desktop-lyrics-lines span {
+.desktop-lyrics-app[data-text-direction="vertical"][data-color-mode="theme"] .desktop-lyrics-lines strong {
+  color: var(--desktop-lyrics-theme-color);
+  background-image: none;
+  background-clip: border-box;
+  text-shadow: var(--desktop-lyrics-theme-shadow);
+  -webkit-background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+}
+
+.desktop-lyrics-line-text > span {
   color: color-mix(in srgb, var(--desktop-lyrics-color) 82%, transparent);
   font-size: calc(var(--desktop-lyrics-font-size) * 0.56);
   font-weight: 600;
   line-height: 1.2;
+}
+
+.desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text > span {
+  font-size: calc(var(--desktop-lyrics-font-size) * 0.56);
+  line-height: 1.16;
 }
 
 .desktop-lyrics-menu {

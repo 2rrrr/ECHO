@@ -8,11 +8,13 @@ import { shouldShowRomanizationForLyrics } from '../../../shared/utils/lyricsLan
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 
 type LyricScrollMode = 'animated' | 'instant' | 'recenter';
+type LyricsTextDirection = 'horizontal' | 'vertical';
 const lyricsLayoutSettingKeys = new Set([
   'lyricsFontSizePx',
   'lyricsSecondaryFontSizePx',
   'lyricsFontFamily',
   'lyricsFontFilePath',
+  'lyricsTextDirection',
   'lyricsLineSpacingPercent',
   'lyricsLineMaxChars',
   'lyricsRomanizationEnabled',
@@ -36,6 +38,7 @@ type LyricsViewProps = {
   showTranslation?: boolean;
   wordHighlightEnabled?: boolean;
   highFrequencyUpdatesEnabled?: boolean;
+  textDirection?: LyricsTextDirection;
 };
 
 const activeIndexSearchCache = new WeakMap<LyricsState['lines'], boolean>();
@@ -232,7 +235,6 @@ const getCurrentWordIndex = (
   }
 
   for (let index = 0; index < words.length; index += 1) {
-    const word = words[index];
     const endMs = getWordEndMs(words, index, fallbackLineEndMs);
     if (adjustedPositionMs < endMs) {
       return index;
@@ -309,6 +311,7 @@ export const LyricsView = ({
   showTranslation = true,
   wordHighlightEnabled = true,
   highFrequencyUpdatesEnabled = true,
+  textDirection = 'horizontal',
 }: LyricsViewProps): JSX.Element | null => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const scrollRef = useRef<HTMLElement | null>(null);
@@ -761,6 +764,7 @@ export const LyricsView = ({
       className="lyrics-scroll"
       aria-label="Lyrics"
       data-kind={lyrics.kind}
+      data-text-direction={textDirection}
       ref={scrollRef}
       onContextMenu={onContextMenu}
     >
@@ -775,6 +779,7 @@ export const LyricsView = ({
           showRomanization={canShowRomanization}
           preferKanaPronunciation={preferKanaPronunciation}
           showTranslation={showTranslation}
+          textDirection={textDirection}
           wordHighlightEnabled={wordHighlightEnabled && !prefersReducedMotion()}
           onSeek={onSeek}
           seekable={false}

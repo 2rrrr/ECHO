@@ -16,9 +16,17 @@ const defaultDesktopLyricsSize = {
   width: 760,
   height: 150,
 } as const;
+const defaultVerticalDesktopLyricsSize = {
+  width: 460,
+  height: 640,
+} as const;
 const desktopLyricsMinimumSize = {
   width: 360,
   height: 84,
+} as const;
+const verticalDesktopLyricsReadableMinimumSize = {
+  width: 360,
+  height: 640,
 } as const;
 const rememberBoundsDebounceMs = 300;
 const forwardedAudioStatusMaxAgeMs = 30_000;
@@ -42,6 +50,7 @@ const toDesktopLyricsSettings = (): DesktopLyricsState['settings'] => {
     desktopLyricsColor: settings.desktopLyricsColor,
     desktopLyricsStrokeColor: settings.desktopLyricsStrokeColor,
     desktopLyricsOpacityPercent: settings.desktopLyricsOpacityPercent,
+    desktopLyricsTextDirection: settings.desktopLyricsTextDirection,
     desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled,
     desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled,
     desktopLyricsBounds: settings.desktopLyricsBounds,
@@ -101,15 +110,40 @@ const clampBoundsToVisibleArea = (bounds: DesktopLyricsBounds): DesktopLyricsBou
   };
 };
 
+const expandBoundsToReadableVerticalArea = (bounds: DesktopLyricsBounds): DesktopLyricsBounds => {
+  const display = screen.getDisplayMatching(bounds);
+  const area = getDesktopLyricsConstrainArea(display);
+  const width = Math.max(bounds.width, Math.min(verticalDesktopLyricsReadableMinimumSize.width, area.width));
+  const height = Math.max(bounds.height, Math.min(verticalDesktopLyricsReadableMinimumSize.height, area.height));
+
+  return clampBoundsToVisibleArea({
+    x: Math.round(bounds.x - (width - bounds.width) / 2),
+    y: Math.round(bounds.y - (height - bounds.height) / 2),
+    width,
+    height,
+  });
+};
+
+const shouldUseVerticalDesktopLyricsBounds = (): boolean =>
+  getAppSettings().desktopLyricsTextDirection === 'vertical';
+
+const normalizeDesktopLyricsBoundsForTextDirection = (bounds: DesktopLyricsBounds): DesktopLyricsBounds =>
+  shouldUseVerticalDesktopLyricsBounds()
+    ? expandBoundsToReadableVerticalArea(bounds)
+    : clampBoundsToVisibleArea(bounds);
+
 export const resolveInitialDesktopLyricsBounds = (): DesktopLyricsBounds => {
   const savedBounds = getAppSettings().desktopLyricsBounds;
   if (savedBounds && isBoundsVisible(savedBounds)) {
-    return clampBoundsToVisibleArea(savedBounds);
+    return normalizeDesktopLyricsBoundsForTextDirection(savedBounds);
   }
 
   const area = screen.getPrimaryDisplay().workArea;
-  const width = Math.min(defaultDesktopLyricsSize.width, Math.max(desktopLyricsMinimumSize.width, area.width - 48));
-  const height = defaultDesktopLyricsSize.height;
+  const defaultSize = shouldUseVerticalDesktopLyricsBounds()
+    ? defaultVerticalDesktopLyricsSize
+    : defaultDesktopLyricsSize;
+  const width = Math.min(defaultSize.width, Math.max(desktopLyricsMinimumSize.width, area.width - 48));
+  const height = Math.min(defaultSize.height, Math.max(desktopLyricsMinimumSize.height, area.height - 48));
 
   return {
     x: Math.round(area.x + (area.width - width) / 2),
@@ -149,6 +183,24 @@ const scheduleRememberDesktopLyricsBounds = (window: BrowserWindow): void => {
     rememberBoundsTimer = null;
     rememberDesktopLyricsBounds(window);
   }, rememberBoundsDebounceMs);
+};
+
+const applyDesktopLyricsReadableBoundsForTextDirection = (window: BrowserWindow): void => {
+  if (window.isDestroyed() || !shouldUseVerticalDesktopLyricsBounds()) {
+    return;
+  }
+
+  const bounds = window.getBounds();
+  if (
+    bounds.width >= verticalDesktopLyricsReadableMinimumSize.width &&
+    bounds.height >= verticalDesktopLyricsReadableMinimumSize.height
+  ) {
+    return;
+  }
+
+  const nextBounds = expandBoundsToReadableVerticalArea(bounds);
+  window.setBounds(nextBounds);
+  setAppSettings({ desktopLyricsBounds: nextBounds });
 };
 
 const loadDesktopLyricsRenderer = (window: BrowserWindow): void => {
@@ -303,6 +355,10 @@ export const setDesktopLyricsMousePassthrough = (event: IpcMainEvent, passthroug
 
 export const setDesktopLyricsStyle = (patch: DesktopLyricsStylePatch): DesktopLyricsState => {
   setAppSettings(patch);
+  if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
+    applyDesktopLyricsReadableBoundsForTextDirection(desktopLyricsWindow);
+    applyDesktopLyricsAlwaysOnTop(desktopLyricsWindow);
+  }
   emitDesktopLyricsStateChanged();
   return getDesktopLyricsState();
 };

@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { LyricLine as LyricLineType, LyricWordTiming } from '../../../shared/types/lyrics';
+import { VerticalText } from './VerticalText';
 
 type LyricsLineProps = {
   line: LyricLineType;
@@ -13,6 +14,7 @@ type LyricsLineProps = {
   showTranslation?: boolean;
   wordHighlightEnabled?: boolean;
   focusDistance?: number;
+  textDirection?: 'horizontal' | 'vertical';
 };
 
 const selectPronunciation = (
@@ -265,6 +267,7 @@ export const LyricsLine = ({
   showTranslation = true,
   wordHighlightEnabled = true,
   focusDistance = 4,
+  textDirection = 'horizontal',
 }: LyricsLineProps): JSX.Element => {
   const density = getLyricDensity(line, showRomanization, showTranslation, preferKanaPronunciation);
   const { text: pronunciation, kind: pronunciationKind } = selectPronunciation(line, preferKanaPronunciation);
@@ -273,6 +276,7 @@ export const LyricsLine = ({
     (showTranslation && line.translation ? 1 : 0);
   const renderableWords = wordHighlightEnabled ? getRenderableLyricWords(line) : null;
   const hasWordHighlight = Boolean(renderableWords);
+  const isVerticalText = textDirection === 'vertical';
 
   return (
     <button
@@ -298,23 +302,41 @@ export const LyricsLine = ({
         }
       }}
     >
-      <span>
-        {hasWordHighlight
-          ? renderableWords?.map((word, index) => (
-            <mark
-              className="lyrics-word"
-              data-word-index={index}
-              data-word-state="future"
-              key={`${word.startMs}-${index}-${word.text}`}
-              style={{ '--lyrics-word-progress': '0' } as CSSProperties}
-            >
-              {word.text}
-            </mark>
-          ))
-          : line.text}
+      <span className="lyrics-line-text">
+        <span className="lyrics-line-primary" aria-label={isVerticalText ? line.text : undefined}>
+          {hasWordHighlight
+            ? renderableWords?.map((word, index) => (
+              <mark
+                className="lyrics-word"
+                data-word-index={index}
+                data-word-state="future"
+                key={`${word.startMs}-${index}-${word.text}`}
+                style={{ '--lyrics-word-progress': '0' } as CSSProperties}
+              >
+                {isVerticalText
+                  ? <VerticalText className="lyrics-upright-character" text={word.text} />
+                  : word.text}
+              </mark>
+            ))
+            : isVerticalText
+              ? <VerticalText className="lyrics-upright-character" text={line.text} />
+              : line.text}
+        </span>
+        {showRomanization && pronunciation ? (
+          <small data-pronunciation={pronunciationKind} aria-label={isVerticalText ? pronunciation : undefined}>
+            {isVerticalText
+              ? <VerticalText className="lyrics-upright-character" text={pronunciation} />
+              : pronunciation}
+          </small>
+        ) : null}
+        {showTranslation && line.translation ? (
+          <em aria-label={isVerticalText ? line.translation : undefined}>
+            {isVerticalText
+              ? <VerticalText className="lyrics-upright-character" text={line.translation} />
+              : line.translation}
+          </em>
+        ) : null}
       </span>
-      {showRomanization && pronunciation ? <small data-pronunciation={pronunciationKind}>{pronunciation}</small> : null}
-      {showTranslation && line.translation ? <em>{line.translation}</em> : null}
     </button>
   );
 };

@@ -149,6 +149,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsWordHighlightClarityPercent).toBe(70);
     expect(settings.lyricsFontSizePx).toBe(40);
     expect(settings.lyricsSecondaryFontSizePx).toBe(22);
+    expect(settings.lyricsTextDirection).toBe('horizontal');
     expect(settings.lyricsLineSpacingPercent).toBe(110);
     expect(settings.lyricsLineMaxChars).toBe(0);
     expect(settings.lyricsContextOpacityPercent).toBe(49);
@@ -164,6 +165,7 @@ describe('app settings normalization', () => {
     expect(settings.desktopLyricsFontFamily).toBe('Microsoft YaHei');
     expect(settings.desktopLyricsFontFilePath).toBeNull();
     expect(settings.desktopLyricsColorMode).toBe('theme');
+    expect(settings.desktopLyricsTextDirection).toBe('horizontal');
     expect(settings.desktopLyricsRomanizationEnabled).toBe(true);
     expect(settings.desktopLyricsTranslationEnabled).toBe(true);
     expect(settings.miniPlayerEnabled).toBe(false);
@@ -1430,6 +1432,7 @@ describe('app settings normalization', () => {
         lyricsWordHighlightEnabled: false,
         lyricsWordHighlightClarityPercent: 999,
         lyricsFontSizePx: 999,
+        lyricsTextDirection: 'sideways' as never,
         lyricsLineSpacingPercent: 999,
         lyricsLineMaxChars: 999,
         lyricsContextOpacityPercent: 1000,
@@ -1443,6 +1446,7 @@ describe('app settings normalization', () => {
         lyricsCoverBrightnessPercent: 12,
         lyricsBackgroundScalePercent: 999,
         desktopLyricsColorMode: 'neon' as never,
+        desktopLyricsTextDirection: 'sideways' as never,
         desktopLyricsRomanizationEnabled: false,
         desktopLyricsTranslationEnabled: false,
       }),
@@ -1479,6 +1483,7 @@ describe('app settings normalization', () => {
       lyricsWordHighlightEnabled: false,
       lyricsWordHighlightClarityPercent: 100,
       lyricsFontSizePx: 56,
+      lyricsTextDirection: 'horizontal',
       lyricsLineSpacingPercent: 150,
       lyricsLineMaxChars: 80,
       lyricsContextOpacityPercent: 100,
@@ -1492,6 +1497,7 @@ describe('app settings normalization', () => {
       lyricsCoverBrightnessPercent: 40,
       lyricsBackgroundScalePercent: 180,
       desktopLyricsColorMode: 'theme',
+      desktopLyricsTextDirection: 'horizontal',
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
     });
@@ -1500,6 +1506,7 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         lyricsFontSizePx: 12,
+        lyricsTextDirection: 'vertical',
         lyricsWordHighlightClarityPercent: 20,
         lyricsLineSpacingPercent: 20,
         lyricsLineMaxChars: -1,
@@ -1521,11 +1528,13 @@ describe('app settings normalization', () => {
         lyricsBackgroundScalePercent: 55,
         desktopLyricsColorMode: 'custom',
         desktopLyricsColor: '#ff8a80',
+        desktopLyricsTextDirection: 'vertical',
       }),
     ).toMatchObject({
       lyricsFontSizePx: 22,
       lyricsWordHighlightClarityPercent: 40,
       lyricsLineSpacingPercent: 60,
+      lyricsTextDirection: 'vertical',
       lyricsLineMaxChars: 0,
       lyricsAutoAcceptScore: 0.3,
       lyricsBackfillAutoAcceptScore: 0.3,
@@ -1545,6 +1554,7 @@ describe('app settings normalization', () => {
       lyricsBackgroundScalePercent: 70,
       desktopLyricsColorMode: 'custom',
       desktopLyricsColor: '#FF8A80',
+      desktopLyricsTextDirection: 'vertical',
       lyricsRomanizationEnabled: true,
       lyricsTranslationEnabled: true,
       lyricsWordHighlightEnabled: true,

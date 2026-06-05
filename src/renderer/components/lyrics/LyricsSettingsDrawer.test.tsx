@@ -47,6 +47,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
   lyricsWordHighlightClarityPercent: 70,
+  lyricsTextDirection: 'horizontal',
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
@@ -61,6 +62,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
   lyricsBackgroundScalePercent: 100,
+  desktopLyricsTextDirection: 'horizontal',
   mvEnabledProviders: ['bilibili', 'youtube'],
   mvProviderOrder: ['bilibili', 'youtube'],
   mvAutoSearch: true,
@@ -198,6 +200,7 @@ const makeDesktopLyricsState = (overrides: Partial<DesktopLyricsState> = {}): De
     desktopLyricsOpacityPercent: 96,
     desktopLyricsRomanizationEnabled: true,
     desktopLyricsTranslationEnabled: true,
+    desktopLyricsTextDirection: 'horizontal',
     desktopLyricsBounds: null,
   },
   ...overrides,
@@ -393,6 +396,9 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '桌面歌词显示翻译' }));
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsTranslationEnabled: false }));
 
+    fireEvent.click(within(screen.getByLabelText('桌面歌词排版')).getByRole('button', { name: '竖排' }));
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsTextDirection: 'vertical' }));
+
     const opacitySlider = container.querySelector<HTMLInputElement>('.lyrics-desktop-opacity-control input[type="range"]');
     expect(opacitySlider).toBeTruthy();
     fireEvent.change(opacitySlider as HTMLInputElement, { target: { value: '72' } });
@@ -403,6 +409,24 @@ describe('LyricsSettingsDrawer', () => {
       desktopLyricsFontFamily: 'Microsoft YaHei',
       desktopLyricsFontFilePath: null,
     }));
+  });
+
+  it('updates the main lyrics text direction from the style controls', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-text-direction-panel')).toBeTruthy());
+    fireEvent.click(within(screen.getByLabelText('歌词排版')).getByRole('button', { name: '竖排' }));
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsTextDirection: 'vertical' }));
   });
 
   it('keeps the desktop lyrics font panel collapsed by default and remembers opening it', async () => {
@@ -506,7 +530,7 @@ describe('LyricsSettingsDrawer', () => {
     expect(thresholdSlider.disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /隐藏歌曲信息/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /关闭MV自动显示歌曲信息/ }) as HTMLInputElement).disabled).toBe(false);
-    expect((screen.getByRole('checkbox', { name: /迷你底栏/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /^迷你底栏$/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /隐藏纯音乐提示/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /^显示罗马音$/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /显示中文翻译/ }) as HTMLInputElement).disabled).toBe(false);
@@ -662,12 +686,14 @@ describe('LyricsSettingsDrawer', () => {
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
     await waitFor(() => expect(container.querySelector('.lyrics-style-collapse-button')).toBeTruthy());
-    await waitFor(() => expect(container.querySelector('.lyrics-color-panel')).toBeTruthy());
-    const colorPanel = container.querySelector('.lyrics-color-panel') as HTMLElement;
+    const colorPanel = await waitFor(() => {
+      const palette = screen.getByLabelText('歌词颜色调色盘');
+      const panel = palette.closest('.lyrics-color-panel') as HTMLElement | null;
+      expect(panel).toBeTruthy();
+      return panel!;
+    });
     const colorPreview = colorPanel.querySelector('.lyrics-color-preview') as HTMLElement;
-    const pinkSwatch = Array.from(colorPanel.querySelectorAll<HTMLButtonElement>('.lyrics-color-swatch')).find(
-      (button) => button.style.backgroundColor === 'rgb(255, 138, 128)',
-    ) as HTMLButtonElement;
+    const pinkSwatch = within(colorPanel).getByRole('button', { name: '使用颜色 #FF8A80' });
 
     fireEvent.click(pinkSwatch);
 
@@ -693,10 +719,10 @@ describe('LyricsSettingsDrawer', () => {
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
     await waitFor(() => expect(container.querySelector('.lyrics-style-collapse-button')).toBeTruthy());
-    await waitFor(() => expect(container.querySelector('.lyrics-color-panel')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('歌词颜色调色盘')).toBeTruthy());
 
     vi.useFakeTimers();
-    const colorPanel = container.querySelector('.lyrics-color-panel') as HTMLElement;
+    const colorPanel = screen.getByLabelText('歌词颜色调色盘').closest('.lyrics-color-panel') as HTMLElement;
     const colorInput = colorPanel.querySelector<HTMLInputElement>('input[type="color"]') as HTMLInputElement;
     const colorPreview = colorPanel.querySelector('.lyrics-color-preview') as HTMLElement;
 
@@ -835,7 +861,7 @@ describe('LyricsSettingsDrawer', () => {
 
     render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    const toggle = (await screen.findByRole('checkbox', { name: /迷你底栏/ })) as HTMLInputElement;
+    const toggle = (await screen.findByRole('checkbox', { name: /^迷你底栏$/ })) as HTMLInputElement;
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
@@ -852,7 +878,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { unmount } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    await screen.findByRole('checkbox', { name: /迷你底栏/ });
+    await screen.findByRole('checkbox', { name: /^迷你底栏$/ });
     expect(screen.queryByText('底栏透明度')).toBeNull();
     expect(screen.queryByText('底栏颜色')).toBeNull();
 
@@ -1072,7 +1098,7 @@ describe('LyricsSettingsDrawer', () => {
     await waitFor(() => expect(container.querySelector('.lyrics-style-collapse-button')).toBeTruthy());
     expect(container.querySelector('.lyrics-style-collapse-button')?.getAttribute('aria-expanded')).toBe('true');
     expect(container.querySelector('.lyrics-style-range-grid[hidden]')).toBeNull();
-    expect(container.textContent).toContain('包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。');
+    expect(container.textContent).toContain('包含排版方向、辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。');
 
     fireEvent.click(container.querySelector('.lyrics-style-collapse-button') as HTMLButtonElement);
 
@@ -1304,7 +1330,7 @@ describe('LyricsSettingsDrawer', () => {
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
     await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
-    fireEvent.change(screen.getByRole('searchbox', { name: /搜索歌词文本|鎼滅储姝岃瘝鏂囨湰/ }), { target: { value: 'rough query' } });
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索歌词文本' }), { target: { value: 'rough query' } });
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
 
     expect(await screen.findByText('Low Match Song')).toBeTruthy();

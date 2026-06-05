@@ -30,7 +30,6 @@ import type {
 import { neteaseDjRadioPlaylistPrefix, streamingProviderNames } from "../../shared/types/streaming";
 import type { PlaybackStatus } from "../../shared/types/playback";
 import { decodeTextFileBytes } from "../../shared/utils/decodeTextFile";
-import { shouldShowRomanizationForLyrics } from "../../shared/utils/lyricsLanguage";
 import { LyricsView, getActiveLyricIndex, getEstimatedPlainLyricIndex } from "../components/lyrics/LyricsView";
 import { MvPanel, type MvAudioClock } from "../components/lyrics/MvPanel";
 import {
@@ -56,7 +55,7 @@ import type { LyricLine, LyricsState } from "../components/lyrics/lyricsTypes";
 import { PlayerStatusChips } from "../components/player/PlayerStatusChips";
 import { titleFromPath } from "../components/player/playerFormat";
 import { usePlaybackQueue } from "../stores/PlaybackQueueProvider";
-import { beginPlaybackSeekSnapshot, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from "../stores/playbackStatusStore";
+import { beginPlaybackSeekSnapshot, refreshPlaybackStatus, useSharedPlaybackStatus } from "../stores/playbackStatusStore";
 import { logLyricsConsole } from "../diagnostics/lyricsConsole";
 import { openAlbumDetailForTrack } from "../utils/albumNavigation";
 import { serializeFontList } from "../preferences/appearancePreferences";
@@ -149,6 +148,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsFontSizePx"
   | "lyricsFontFamily"
   | "lyricsFontFilePath"
+  | "lyricsTextDirection"
   | "lyricsColor"
   | "lyricsBackgroundMode"
   | "lyricsCustomWallpaperPath"
@@ -202,6 +202,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsFontSizePx: 40,
   lyricsFontFamily: "Microsoft YaHei",
   lyricsFontFilePath: null,
+  lyricsTextDirection: "horizontal",
   lyricsColor: "#314054",
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
@@ -987,6 +988,7 @@ const selectLyricsDisplaySettings = (
   lyricsFontSizePx: settings.lyricsFontSizePx,
   lyricsFontFamily: settings.lyricsFontFamily ?? fallbackLyricsDisplaySettings.lyricsFontFamily,
   lyricsFontFilePath: settings.lyricsFontFilePath ?? fallbackLyricsDisplaySettings.lyricsFontFilePath,
+  lyricsTextDirection: settings.lyricsTextDirection ?? fallbackLyricsDisplaySettings.lyricsTextDirection,
   lyricsColor: settings.lyricsColor,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
@@ -1110,6 +1112,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsFontSizePx",
   "lyricsFontFamily",
   "lyricsFontFilePath",
+  "lyricsTextDirection",
   "lyricsColor",
   "lyricsBackgroundMode",
   "lyricsCustomWallpaperPath",
@@ -4264,6 +4267,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       data-smart-readable={smartReadableColors ? "true" : undefined}
       data-album-transition={isAlbumNavigating ? "true" : undefined}
       data-custom-lrc-dragging={isCustomLyricsDragging}
+      data-lyrics-text-direction={lyricsDisplaySettings.lyricsTextDirection}
       data-view-mode={lyricsViewMode}
       data-mv-lyrics-hidden={shouldHideLyricsInMv ? "true" : undefined}
       data-airplay-receiver={isCurrentAirPlayReceiverTrack ? "true" : undefined}
@@ -4404,6 +4408,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
             positionUpdatedAtMs={seekPreviewSeconds === null ? mvAudioClock.updatedAtMs : performance.now()}
             wordHighlightEnabled={lyricsDisplaySettings.lyricsWordHighlightEnabled !== false && lyricsDisplaySettings.lowLoadPlaybackModeEnabled !== true}
             highFrequencyUpdatesEnabled={lyricsDisplaySettings.lowLoadPlaybackModeEnabled !== true}
+            textDirection={lyricsDisplaySettings.lyricsTextDirection ?? "horizontal"}
             showRomanization={isLyricsDisplaySettingsReady && lyricsDisplaySettings.lyricsRomanizationEnabled}
             preferKanaPronunciation={lyricsDisplaySettings.lyricsUtatenKanaEnabled === true}
             showTranslation={isLyricsDisplaySettingsReady && lyricsDisplaySettings.lyricsTranslationEnabled}

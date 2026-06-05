@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   settings: {
     desktopLyricsBounds: null as { x: number; y: number; width: number; height: number } | null,
+    desktopLyricsTextDirection: 'horizontal' as 'horizontal' | 'vertical',
   },
   displays: [
     {
@@ -47,6 +48,7 @@ vi.mock('../diagnostics/DevConsoleService', () => ({
 describe('desktop lyrics window bounds', () => {
   beforeEach(() => {
     mocks.settings.desktopLyricsBounds = null;
+    mocks.settings.desktopLyricsTextDirection = 'horizontal';
     mocks.displays = [
       {
         bounds: { x: 0, y: 0, width: 1920, height: 1080 },
@@ -82,6 +84,36 @@ describe('desktop lyrics window bounds', () => {
       y: 846,
       width: 760,
       height: 150,
+    });
+  });
+
+  it('uses a taller default window for vertical desktop lyrics', async () => {
+    mocks.settings.desktopLyricsTextDirection = 'vertical';
+    const { resolveInitialDesktopLyricsBounds } = await import('./desktopLyricsWindow');
+
+    expect(resolveInitialDesktopLyricsBounds()).toEqual({
+      x: 730,
+      y: 356,
+      width: 460,
+      height: 640,
+    });
+  });
+
+  it('expands short saved bounds when restoring vertical desktop lyrics', async () => {
+    mocks.settings.desktopLyricsTextDirection = 'vertical';
+    mocks.settings.desktopLyricsBounds = {
+      x: 480,
+      y: 760,
+      width: 760,
+      height: 150,
+    };
+    const { resolveInitialDesktopLyricsBounds } = await import('./desktopLyricsWindow');
+
+    expect(resolveInitialDesktopLyricsBounds()).toEqual({
+      x: 480,
+      y: 440,
+      width: 760,
+      height: 640,
     });
   });
 });

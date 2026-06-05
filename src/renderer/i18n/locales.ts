@@ -597,9 +597,12 @@ export type TranslationKey =
   | 'desktopLyrics.control.increaseFontSize'
   | 'desktopLyrics.control.increaseScale'
   | 'desktopLyrics.control.lock'
+  | 'desktopLyrics.control.pause'
+  | 'desktopLyrics.control.play'
   | 'desktopLyrics.control.resetPosition'
   | 'desktopLyrics.control.romanization'
   | 'desktopLyrics.control.themeColor'
+  | 'desktopLyrics.control.textDirection'
   | 'desktopLyrics.control.translation'
   | 'desktopLyrics.control.translationShort'
   | 'desktopLyrics.primary.empty'
@@ -1465,6 +1468,7 @@ export type TranslationKey =
   | 'lyricsSettings.display.desktopOpacity'
   | 'lyricsSettings.display.desktopOpacityDescription'
   | 'lyricsSettings.display.desktopRomanization'
+  | 'lyricsSettings.display.desktopTextDirection'
   | 'lyricsSettings.display.desktopTranslation'
   | 'lyricsSettings.display.disableMvTrackInfoAutoShow'
   | 'lyricsSettings.display.enableLyrics'
@@ -1501,6 +1505,8 @@ export type TranslationKey =
   | 'lyricsSettings.drawer.aria'
   | 'lyricsSettings.drawer.close'
   | 'lyricsSettings.drawer.title'
+  | 'lyricsSettings.direction.horizontal'
+  | 'lyricsSettings.direction.vertical'
   | 'lyricsSettings.engine.autoMatch'
   | 'lyricsSettings.engine.provider'
   | 'lyricsSettings.engine.threshold'
@@ -1572,6 +1578,7 @@ export type TranslationKey =
   | 'lyricsSettings.style.secondaryFontSize'
   | 'lyricsSettings.style.showControls'
   | 'lyricsSettings.style.showControlsDescription'
+  | 'lyricsSettings.style.textDirection'
   | 'lyricsSettings.style.useColor'
   | 'lyricsSettings.timing.defaultOffset'
   | 'lyricsSettings.timing.globalOffset'
@@ -3387,9 +3394,12 @@ const zhCN: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': '增大字号',
   'desktopLyrics.control.increaseScale': '放大',
   'desktopLyrics.control.lock': '锁定',
+  'desktopLyrics.control.pause': '暂停',
+  'desktopLyrics.control.play': '播放',
   'desktopLyrics.control.resetPosition': '重置位置',
   'desktopLyrics.control.romanization': '桌面歌词显示罗马音',
   'desktopLyrics.control.themeColor': '跟随主题颜色',
+  'desktopLyrics.control.textDirection': '切换横排 / 竖排',
   'desktopLyrics.control.translation': '桌面歌词显示翻译',
   'desktopLyrics.control.translationShort': '译',
   'desktopLyrics.primary.empty': '暂无歌词',
@@ -4570,6 +4580,7 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': '桌面歌词透明度',
   'lyricsSettings.display.desktopOpacityDescription': '当前 {opacity}%，调低可减少遮挡。',
   'lyricsSettings.display.desktopRomanization': '桌面歌词显示罗马音',
+  'lyricsSettings.display.desktopTextDirection': '桌面歌词排版',
   'lyricsSettings.display.desktopTranslation': '桌面歌词显示翻译',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '关闭MV自动显示歌曲信息',
   'lyricsSettings.display.enableLyrics': '启用歌词',
@@ -4606,6 +4617,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.drawer.aria': '歌词设置',
   'lyricsSettings.drawer.close': '关闭歌词设置',
   'lyricsSettings.drawer.title': '歌词设置',
+  'lyricsSettings.direction.horizontal': '横排',
+  'lyricsSettings.direction.vertical': '竖排',
   'lyricsSettings.engine.autoMatch': '自动匹配',
   'lyricsSettings.engine.provider': '来源',
   'lyricsSettings.engine.threshold': '阈值',
@@ -4676,7 +4689,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.style.lyricsFont': '歌词字体',
   'lyricsSettings.style.secondaryFontSize': '辅歌词字号',
   'lyricsSettings.style.showControls': '显示歌词样式设置',
-  'lyricsSettings.style.showControlsDescription': '包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。',
+  'lyricsSettings.style.showControlsDescription': '包含排版方向、辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。',
+  'lyricsSettings.style.textDirection': '歌词排版',
   'lyricsSettings.style.useColor': '使用颜色 {color}',
   'lyricsSettings.timing.defaultOffset': '新歌词默认延迟',
   'lyricsSettings.timing.globalOffset': '全局延迟',
@@ -6477,9 +6491,12 @@ const zhTW: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': '放大字號',
   'desktopLyrics.control.increaseScale': '放大',
   'desktopLyrics.control.lock': '鎖定',
+  'desktopLyrics.control.pause': '暫停',
+  'desktopLyrics.control.play': '播放',
   'desktopLyrics.control.resetPosition': '重設位置',
   'desktopLyrics.control.romanization': '桌面歌詞顯示羅馬音',
   'desktopLyrics.control.themeColor': '跟隨主題顏色',
+  'desktopLyrics.control.textDirection': '切換橫排 / 直排',
   'desktopLyrics.control.translation': '桌面歌詞顯示翻譯',
   'desktopLyrics.control.translationShort': '譯',
   'desktopLyrics.primary.empty': '暫無歌詞',
@@ -7592,6 +7609,7 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': '桌面歌詞透明度',
   'lyricsSettings.display.desktopOpacityDescription': '目前 {opacity}%，調低可減少遮擋。',
   'lyricsSettings.display.desktopRomanization': '桌面歌詞顯示羅馬音',
+  'lyricsSettings.display.desktopTextDirection': '桌面歌詞排版',
   'lyricsSettings.display.desktopTranslation': '桌面歌詞顯示翻譯',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '關閉 MV 自動顯示歌曲資訊',
   'lyricsSettings.display.enableLyrics': '啟用歌詞',
@@ -7628,6 +7646,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.drawer.aria': '歌詞設定',
   'lyricsSettings.drawer.close': '關閉歌詞設定',
   'lyricsSettings.drawer.title': '歌詞設定',
+  'lyricsSettings.direction.horizontal': '橫排',
+  'lyricsSettings.direction.vertical': '直排',
   'lyricsSettings.engine.autoMatch': '自動匹配',
   'lyricsSettings.engine.provider': '來源',
   'lyricsSettings.engine.threshold': '閾值',
@@ -7698,7 +7718,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.style.lyricsFont': '歌詞字體',
   'lyricsSettings.style.secondaryFontSize': '輔助歌詞字號',
   'lyricsSettings.style.showControls': '顯示歌詞樣式設定',
-  'lyricsSettings.style.showControlsDescription': '包含輔助字號、歌詞字號、歌詞行距、上下文透明度和歌詞顏色。',
+  'lyricsSettings.style.showControlsDescription': '包含排版方向、輔助字號、歌詞字號、歌詞行距、上下文透明度和歌詞顏色。',
+  'lyricsSettings.style.textDirection': '歌詞排版',
   'lyricsSettings.style.useColor': '使用顏色 {color}',
   'lyricsSettings.timing.defaultOffset': '新歌詞預設延遲',
   'lyricsSettings.timing.globalOffset': '全域延遲',
@@ -9318,9 +9339,12 @@ const jaJP: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': '文字サイズを大きく',
   'desktopLyrics.control.increaseScale': '拡大',
   'desktopLyrics.control.lock': 'ロック',
+  'desktopLyrics.control.pause': '一時停止',
+  'desktopLyrics.control.play': '再生',
   'desktopLyrics.control.resetPosition': '位置をリセット',
   'desktopLyrics.control.romanization': 'デスクトップ歌詞にローマ字を表示',
   'desktopLyrics.control.themeColor': 'テーマ色に合わせる',
+  'desktopLyrics.control.textDirection': '横書き / 縦書きを切り替え',
   'desktopLyrics.control.translation': 'デスクトップ歌詞に翻訳を表示',
   'desktopLyrics.control.translationShort': '訳',
   'desktopLyrics.primary.empty': '歌詞がありません',
@@ -10449,6 +10473,7 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': 'デスクトップ歌詞の透明度',
   'lyricsSettings.display.desktopOpacityDescription': '現在 {opacity}%。下げると画面を遮りにくくなります。',
   'lyricsSettings.display.desktopRomanization': 'デスクトップ歌詞にローマ字を表示',
+  'lyricsSettings.display.desktopTextDirection': 'デスクトップ歌詞の組み方向',
   'lyricsSettings.display.desktopTranslation': 'デスクトップ歌詞に翻訳を表示',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'MV で曲情報を自動表示しない',
   'lyricsSettings.display.enableLyrics': '歌詞を有効化',
@@ -10485,6 +10510,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.drawer.aria': '歌詞設定',
   'lyricsSettings.drawer.close': '歌詞設定を閉じる',
   'lyricsSettings.drawer.title': '歌詞設定',
+  'lyricsSettings.direction.horizontal': '横書き',
+  'lyricsSettings.direction.vertical': '縦書き',
   'lyricsSettings.engine.autoMatch': '自動マッチ',
   'lyricsSettings.engine.provider': 'ソース',
   'lyricsSettings.engine.threshold': 'しきい値',
@@ -10555,7 +10582,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.style.lyricsFont': '歌詞フォント',
   'lyricsSettings.style.secondaryFontSize': 'サブ歌詞フォントサイズ',
   'lyricsSettings.style.showControls': '歌詞スタイル設定を表示',
-  'lyricsSettings.style.showControlsDescription': 'サブ歌詞サイズ、歌詞サイズ、行間、前後行の透明度、歌詞色を含みます。',
+  'lyricsSettings.style.showControlsDescription': '組み方向、サブ歌詞サイズ、歌詞サイズ、行間、前後行の透明度、歌詞色を含みます。',
+  'lyricsSettings.style.textDirection': '歌詞の組み方向',
   'lyricsSettings.style.useColor': '色 {color} を使用',
   'lyricsSettings.timing.defaultOffset': '新しい歌詞の既定遅延',
   'lyricsSettings.timing.globalOffset': '全体遅延',
@@ -12240,9 +12268,12 @@ const enUS: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': 'Increase font size',
   'desktopLyrics.control.increaseScale': 'Scale up',
   'desktopLyrics.control.lock': 'Lock',
+  'desktopLyrics.control.pause': 'Pause',
+  'desktopLyrics.control.play': 'Play',
   'desktopLyrics.control.resetPosition': 'Reset position',
   'desktopLyrics.control.romanization': 'Show romanization in desktop lyrics',
   'desktopLyrics.control.themeColor': 'Follow theme color',
+  'desktopLyrics.control.textDirection': 'Toggle horizontal / vertical',
   'desktopLyrics.control.translation': 'Show translation in desktop lyrics',
   'desktopLyrics.control.translationShort': 'T',
   'desktopLyrics.primary.empty': 'No lyrics',
@@ -13371,6 +13402,7 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': 'Desktop lyrics opacity',
   'lyricsSettings.display.desktopOpacityDescription': 'Currently {opacity}%; lower it to reduce visual blocking.',
   'lyricsSettings.display.desktopRomanization': 'Show romanization in desktop lyrics',
+  'lyricsSettings.display.desktopTextDirection': 'Desktop lyrics direction',
   'lyricsSettings.display.desktopTranslation': 'Show translation in desktop lyrics',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'Disable MV auto track info',
   'lyricsSettings.display.enableLyrics': 'Enable lyrics',
@@ -13407,6 +13439,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.drawer.aria': 'Lyrics settings',
   'lyricsSettings.drawer.close': 'Close lyrics settings',
   'lyricsSettings.drawer.title': 'Lyrics Settings',
+  'lyricsSettings.direction.horizontal': 'Horizontal',
+  'lyricsSettings.direction.vertical': 'Vertical',
   'lyricsSettings.engine.autoMatch': 'Auto match',
   'lyricsSettings.engine.provider': 'Provider',
   'lyricsSettings.engine.threshold': 'Threshold',
@@ -13477,7 +13511,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.style.lyricsFont': 'Lyrics font',
   'lyricsSettings.style.secondaryFontSize': 'Secondary lyrics font size',
   'lyricsSettings.style.showControls': 'Show lyrics style settings',
-  'lyricsSettings.style.showControlsDescription': 'Includes secondary font size, lyrics font size, line spacing, context opacity, and lyrics color.',
+  'lyricsSettings.style.showControlsDescription': 'Includes text direction, secondary font size, lyrics font size, line spacing, context opacity, and lyrics color.',
+  'lyricsSettings.style.textDirection': 'Lyrics direction',
   'lyricsSettings.style.useColor': 'Use color {color}',
   'lyricsSettings.timing.defaultOffset': 'Default offset for new lyrics',
   'lyricsSettings.timing.globalOffset': 'Global offset',

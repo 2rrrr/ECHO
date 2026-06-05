@@ -34,6 +34,9 @@ const normalizeStylePatch = (value: unknown): DesktopLyricsStylePatch => {
     ...(typeof input.desktopLyricsColor === 'string' ? { desktopLyricsColor: input.desktopLyricsColor } : {}),
     ...(typeof input.desktopLyricsStrokeColor === 'string' ? { desktopLyricsStrokeColor: input.desktopLyricsStrokeColor } : {}),
     ...(input.desktopLyricsOpacityPercent !== undefined ? { desktopLyricsOpacityPercent: Number(input.desktopLyricsOpacityPercent) } : {}),
+    ...(input.desktopLyricsTextDirection === 'horizontal' || input.desktopLyricsTextDirection === 'vertical'
+      ? { desktopLyricsTextDirection: input.desktopLyricsTextDirection }
+      : {}),
     ...(typeof input.desktopLyricsRomanizationEnabled === 'boolean'
       ? { desktopLyricsRomanizationEnabled: input.desktopLyricsRomanizationEnabled }
       : {}),

@@ -150,6 +150,7 @@ const makeAppSettings = (
   lyricsUtatenKanaEnabled: false,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
+  lyricsTextDirection: "horizontal",
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
@@ -467,10 +468,10 @@ describe("LyricsPage", () => {
     expect(css).toContain("color-mix(in srgb, var(--lyrics-word-fill-color) 72%, var(--lyrics-word-upcoming-color) 28%) calc(var(--lyrics-word-progress) * 100%)");
     expect(css).toContain('.lyrics-line[data-active="true"][data-word-highlight="true"] .lyrics-word[data-word-state="current"]');
     expect(css).toContain("--lyrics-word-upcoming-color: color-mix(in srgb, var(--lyrics-readable-color) var(--lyrics-current-word-clarity, 70%), transparent);");
-    expect(css).toMatch(/\.lyrics-line\[data-active="true"\] span \{[\s\S]*?line-height: 1\.18;/);
+    expect(css).toMatch(/\.lyrics-line\[data-active="true"\] \.lyrics-line-primary \{[\s\S]*?line-height: 1\.18;/);
     expect(css).not.toContain('scale(1.045)');
     expect(css).not.toContain('.lyrics-word[data-word-state="current"]::after');
-    expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line span');
+    expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line .lyrics-line-primary');
     expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line[data-word-highlight="true"] .lyrics-word');
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line(?:\[data-active="true"\])? \{\s*color: var\(--lyrics-color\);/);
   });
@@ -505,9 +506,9 @@ describe("LyricsPage", () => {
   it("keeps MV immersive lyrics on the normal lyrics size scale", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
 
-    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line span \{\s*max-width: min\(100%, 1120px, var\(--lyrics-line-max-width\)\);\s*font-size: calc\(var\(--lyrics-font-size\) \* 0\.9\);/);
-    expect(css).toMatch(/\.lyrics-line span \{\s*display: inline-block;\s*max-width: min\(100%, var\(--lyrics-line-max-width\)\);/);
-    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] span \{\s*font-size: calc\(var\(--lyrics-font-size\) \* 1\.25\);/);
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line \.lyrics-line-primary \{\s*max-width: min\(100%, 1120px, var\(--lyrics-line-max-width\)\);\s*font-size: calc\(var\(--lyrics-font-size\) \* 0\.9\);/);
+    expect(css).toMatch(/\.lyrics-line-primary \{\s*display: inline-block;\s*max-width: min\(100%, var\(--lyrics-line-max-width\)\);/);
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] \.lyrics-line-primary \{\s*font-size: calc\(var\(--lyrics-font-size\) \* 1\.25\);/);
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\)[\s\S]*font-size: calc\(var\(--lyrics-font-size\) \* 1\.5\);/);
   });
 
@@ -1586,7 +1587,7 @@ describe("LyricsPage", () => {
   it("does not seek when a synced lyric line is clicked", async () => {
     const track = makeTrack();
     const { seek } = mockEcho(track, 0);
-    render(
+    const { container } = render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage initialLyrics={lyrics} />
@@ -1594,10 +1595,82 @@ describe("LyricsPage", () => {
       </PlaybackQueueProvider>,
     );
 
-    fireEvent.click(await screen.findByText("Second line"));
+    await waitFor(() => expect(container.querySelector(".lyrics-line-primary")?.textContent).toBe("First line"));
+    const secondLineButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".lyrics-line"))
+      .find((line) => line.querySelector(".lyrics-line-primary")?.textContent === "Second line");
+    expect(secondLineButton).toBeTruthy();
+    fireEvent.click(secondLineButton!);
 
     expect(seek).not.toHaveBeenCalled();
     expect(document.querySelector('.lyrics-line[data-seekable="true"]')).toBeNull();
+    expect(container.querySelector(".lyrics-page")?.getAttribute("data-lyrics-text-direction")).toBe("horizontal");
+    expect(container.querySelector(".lyrics-scroll")?.getAttribute("data-text-direction")).toBe("horizontal");
+  });
+
+  it("applies vertical lyrics text direction without restoring lyric seek", async () => {
+    const track = makeTrack();
+    const { seek } = mockEcho(track, 0, { lyricsTextDirection: "vertical" });
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(container.querySelector(".lyrics-line-primary")?.getAttribute("aria-label")).toBe("First line"));
+    const secondLineButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".lyrics-line"))
+      .find((line) => line.querySelector(".lyrics-line-primary")?.getAttribute("aria-label") === "Second line");
+    expect(secondLineButton).toBeTruthy();
+    fireEvent.click(secondLineButton!);
+
+    expect(seek).not.toHaveBeenCalled();
+    expect(document.querySelector('.lyrics-line[data-seekable="true"]')).toBeNull();
+    expect(container.querySelector(".lyrics-page")?.getAttribute("data-lyrics-text-direction")).toBe("vertical");
+    expect(container.querySelector(".lyrics-scroll")?.getAttribute("data-text-direction")).toBe("vertical");
+  });
+
+  it("keeps primary, romanization, and translation grouped in vertical lyrics", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsTextDirection: "vertical" });
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage
+            initialLyrics={[
+              {
+                timeMs: 0,
+                text: "らくになる日はまず来ない",
+                romanization: "ra ku ni na ru hi wa ma zu ko na i",
+                translation: "轻松的生活不会到来",
+              },
+            ]}
+          />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(container.querySelector(".lyrics-line-primary")?.textContent).toBe("らくになる日はまず来ない"));
+    const lineText = container.querySelector(".lyrics-line-text");
+
+    expect(container.querySelector(".lyrics-scroll")?.getAttribute("data-text-direction")).toBe("vertical");
+    expect(lineText?.querySelector(".lyrics-line-primary")?.textContent).toBe("らくになる日はまず来ない");
+    expect(lineText?.querySelector("small")?.getAttribute("aria-label")).toBe("ra ku ni na ru hi wa ma zu ko na i");
+    expect(lineText?.querySelector("small")?.textContent).toBe("rakuninaruhiwamazukonai");
+    expect(lineText?.querySelector("em")?.textContent).toBe("轻松的生活不会到来");
+    expect(lineText?.querySelectorAll(".lyrics-line-primary .lyrics-upright-character").length).toBe(
+      Array.from("らくになる日はまず来ない").length,
+    );
+    expect(lineText?.querySelectorAll("small .lyrics-upright-character[data-sideways=\"true\"]").length).toBeGreaterThan(0);
+  });
+
+  it("keeps vertical active lyrics on the normal primary size scale", () => {
+    const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
+
+    expect(css).toMatch(/\.lyrics-scroll\[data-text-direction="vertical"\] \.lyrics-line\[data-active="true"\] \.lyrics-line-primary,[\s\S]*?font-size: calc\(var\(--lyrics-font-size\) \* 1\.25\);[\s\S]*?font-weight: 850;/);
+    expect(css).toMatch(/\.lyrics-scroll\[data-text-direction="vertical"\] \.lyrics-line-text \{[\s\S]*?column-gap: clamp\(8px, 1\.4vw, 22px\);/);
+    expect(css).toMatch(/\.lyrics-scroll\[data-text-direction="vertical"\] \.lyrics-line-primary \{[\s\S]*?justify-content: center;/);
+    expect(css).toMatch(/\.lyrics-scroll\[data-text-direction="vertical"\] \.lyrics-line small,[\s\S]*?\.lyrics-scroll\[data-text-direction="vertical"\] \.lyrics-line em \{[\s\S]*?justify-content: center;/);
   });
 
   it("uses album artwork as the MV fallback and shows a default visual without cover art", async () => {
@@ -2138,9 +2211,9 @@ describe("LyricsPage", () => {
   });
 
   it.each([
-    ["exclusive", "WASAPI 独占"],
-    ["asio", "ASIO"],
-  ] as const)("auto-saves smart lyrics alignment from stable anchors on %s clocks", async (outputMode, modeLabel) => {
+    ["exclusive"],
+    ["asio"],
+  ] as const)("auto-saves smart lyrics alignment from stable anchors on %s clocks", async (outputMode) => {
     const track = makeTrack();
     const { emitAudioStatus } = mockEcho(track, 10.2, { lyricsSmartAlignmentEnabled: true });
     window.echo.lyrics = {
@@ -3932,6 +4005,7 @@ describe("LyricsPage", () => {
           lyricsLineSpacingPercent: 74,
           lyricsLineMaxChars: 28,
           lyricsContextOpacityPercent: 24,
+          lyricsTextDirection: "vertical",
         },
       }),
     );
@@ -3962,6 +4036,8 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-context-opacity")).toBe(
       "0.24",
     );
+    expect(page.dataset.lyricsTextDirection).toBe("vertical");
+    expect(container.querySelector(".lyrics-scroll")?.getAttribute("data-text-direction")).toBe("vertical");
   });
 
   it("ignores explicit non-lyrics settings change events", async () => {
@@ -4022,13 +4098,14 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    render(
+    const renderResult = render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage />
         </QueueSeed>
       </PlaybackQueueProvider>,
     );
+    const container = renderResult.container;
 
     expect(await screen.findByText("Stable current lyrics")).toBeTruthy();
     expect(window.echo.lyrics.getForTrack).toHaveBeenCalledTimes(1);
@@ -4040,11 +4117,14 @@ describe("LyricsPage", () => {
           lyricsFontSizePx: 48,
           lyricsLineSpacingPercent: 116,
           lyricsContextOpacityPercent: 70,
+          lyricsTextDirection: "vertical",
         },
       }),
     );
 
-    await waitFor(() => expect(screen.getByText("Stable current lyrics")).toBeTruthy());
+    await waitFor(() => {
+      expect(container.querySelector(".lyrics-line-primary")?.textContent).toBe("Stable current lyrics");
+    });
     expect(window.echo.lyrics.getForTrack).toHaveBeenCalledTimes(1);
     expect(window.echo.lyrics.searchCandidates).not.toHaveBeenCalled();
   });
