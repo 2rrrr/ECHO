@@ -7,6 +7,7 @@ import type { NativeFileScannerDiagnostics, NativeFileScannerEnablementSource } 
 import { logLibraryScanPerf } from '../../diagnostics/LibraryScanPerfDiagnostics';
 import type { ScannedFile, ScanDirectorySnapshot, ScanDirectorySnapshotEntry, ScanFileSystemError, ScanOptions } from '../libraryTypes';
 import type { FileScanner } from './FileScanner';
+import { lowerNativeScannerProcessPriority } from './NativeScannerProcessPriority';
 import { TsFileScanner } from './TsFileScanner';
 
 type NativeScannerMessage =
@@ -133,6 +134,9 @@ export class NativeFileScanner implements FileScanner {
     const startedAtMs = performance.now();
     const batchSize = defaultNativeBatchSize;
     const child = (this.options.spawnProcess ?? spawn)(executablePath, []);
+    if (options.backgroundPriority === true) {
+      lowerNativeScannerProcessPriority(child, 'nativeFileScanner');
+    }
     const files: ScannedFile[] = [];
     const fileSystemErrors: ScanFileSystemError[] = [];
     const directorySnapshots: ScanDirectorySnapshot[] = [];

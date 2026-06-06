@@ -2,6 +2,8 @@ import { beginMainBackgroundTask, markPlaybackBreadcrumb } from './PlaybackPerfo
 
 export type MainWorkDeferralReason = 'playback-active';
 
+const playbackPressureStates = new Set(['loading', 'playing', 'paused', 'ended']);
+
 export const runMainBackgroundTask = async <T>(name: string, work: () => Promise<T> | T): Promise<T> => {
   const clearBackgroundTask = beginMainBackgroundTask(name);
   try {
@@ -15,7 +17,7 @@ export const isPlaybackActiveForMainWork = async (): Promise<boolean> => {
   try {
     const { getAudioSession } = await import('../audio/AudioSession');
     const state = getAudioSession().getStatus().state;
-    return state === 'loading' || state === 'playing';
+    return playbackPressureStates.has(state);
   } catch {
     return false;
   }

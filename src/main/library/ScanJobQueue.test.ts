@@ -24,6 +24,7 @@ import type { FileScanner } from './workers/FileScanner';
 import type { MetadataReader } from './workers/MetadataReader';
 
 const tempRoots: string[] = [];
+const previousSyncScanHealthCheckEnv = process.env.ECHO_SYNC_SCAN_HEALTH_CHECK;
 
 const makeTempRoot = (): string => {
   const root = join(tmpdir(), `echo-next-scan-queue-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -540,6 +541,11 @@ const identityObservation = (overrides: Partial<FileIdentityObservation> = {}): 
 
 afterEach(() => {
   vi.useRealTimers();
+  if (previousSyncScanHealthCheckEnv === undefined) {
+    delete process.env.ECHO_SYNC_SCAN_HEALTH_CHECK;
+  } else {
+    process.env.ECHO_SYNC_SCAN_HEALTH_CHECK = previousSyncScanHealthCheckEnv;
+  }
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
@@ -931,6 +937,66 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(onScanSettled).toHaveBeenCalledWith(expect.objectContaining({ id: job.id, status: 'completed' }));
   });
 
+  it('keeps user-started folder scans at normal scanner priority', async () => {
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const scanner = new FakeScanner([file]);
+    const queue = new ScanJobQueue(
+      new FakeStore() as unknown as LibraryStore,
+      scanner,
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      { coverCacheDir: join(root, 'custom-cache') },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(scanner.lastOptions?.backgroundPriority).toBe(false);
+  });
+
+  it('lowers even user-started scanner priority while playback pressure is active', async () => {
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const scanner = new FakeScanner([file]);
+    const queue = new ScanJobQueue(
+      new FakeStore() as unknown as LibraryStore,
+      scanner,
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        shouldReduceScanPressure: () => true,
+      },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(scanner.lastOptions?.backgroundPriority).toBe(true);
+  });
+
+  it('uses background scanner priority for changes-only scans', async () => {
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const scanner = new FakeScanner([file]);
+    const queue = new ScanJobQueue(
+      new FakeStore() as unknown as LibraryStore,
+      scanner,
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      { coverCacheDir: join(root, 'custom-cache') },
+    );
+
+    const job = queue.scanFolder(baseFolder(root), { changesOnly: true });
+    await queue.waitForIdle(job.id);
+
+    expect(scanner.lastOptions?.backgroundPriority).toBe(true);
+  });
+
   it('reduces metadata read concurrency while scan pressure should stay low', async () => {
     const root = makeTempRoot();
     const files = makeFiles(root, 4);
@@ -960,7 +1026,32 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(metadataReader.maxActiveReads).toBe(1);
   });
 
+  it('uses tiny database write batches while scan pressure should stay low', async () => {
+    const root = makeTempRoot();
+    const files = makeFiles(root, 9);
+    const store = new FakeStore();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner(files),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        shouldReduceScanPressure: () => true,
+      },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()).toMatchObject({ status: 'completed', processedFiles: 9 });
+    expect(store.seededAlbumTrackIds).toHaveLength(3);
+    expect(store.seededAlbumTrackIds.every((trackIds) => trackIds.length <= 4)).toBe(true);
+  });
+
   it('creates a recovery snapshot after a successful scan writes library changes', async () => {
+    process.env.ECHO_SYNC_SCAN_HEALTH_CHECK = '1';
     const root = makeTempRoot();
     const [file] = makeFiles(root, 1);
     const store = new FakeStore();
@@ -979,6 +1070,67 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
 
     expect(createCompletedScanSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ id: job.id, status: 'completed', addedTracks: 1 }),
+    );
+  });
+
+  it('defers completed scan maintenance while playback pressure stays low', async () => {
+    vi.useFakeTimers();
+    const root = makeTempRoot();
+    const store = new FakeStore();
+    const checkDatabaseHealth = vi.fn();
+    const createCompletedScanSnapshot = vi.fn();
+    let reduceScanPressure = true;
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        checkDatabaseHealth,
+        createCompletedScanSnapshot,
+        shouldReduceScanPressure: () => reduceScanPressure,
+      },
+    );
+    const completedStatus: LibraryScanStatus = {
+      ...baseStatus('folder-1'),
+      status: 'completed',
+      phase: 'finished',
+      totalFiles: 1,
+      processedFiles: 1,
+      addedTracks: 1,
+      finishedAt: '2026-05-18T00:00:00.000Z',
+    };
+    const maintenance = (
+      queue as unknown as {
+        runCompletedScanMaintenance: (
+          jobId: string,
+          folderId: string,
+          fileCount: number,
+          completedStatus: LibraryScanStatus,
+          options: { deferForPlayback?: boolean },
+        ) => Promise<void>;
+      }
+    ).runCompletedScanMaintenance(completedStatus.id, completedStatus.folderId, 1, completedStatus, {
+      deferForPlayback: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(4000);
+
+    expect(checkDatabaseHealth).not.toHaveBeenCalled();
+    expect(createCompletedScanSnapshot).not.toHaveBeenCalled();
+
+    reduceScanPressure = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.runOnlyPendingTimersAsync();
+    await maintenance;
+
+    expect(checkDatabaseHealth).toHaveBeenCalledWith(
+      expect.objectContaining({ id: completedStatus.id, status: 'completed', addedTracks: 1 }),
+    );
+    expect(createCompletedScanSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ id: completedStatus.id, status: 'completed', addedTracks: 1 }),
     );
   });
 
@@ -1015,6 +1167,7 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
   });
 
   it('keeps a successful scan completed when the recovery snapshot cannot be written', async () => {
+    process.env.ECHO_SYNC_SCAN_HEALTH_CHECK = '1';
     const root = makeTempRoot();
     const [file] = makeFiles(root, 1);
     const store = new FakeStore();
@@ -1871,6 +2024,7 @@ describe('ScanJobQueue local path rescans', () => {
   });
 
   it('recovers from a scan guard after database health fails at the end of a scan', async () => {
+    process.env.ECHO_SYNC_SCAN_HEALTH_CHECK = '1';
     const root = makeTempRoot();
     const folder = baseFolder(root);
     mkdirSync(folder.path, { recursive: true });

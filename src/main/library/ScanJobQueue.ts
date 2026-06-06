@@ -33,6 +33,7 @@ import { preloadSearchIndexRomanizer } from './SearchIndexTokens';
 import {
   logLibraryScanPerf,
   setActiveLibraryScanPerfContext,
+  shouldRunScanHealthCheckSynchronouslyForDiagnostics,
   type LibraryScanPerfContext,
 } from '../diagnostics/LibraryScanPerfDiagnostics';
 
@@ -94,14 +95,17 @@ const progressFlushIntervalMs = 300;
 const progressFlushFileDelta = 64;
 const cacheCheckYieldFileDelta = 256;
 const deferredGroupingRefreshDelayMs = 1000;
+const deferredCompletedScanMaintenanceDelayMs = 1500;
+const deferredCompletedScanMaintenancePlaybackDelayMs = 2000;
+const deferredCompletedScanMaintenanceMaxPlaybackDeferrals = 30;
 const largeScanFileThreshold = 2000;
-const largeScanWriteBatchSize = 128;
+const largeScanWriteBatchSize = 64;
 const normalScanWriteBatchSize = 512;
-const reducedScanWriteBatchSize = 8;
+const reducedScanWriteBatchSize = 4;
 const scanFileSystemOperationTimeoutMs = 10_000;
 const scanDiscoveryYieldEveryEntries = 32;
 const cueExpansionYieldFileDelta = 32;
-const scanPressureYieldDelayMs = 8;
+const scanPressureYieldDelayMs = 40;
 const maxStoredScanErrors = 200;
 const scanErrorSummaryThreshold = 20;
 const maxScanErrorMessageLength = 512;
@@ -114,6 +118,8 @@ const runMainBackgroundTask = async <T>(name: string, work: () => Promise<T> | T
     clearBackgroundTask();
   }
 };
+const noopCheckDatabaseHealth = (): void => undefined;
+const noopCreateCompletedScanSnapshot = (): void => undefined;
 const maxLocalScanPathCount = 1000;
 const temporaryExtensions = new Set(['.tmp', '.temp', '.part', '.crdownload', '.download', '.swp']);
 const ignoredTemporaryNames = new Set(['.ds_store', 'thumbs.db']);
@@ -222,6 +228,7 @@ export class ScanJobQueue {
   private coverCacheDir: string;
   private deferredGroupingRefreshTimer: NodeJS.Timeout | null = null;
   private deferredGroupingNeedsAlbumRefresh = false;
+  private disposed = false;
 
   constructor(
     private readonly store: LibraryStore,
@@ -234,9 +241,9 @@ export class ScanJobQueue {
     this.metadataConcurrency = options.metadataConcurrency ?? 2;
     this.coverConcurrency = options.coverConcurrency ?? 2;
     this.getAlbumMergeStrategy = options.getAlbumMergeStrategy ?? (() => 'standard');
-    this.checkDatabaseHealth = options.checkDatabaseHealth ?? (() => undefined);
+    this.checkDatabaseHealth = options.checkDatabaseHealth ?? noopCheckDatabaseHealth;
     this.createDatabaseScanGuard = options.createDatabaseScanGuard ?? (() => null);
-    this.createCompletedScanSnapshot = options.createCompletedScanSnapshot ?? (() => undefined);
+    this.createCompletedScanSnapshot = options.createCompletedScanSnapshot ?? noopCreateCompletedScanSnapshot;
     this.recoverDatabaseFromScanGuard = options.recoverDatabaseFromScanGuard ?? (() => undefined);
     this.fileIdentityService = options.fileIdentityService ?? new FileIdentityService();
     this.shouldReduceScanPressure = options.shouldReduceScanPressure ?? (() => false);
@@ -255,6 +262,7 @@ export class ScanJobQueue {
   }
 
   dispose(): void {
+    this.disposed = true;
     if (this.deferredGroupingRefreshTimer) {
       clearTimeout(this.deferredGroupingRefreshTimer);
       this.deferredGroupingRefreshTimer = null;
@@ -413,9 +421,16 @@ export class ScanJobQueue {
       this.setPerfPhase(jobId, folder, 'discovering');
       await yieldToMainLoop();
 
+      const discoverBackgroundPriority =
+        forceReducedScanPressure ||
+        changesOnly ||
+        (await this.resolveBooleanOption(this.shouldReduceScanPressure));
       const discovery = await this.measureScanPhase(
         { jobId, folderId: folder.id, phase: 'discoverFiles' },
-        () => this.discoverFiles(jobId, folder, errors, progress, { suppressDiscoveredTotal: changesOnly }),
+        () => this.discoverFiles(jobId, folder, errors, progress, {
+          backgroundPriority: discoverBackgroundPriority,
+          suppressDiscoveredTotal: changesOnly,
+        }),
       );
       const cacheStatesByPath = changesOnly
         ? await this.measureScanPhase(
@@ -843,11 +858,11 @@ export class ScanJobQueue {
         errors,
       });
 
-      const writeBatchSize = reducedScanPressure ? reducedScanWriteBatchSize : largeScan ? largeScanWriteBatchSize : normalScanWriteBatchSize;
+      const initialWriteBatchSize = reducedScanPressure ? reducedScanWriteBatchSize : largeScan ? largeScanWriteBatchSize : normalScanWriteBatchSize;
       let seedAlbumsDurationMs = 0;
       let seedAlbumsBatchCount = 0;
       await this.measureScanPhase(
-        { jobId, folderId: folder.id, phase: 'writing_database_transaction', fileCount: preparedParsedItems.length, batchSize: writeBatchSize },
+        { jobId, folderId: folder.id, phase: 'writing_database_transaction', fileCount: preparedParsedItems.length, batchSize: initialWriteBatchSize },
         () => runMainBackgroundTask('library-scan:writing_database', async () => {
         const coverChangedTrackIds: string[] = [];
         this.store.transaction(() => {
@@ -890,8 +905,9 @@ export class ScanJobQueue {
           seedAlbumsBatchCount += 1;
         }
 
-        for (let index = 0; index < preparedParsedItems.length; index += writeBatchSize) {
-          const batch = preparedParsedItems.slice(index, index + writeBatchSize);
+        for (let index = 0; index < preparedParsedItems.length;) {
+          const currentWriteBatchSize = await this.resolveScanWriteBatchSize(largeScan, reducedScanPressure);
+          const batch = preparedParsedItems.slice(index, index + currentWriteBatchSize);
           const changedTrackIds: string[] = [];
           this.store.transaction(() => {
             for (const item of batch) {
@@ -936,6 +952,7 @@ export class ScanJobQueue {
             errors,
           });
           await this.yieldForScanPressure(reducedScanPressure);
+          index += batch.length;
         }
         }),
       );
@@ -1004,7 +1021,22 @@ export class ScanJobQueue {
       }
       try {
         const completedStatus = this.getScanStatus(jobId);
-        if (!this.hasCompletedScanMaintenanceChanges(completedStatus)) {
+        if (!this.hasCompletedScanMaintenanceHandlers()) {
+          this.logPerf({
+            jobId,
+            folderId: folder.id,
+            phase: 'checkDatabaseHealth',
+            fileCount: files.length,
+            detail: 'skipped_no_maintenance_handlers',
+          });
+          this.logPerf({
+            jobId,
+            folderId: folder.id,
+            phase: 'createCompletedScanSnapshot',
+            fileCount: files.length,
+            detail: 'skipped_no_maintenance_handlers',
+          });
+        } else if (!this.hasCompletedScanMaintenanceChanges(completedStatus)) {
           this.logPerf({
             jobId,
             folderId: folder.id,
@@ -1019,19 +1051,10 @@ export class ScanJobQueue {
             fileCount: files.length,
             detail: 'skipped_no_library_changes',
           });
+        } else if (shouldRunScanHealthCheckSynchronouslyForDiagnostics()) {
+          await this.runCompletedScanMaintenance(jobId, folder.id, files.length, completedStatus);
         } else {
-          await this.measureScanPhase(
-            { jobId, folderId: folder.id, phase: 'checkDatabaseHealth', fileCount: files.length },
-            () => this.checkDatabaseHealth(completedStatus),
-          );
-          try {
-            await this.measureScanPhase(
-              { jobId, folderId: folder.id, phase: 'createCompletedScanSnapshot', fileCount: files.length },
-              () => Promise.resolve(this.createCompletedScanSnapshot(completedStatus)),
-            );
-          } catch (snapshotError) {
-            console.warn('[library-scan] Failed to create completed scan recovery snapshot:', snapshotError);
-          }
+          this.scheduleDeferredCompletedScanMaintenance(jobId, folder.id, files.length, scanGuard, completedStatus);
         }
       } catch (error) {
         const status = this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
@@ -1114,12 +1137,128 @@ export class ScanJobQueue {
 
   }
 
+  private async runCompletedScanMaintenance(
+    jobId: string,
+    folderId: string,
+    fileCount: number,
+    completedStatus: LibraryScanStatus,
+    options: { deferForPlayback?: boolean } = {},
+  ): Promise<void> {
+    await this.runCompletedScanMaintenancePhase(
+      jobId,
+      folderId,
+      fileCount,
+      'checkDatabaseHealth',
+      () => this.checkDatabaseHealth(completedStatus),
+      options,
+    );
+    try {
+      await this.runCompletedScanMaintenancePhase(
+        jobId,
+        folderId,
+        fileCount,
+        'createCompletedScanSnapshot',
+        () => Promise.resolve(this.createCompletedScanSnapshot(completedStatus)),
+        options,
+      );
+    } catch (snapshotError) {
+      console.warn('[library-scan] Failed to create completed scan recovery snapshot:', snapshotError);
+    }
+  }
+
+  private async runCompletedScanMaintenancePhase<T>(
+    jobId: string,
+    folderId: string,
+    fileCount: number,
+    phase: 'checkDatabaseHealth' | 'createCompletedScanSnapshot',
+    work: () => Promise<T> | T,
+    options: { deferForPlayback?: boolean },
+  ): Promise<T> {
+    if (options.deferForPlayback === true) {
+      await this.waitForCompletedScanMaintenanceSlot(jobId, folderId, phase, fileCount);
+    }
+
+    return runMainBackgroundTask(`library-scan:${phase}`, () =>
+      this.measureScanPhase({ jobId, folderId, phase, fileCount }, work),
+    );
+  }
+
+  private async waitForCompletedScanMaintenanceSlot(
+    jobId: string,
+    folderId: string,
+    phase: 'checkDatabaseHealth' | 'createCompletedScanSnapshot',
+    fileCount: number,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < deferredCompletedScanMaintenanceMaxPlaybackDeferrals; attempt += 1) {
+      if (this.disposed || !(await this.resolveBooleanOption(this.shouldReduceScanPressure))) {
+        break;
+      }
+      this.logPerf({
+        jobId,
+        folderId,
+        phase,
+        fileCount,
+        detail: `deferred_for_playback;attempt=${attempt + 1}`,
+      });
+      await delay(deferredCompletedScanMaintenancePlaybackDelayMs);
+    }
+
+    await yieldToMainLoop();
+  }
+
+  private scheduleDeferredCompletedScanMaintenance(
+    jobId: string,
+    folderId: string,
+    fileCount: number,
+    scanGuard: unknown | null,
+    completedStatus: LibraryScanStatus,
+  ): void {
+    this.logPerf({
+      jobId,
+      folderId,
+      phase: 'checkDatabaseHealth',
+      fileCount,
+      detail: 'deferred_after_scan_completed',
+    });
+    this.logPerf({
+      jobId,
+      folderId,
+      phase: 'createCompletedScanSnapshot',
+      fileCount,
+      detail: 'deferred_after_scan_completed',
+    });
+
+    void this.runDeferredCompletedScanMaintenance(jobId, folderId, fileCount, scanGuard, completedStatus);
+  }
+
+  private async runDeferredCompletedScanMaintenance(
+    jobId: string,
+    folderId: string,
+    fileCount: number,
+    scanGuard: unknown | null,
+    completedStatus: LibraryScanStatus,
+  ): Promise<void> {
+    try {
+      await delay(deferredCompletedScanMaintenanceDelayMs);
+      await this.scanJobTail.catch(() => undefined);
+
+      if (this.disposed) {
+        return;
+      }
+
+      await this.runCompletedScanMaintenance(jobId, folderId, fileCount, completedStatus, { deferForPlayback: true });
+    } catch (error) {
+      this.queueDatabaseRecovery(jobId, scanGuard, completedStatus, error);
+      await this.recoverPendingDatabaseFailure(jobId);
+    }
+  }
+
   private async discoverFiles(
     jobId: string,
     folder: LibraryFolder,
     errors: string[],
     progress: ScanProgressReporter,
-    options: { suppressDiscoveredTotal?: boolean } = {},
+    options: { backgroundPriority?: boolean; suppressDiscoveredTotal?: boolean } = {},
   ): Promise<ScanDiscoveryResult> {
     const files: ScannedAudioFile[] = [];
     const inaccessibleDirectories = new Set<string>();
@@ -1140,6 +1279,7 @@ export class ScanJobQueue {
     try {
       for await (const file of this.fileScanner.scanFolder(folder.path, {
         audioExtensions: cueAwareScannableAudioExtensions,
+        backgroundPriority: options.backgroundPriority === true,
         fileSystemOperationTimeoutMs: scanFileSystemOperationTimeoutMs,
         yieldEveryEntries: scanDiscoveryYieldEveryEntries,
         shouldCancel: () => this.store.isScanCancelled(jobId),
@@ -1696,6 +1836,13 @@ export class ScanJobQueue {
     }
   }
 
+  private async resolveScanWriteBatchSize(largeScan: boolean, initialReducedScanPressure: boolean): Promise<number> {
+    if (initialReducedScanPressure || (await this.resolveBooleanOption(this.shouldReduceScanPressure))) {
+      return reducedScanWriteBatchSize;
+    }
+    return largeScan ? largeScanWriteBatchSize : normalScanWriteBatchSize;
+  }
+
   private hasCompletedScanMaintenanceChanges(status: LibraryScanStatus): boolean {
     return (
       status.addedTracks > 0 ||
@@ -1703,6 +1850,10 @@ export class ScanJobQueue {
       status.removedTracks > 0 ||
       (status.coverCount ?? 0) > 0
     );
+  }
+
+  private hasCompletedScanMaintenanceHandlers(): boolean {
+    return this.checkDatabaseHealth !== noopCheckDatabaseHealth || this.createCompletedScanSnapshot !== noopCreateCompletedScanSnapshot;
   }
 
   private setPerfPhase(

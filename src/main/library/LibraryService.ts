@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } fr
 import { stat as statFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers';
-import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
+import { setImmediate as yieldToMainLoop, setTimeout as delay } from 'node:timers/promises';
 import electron from 'electron';
 import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
@@ -378,9 +378,16 @@ export class LibraryService {
     return this.scanJobQueue.scanPaths(folder, paths, options);
   }
 
-  rescanEmbeddedTags(mode: Exclude<NonNullable<LibraryScanOptions['mode']>, 'normal'>): LibraryScanStatus[] {
+  async rescanEmbeddedTags(mode: Exclude<NonNullable<LibraryScanOptions['mode']>, 'normal'>): Promise<LibraryScanStatus[]> {
     const folders = this.getFolders();
-    return folders.map((folder) => this.scanJobQueue.scanStoredTracks(folder, { mode }));
+    const statuses: LibraryScanStatus[] = [];
+
+    for (const folder of folders) {
+      statuses.push(this.scanJobQueue.scanStoredTracks(folder, { mode, reduceScanPressure: true }));
+      await yieldToMainLoop();
+    }
+
+    return statuses;
   }
 
   getScanStatus(jobId: string): LibraryScanStatus {
@@ -2617,6 +2624,28 @@ const shouldDelayGroupingRefreshForAudio = async (): Promise<boolean> => {
   return isPlaybackActiveForMainWork();
 };
 
+const completedScanSnapshotPlaybackDelayMs = 2_000;
+const completedScanSnapshotMaxPlaybackDeferrals = 30;
+
+const waitForCompletedScanSnapshotSlot = async (
+  scanStatus: LibraryScanStatus,
+  phase: string,
+): Promise<void> => {
+  await yieldToMainLoop();
+  for (let attempt = 0; attempt < completedScanSnapshotMaxPlaybackDeferrals; attempt += 1) {
+    if (!(await shouldDelayGroupingRefreshForAudio())) {
+      return;
+    }
+    logLibraryScanPerf({
+      jobId: scanStatus.id,
+      folderId: scanStatus.folderId,
+      phase: 'createCompletedScanSnapshot',
+      detail: `deferred_for_playback;dataProtectionPhase=${phase};attempt=${attempt + 1}`,
+    });
+    await delay(completedScanSnapshotPlaybackDelayMs);
+  }
+};
+
 export const createLibraryService = (
   databasePath: string,
   dependencies: LibraryServiceDependencies = {},
@@ -2738,7 +2767,10 @@ export const createLibraryService = (
         return;
       }
 
-      await createDataProtectionSnapshot('scan-completed-library-snapshot', dirname(databasePath));
+      await createDataProtectionSnapshot('scan-completed-library-snapshot', dirname(databasePath), new Date(), {
+        scope: 'background',
+        beforePhase: (phase) => waitForCompletedScanSnapshotSlot(scanStatus, phase),
+      });
     },
     recoverDatabaseFromScanGuard: async (snapshot, scanStatus, error) => {
       if (!snapshot) {

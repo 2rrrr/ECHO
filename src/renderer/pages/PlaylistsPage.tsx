@@ -830,6 +830,39 @@ export const PlaylistsPage = (): JSX.Element => {
     }
   }, [playlistSearch]);
 
+  const loadPlaylistPlaybackTracks = useCallback(
+    async (playlist: LibraryPlaylist, searchText = playlistSearch): Promise<LibraryTrack[]> => {
+      if (
+        selectedPlaylist?.id === playlist.id &&
+        searchText === playlistSearch &&
+        !itemsPage.hasMore &&
+        itemsPage.items.length >= itemsPage.total
+      ) {
+        return displayTracks.filter((track) => !track.unavailable);
+      }
+
+      const library = window.echo?.library;
+      if (!library?.getPlaylistItems) {
+        return displayTracks.filter((track) => !track.unavailable);
+      }
+
+      const allItems: LibraryPlaylistItem[] = [];
+      for (let nextPage = 1; ; nextPage += 1) {
+        const result = await library.getPlaylistItems(playlist.id, { page: nextPage, pageSize, search: searchText });
+        allItems.push(...result.items);
+
+        if (!result.hasMore || result.items.length === 0) {
+          break;
+        }
+      }
+
+      return allItems
+        .map((item) => itemToTrack(item, playlist.sourceProvider !== 'local' ? streamingQuality : undefined))
+        .filter((track) => !track.unavailable);
+    },
+    [displayTracks, itemsPage.hasMore, itemsPage.items.length, itemsPage.total, playlistSearch, selectedPlaylist?.id, streamingQuality],
+  );
+
   useEffect(() => {
     void loadPlaylists();
   }, [loadPlaylists]);
@@ -1214,13 +1247,19 @@ export const PlaylistsPage = (): JSX.Element => {
       return;
     }
 
-    if (playableTracks.length === 0) {
-      setError(playlistPanelView === 'streamingFavorites' ? '这个收藏列表没有可播放的歌曲。' : '这个歌单没有可播放的歌曲。');
-      return;
-    }
-
     try {
-      await playPlaylistSequence(playableTracks, {
+      const tracksToPlay = playlistPanelView === 'streamingFavorites'
+        ? playableTracks
+        : selectedPlaylist
+          ? await loadPlaylistPlaybackTracks(selectedPlaylist)
+          : playableTracks;
+
+      if (tracksToPlay.length === 0) {
+        setError(playlistPanelView === 'streamingFavorites' ? '这个收藏列表没有可播放的歌曲。' : '这个歌单没有可播放的歌曲。');
+        return;
+      }
+
+      await playPlaylistSequence(tracksToPlay, {
         label: queueSource.label,
         playlistId: playlistPanelView === 'local' ? selectedPlaylist?.id : undefined,
         source: queueSource,
@@ -2017,8 +2056,9 @@ export const PlaylistsPage = (): JSX.Element => {
       return;
     }
 
-    const sequenceTracks = playableTailFromTrack(displayTracks, playableTrack);
     try {
+      const playlistTracks = selectedPlaylist ? await loadPlaylistPlaybackTracks(selectedPlaylist) : displayTracks.filter((track) => !track.unavailable);
+      const sequenceTracks = playableTailFromTrack(playlistTracks, playableTrack);
       await playPlaylistSequence(sequenceTracks, {
         label: selectedPlaylist?.name,
         playlistId: selectedPlaylist?.id,

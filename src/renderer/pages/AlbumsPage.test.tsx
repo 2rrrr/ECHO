@@ -22,7 +22,7 @@ const album = (id: string, overrides: Partial<LibraryAlbum> = {}): LibraryAlbum 
 const page = (items: LibraryAlbum[], overrides: Partial<LibraryPage<LibraryAlbum>> = {}): LibraryPage<LibraryAlbum> => ({
   items,
   page: 1,
-  pageSize: 60,
+  pageSize: 90,
   total: items.length,
   hasMore: false,
   ...overrides,
@@ -195,7 +195,7 @@ describe('AlbumsPage', () => {
     renderAlbumsPage();
 
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(1));
-    expect(getAlbums).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
+    expect(getAlbums).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 90, search: '', sort: 'default' }));
     expect(getTracks).not.toHaveBeenCalled();
   });
 
@@ -263,7 +263,7 @@ describe('AlbumsPage', () => {
     fireEvent.scroll(pageSurface);
 
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
-    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2, pageSize: 60, search: '', sort: 'default' }));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2, pageSize: 90, search: '', sort: 'default' }));
     expect(screen.getByText('Album 1')).toBeTruthy();
     expect(screen.getByText('Album 2')).toBeTruthy();
   });
@@ -282,12 +282,12 @@ describe('AlbumsPage', () => {
     fireEvent.change(screen.getByPlaceholderText('Search albums / artists'), { target: { value: 'search' } });
     await new Promise((resolve) => window.setTimeout(resolve, 275));
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
-    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: 'search', sort: 'default' }));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 90, search: 'search', sort: 'default' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Default' }));
     fireEvent.click(screen.getByRole('option', { name: 'Artist' }));
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(3));
-    expect(getAlbums).toHaveBeenNthCalledWith(3, expect.objectContaining({ page: 1, pageSize: 60, search: 'search', sort: 'artist' }));
+    expect(getAlbums).toHaveBeenNthCalledWith(3, expect.objectContaining({ page: 1, pageSize: 90, search: 'search', sort: 'artist' }));
   });
 
   it('search and sort reset the album wall scroll position', async () => {
@@ -330,7 +330,7 @@ describe('AlbumsPage', () => {
     window.dispatchEvent(new Event('library:changed'));
 
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
-    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 90, search: '', sort: 'default' }));
   });
 
   it('refresh button reloads page 1 without rebuilding album grouping', async () => {
@@ -348,7 +348,7 @@ describe('AlbumsPage', () => {
 
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
     expect(refreshAlbumGrouping).not.toHaveBeenCalled();
-    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 90, search: '', sort: 'default' }));
   });
 
   it('preserved library:changed refreshes a scrolled album wall without pulling it back to the top', async () => {
@@ -368,7 +368,7 @@ describe('AlbumsPage', () => {
     window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
 
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
-    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 90, search: '', sort: 'default' }));
     expect(screen.getByText('Album fresh')).toBeTruthy();
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(pageSurface.scrollTop).toBe(640);

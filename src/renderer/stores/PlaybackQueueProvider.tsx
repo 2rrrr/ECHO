@@ -2451,6 +2451,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         }
 
         if (!silentRearm) {
+          if (previousItem && currentQueueIdRef.current === item.queueId) {
+            setCurrentQueueId(previousItem.queueId);
+            setCurrentTrackIdInternal(previousItem.track.id);
+            setLastPlayedTrack(previousItem.track);
+          }
           setPlaybackStatusSnapshot({
             playbackStatus: statusForPlaybackFailure(item.track),
             error: error instanceof Error ? error.message : String(error),

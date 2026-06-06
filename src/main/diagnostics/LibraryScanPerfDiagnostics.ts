@@ -74,3 +74,6 @@ export const shouldDisableScanGuardForDiagnostics = (): boolean => process.env.E
 export const shouldDisableScanHealthCheckForDiagnostics = (): boolean => process.env.ECHO_DISABLE_SCAN_HEALTH_CHECK === '1';
 
 export const shouldCheckpointScanHealthForDiagnostics = (): boolean => process.env.ECHO_SCAN_HEALTH_CHECKPOINT === '1';
+
+export const shouldRunScanHealthCheckSynchronouslyForDiagnostics = (): boolean =>
+  process.env.ECHO_SYNC_SCAN_HEALTH_CHECK === '1';

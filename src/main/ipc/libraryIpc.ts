@@ -33,6 +33,7 @@ import type {
   LibraryHealthReport,
   LibraryPlaylist,
   LibraryPlaylistItem,
+  LibraryScanOptions,
   PlaylistExportFormat,
   PlaylistSortMode,
   LibrarySort,
@@ -1360,6 +1361,16 @@ const normalizeEmbeddedTagRescanMode = (value: unknown): Exclude<LibraryScanMode
   throw new Error('embedded tag rescan mode must be embedded-tags-all or embedded-tags-missing-cover');
 };
 
+const normalizeScanFolderOptions = (value: unknown): Pick<LibraryScanOptions, 'reduceScanPressure'> => {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  return (value as { reduceScanPressure?: unknown }).reduceScanPressure === true
+    ? { reduceScanPressure: true }
+    : {};
+};
+
 const coverMimeType = (filePath: string): string => {
   const extension = filePath.split('.').pop()?.toLocaleLowerCase();
 
@@ -1682,8 +1693,8 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryRemoveFolder, (_event, folderId: unknown) =>
     getLibraryService().removeFolder(requireText(folderId, 'folderId')),
   );
-  ipcMain.handle(IpcChannels.LibraryScanFolder, (_event, folderId: unknown) =>
-    getLibraryService().scanFolder(requireText(folderId, 'folderId')),
+  ipcMain.handle(IpcChannels.LibraryScanFolder, (_event, folderId: unknown, options: unknown) =>
+    getLibraryService().scanFolder(requireText(folderId, 'folderId'), normalizeScanFolderOptions(options)),
   );
   ipcMain.handle(IpcChannels.LibraryScanFolderChanges, (_event, folderId: unknown) =>
     getLibraryService().scanFolderChanges(requireText(folderId, 'folderId')),

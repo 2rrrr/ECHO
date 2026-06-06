@@ -21,10 +21,12 @@ import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/librarySortMemory';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
-const pageSize = 60;
-const priorityAlbumWallImageCount = 24;
+const pageSize = 90;
+const priorityAlbumWallImageCount = 32;
+const albumWallLoadAheadDistancePx = 1400;
+const albumWallImageLoadAheadMargin = '1000px 0px';
 const albumCoverRetryDelaysMs = [600, 1800, 3600];
-const maxPreservedRefreshPageSize = 500;
+const maxPreservedRefreshPageSize = 800;
 const preserveScrollThresholdPx = 80;
 const isPreserveScrollLibraryEvent = (event: Event): boolean =>
   event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && event.detail.preserveScroll === true;
@@ -757,6 +759,7 @@ export const AlbumsPage = (): JSX.Element => {
                       loading="lazy"
                       paused={pauseDeferredAlbumImages}
                       priority={index < priorityAlbumWallImageCount}
+                      rootMargin={albumWallImageLoadAheadMargin}
                       src={album.coverThumb!}
                       width={320}
                       onError={() => handleAlbumCoverError(album)}
@@ -779,7 +782,13 @@ export const AlbumsPage = (): JSX.Element => {
           })}
           {/* TODO: If 3000/10000 album smoke tests still show scroll jank, replace this paged wall with @tanstack/react-virtual grid virtualization. */}
         </section>
-        <InfiniteScrollSentinel canLoadMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMoreAlbums} />
+        <InfiniteScrollSentinel
+          canLoadMore={hasMore}
+          fallbackDistance={albumWallLoadAheadDistancePx}
+          isLoading={isLoading}
+          onLoadMore={handleLoadMoreAlbums}
+          rootMargin={`${albumWallLoadAheadDistancePx}px 0px`}
+        />
 
         {error || isLoading ? (
           <div className="list-footer">
