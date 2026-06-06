@@ -2543,11 +2543,11 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
 }
 
 .lyrics-queue-drawer[data-open="true"] .lyrics-queue-drawer__scrim {
-  animation: lyrics-queue-scrim-in 180ms ease-out both;
+  animation: lyrics-queue-scrim-in var(--echo-motion-panel-ms) var(--echo-motion-ease-quick) both;
 }
 
 .lyrics-queue-drawer[data-open="false"] .lyrics-queue-drawer__scrim {
-  animation: lyrics-queue-scrim-out 180ms ease-in both;
+  animation: lyrics-queue-scrim-out var(--echo-motion-panel-ms) var(--echo-motion-ease-quick) both;
   pointer-events: none;
 }
 
@@ -2574,11 +2574,11 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
 }
 
 .lyrics-queue-drawer[data-open="true"] .lyrics-queue-drawer__panel {
-  animation: lyrics-queue-panel-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: lyrics-queue-panel-in var(--echo-motion-panel-ms) var(--echo-motion-ease-standard) both;
 }
 
 .lyrics-queue-drawer[data-open="false"] .lyrics-queue-drawer__panel {
-  animation: lyrics-queue-panel-out 180ms ease-in both;
+  animation: lyrics-queue-panel-out var(--echo-motion-panel-ms) var(--echo-motion-ease-quick) both;
   pointer-events: none;
 }
 
@@ -4050,6 +4050,9 @@ html[data-theme="dark"] .lyrics-candidate-badges .lyrics-reason-badge,
   justify-items: center;
   gap: 12px;
   transform: translateY(clamp(20px, 4.2vh, 58px));
+  transition:
+    opacity var(--echo-motion-panel-ms) var(--echo-motion-ease-quick),
+    transform var(--echo-motion-panel-ms) var(--echo-motion-ease-quick);
 }
 
 .lyrics-mv-ambient {

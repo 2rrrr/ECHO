@@ -24,6 +24,7 @@ import { getAppBridge } from './utils/echoBridge';
 import './styles/tokens.css';
 import './styles/theme.css';
 import './styles/layout.css';
+import './styles/motion.css';
 import './styles/app.css';
 import './styles/songs.css';
 import './styles/folders.css';

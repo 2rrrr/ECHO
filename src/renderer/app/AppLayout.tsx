@@ -31,6 +31,7 @@ import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 import { albumDetailNavigationEvent } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent } from '../utils/artistNavigation';
+import { AnimatedOutlet } from '../ui/motion/AnimatedOutlet';
 import { applySidebarPreferences } from './sidebarPreferences';
 import { defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type { PlaybackStatus } from '../../shared/types/playback';
@@ -2192,15 +2193,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             : route.element;
 
         return (
-          <main
-            aria-hidden={isActive ? undefined : true}
+          <AnimatedOutlet
             className={`page-surface ${routeIsStandalone ? 'page-surface--standalone' : ''}`}
-            data-route-id={route.id}
             hidden={!isActive}
+            isActive={isActive}
             key={route.id}
+            routeId={route.id}
           >
             {routeElement}
-          </main>
+          </AnimatedOutlet>
         );
       })}
 

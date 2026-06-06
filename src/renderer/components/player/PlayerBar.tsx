@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { Captions, Download, FileDown, Loader2, Monitor } from 'lucide-react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { audioExportFormats, type AudioExportFormat, type AudioStatus } from '../../../shared/types/audio';
@@ -23,6 +24,8 @@ import { beginPlaybackSeekSnapshot, getVisualPlaybackState, refreshPlaybackStatu
 import { isActiveConnectPlaybackStatus, isHqPlayerConnectStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { logLyricsConsole } from '../../diagnostics/lyricsConsole';
+import { playerCoverLayoutId } from '../../ui/motion/layoutIds';
+import { miniPlayerTransition, springSoft } from '../../ui/motion/presets';
 import { PlayerProgress } from './PlayerProgress';
 import { AudioSignalPathControl, AudioSignalPathPopover } from './AudioSignalPathPopover';
 import { PlayerSpeedControl } from './PlayerSpeedControl';
@@ -2493,13 +2496,15 @@ export const PlayerBar = ({
   );
 
   return (
-    <footer
+    <motion.footer
       className="player-bar"
       data-low-load-playback={lowLoadPlaybackModeEnabled ? 'true' : undefined}
       data-network-loading={isNetworkPlaybackLoading ? 'true' : undefined}
       data-playback-state={visualState}
       aria-busy={isNetworkPlaybackLoading}
       aria-label="播放控制"
+      layout="position"
+      transition={miniPlayerTransition}
     >
       {streamingDownloadNotice ? (
         <div className={`player-download-notice player-download-notice--${streamingDownloadNotice.tone}`} role="status" aria-live="polite">
@@ -2522,13 +2527,15 @@ export const PlayerBar = ({
         </div>
       ) : null}
       <div className="player-now">
-        <button
+        <motion.button
           className="player-cover"
           data-empty={!artworkUrl}
           type="button"
           aria-label="打开歌词"
           title="打开歌词"
           data-loading={isNetworkPlaybackLoading ? 'true' : undefined}
+          layoutId={playerCoverLayoutId(trackId)}
+          transition={springSoft}
           onClick={handleOpenLyrics}
         >
           {artworkUrl ? (
@@ -2540,7 +2547,7 @@ export const PlayerBar = ({
             </div>
           )}
           <div className="cover-sheen" />
-        </button>
+        </motion.button>
         <div className="player-track-copy">
           <PlayerMarqueeText kind="title" text={title} />
           <PlayerMarqueeText kind="subtitle" text={artist} onClick={canOpenCurrentArtist ? handleOpenCurrentArtist : undefined} />
@@ -2695,6 +2702,6 @@ export const PlayerBar = ({
           </button>
         ) : null}
       </div>
-    </footer>
+    </motion.footer>
   );
 };

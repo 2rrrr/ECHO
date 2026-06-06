@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { motion } from 'motion/react';
 import { ArrowLeft, ChevronRight, Disc3, ExternalLink, FolderOpen, Heart, Info, ListEnd, Loader2, MoreHorizontal, Play, Plus, RefreshCw, Star } from 'lucide-react';
 import type { AlbumOnlineInfo, AlbumOnlineInfoRequestOptions, EditableTrackTags, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
@@ -12,6 +13,8 @@ import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { albumDetailNavigationEvent, openAlbumDetailForTrack } from '../../utils/albumNavigation';
 import { resolvePlaylistForTrackAdd } from '../../utils/appPrompt';
 import { getLibraryBridge } from '../../utils/echoBridge';
+import { albumCoverLayoutId } from '../../ui/motion/layoutIds';
+import { springSoft } from '../../ui/motion/presets';
 import { OsuTimingPanel } from '../library/OsuTimingPanel';
 import { TrackContextMenu } from '../library/TrackContextMenu';
 import type { TrackMenuAction } from '../library/TrackContextMenu';
@@ -1828,13 +1831,19 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       </button>
 
       <section className="album-detail-hero album-detail-switch-surface" key={`album-hero-${album.id}`} aria-label={t('albumDetail.aria.details', { album: album.title })}>
-        <div className="album-detail-cover" data-empty={!detailCoverSrc} onContextMenu={handleDetailCoverContextMenu}>
+        <motion.div
+          className="album-detail-cover"
+          data-empty={!detailCoverSrc}
+          layoutId={albumCoverLayoutId(album.id)}
+          transition={springSoft}
+          onContextMenu={handleDetailCoverContextMenu}
+        >
           {detailCoverSrc ? (
             <img alt="" decoding="async" draggable={false} height={320} src={detailCoverSrc} width={320} onError={() => handleDetailCoverError(detailCoverSrc)} />
           ) : (
             <Disc3 size={58} />
           )}
-        </div>
+        </motion.div>
 
         <div className="album-detail-console">
           <div className="album-detail-copy">

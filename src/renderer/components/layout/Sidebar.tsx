@@ -1,5 +1,7 @@
+import { motion } from 'motion/react';
 import type { AppRoute, AppRouteId } from '../../app/routes';
 import { useI18n } from '../../i18n/I18nProvider';
+import { hoverTapMotion } from '../../ui/motion/presets';
 
 type SidebarProps = {
   routes: AppRoute[];
@@ -65,7 +67,8 @@ export const Sidebar = ({
           const label = route.labelKey ? t(route.labelKey) : route.label;
 
           return (
-            <button
+            <motion.button
+              {...hoverTapMotion}
               className="nav-item"
               data-active={isActive}
               key={route.id}
@@ -74,9 +77,10 @@ export const Sidebar = ({
               title={label}
               aria-label={label}
             >
+              {isActive ? <motion.span className="nav-active-indicator" layoutId="sidebar-active-route" aria-hidden="true" /> : null}
               {renderNavIcon(Icon, 21)}
               <span className="nav-item-label">{label}</span>
-            </button>
+            </motion.button>
           );
         })}
       </nav>
@@ -93,7 +97,8 @@ export const Sidebar = ({
           const label = route.labelKey ? t(route.labelKey) : route.label;
 
           return (
-            <button
+            <motion.button
+              {...hoverTapMotion}
               className="nav-item"
               data-active={isDirectAction ? false : isActive}
               key={route.id}
@@ -102,9 +107,12 @@ export const Sidebar = ({
               title={label}
               aria-label={label}
             >
+              {!isDirectAction && isActive ? (
+                <motion.span className="nav-active-indicator" layoutId="sidebar-active-route" aria-hidden="true" />
+              ) : null}
               {renderNavIcon(Icon, 21)}
               <span className="nav-item-label">{label}</span>
-            </button>
+            </motion.button>
           );
         })}
       </nav>

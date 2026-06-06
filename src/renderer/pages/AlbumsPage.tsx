@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
+import { motion } from 'motion/react';
 import { Check, ChevronDown, Disc3, ListFilter, RefreshCw, Search } from 'lucide-react';
 import type { EditableAlbumTags, LibraryAlbum, LibraryPlaylist, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import type { RemoteSource } from '../../shared/types/remoteSources';
@@ -20,6 +21,8 @@ import { getRemoteSourcesBridge } from '../utils/echoBridge';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/librarySortMemory';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
+import { albumCoverLayoutId } from '../ui/motion/layoutIds';
+import { springSoft } from '../ui/motion/presets';
 
 const pageSize = 90;
 const priorityAlbumWallImageCount = 32;
@@ -748,7 +751,13 @@ export const AlbumsPage = (): JSX.Element => {
                 onContextMenu={(event) => handleOpenAlbumMenu(event, album)}
                 onKeyDown={(event) => handleAlbumKeyDown(event, album)}
               >
-                <div className="album-cover" data-empty={!shouldShowCover} aria-hidden="true">
+                <motion.div
+                  className="album-cover"
+                  data-empty={!shouldShowCover}
+                  layoutId={albumCoverLayoutId(album.id)}
+                  transition={springSoft}
+                  aria-hidden="true"
+                >
                   {shouldShowCover ? (
                     <DeferredWallImage
                       key={`${album.coverThumb}:${coverRetryKeys[album.id] ?? 0}`}
@@ -768,7 +777,7 @@ export const AlbumsPage = (): JSX.Element => {
                   ) : (
                     <Disc3 size={24} />
                   )}
-                </div>
+                </motion.div>
                 <div className="album-copy">
                   <strong>{album.title}</strong>
                   <div className="album-meta-row">
