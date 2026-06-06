@@ -189,6 +189,40 @@ describe('LibraryStore track metadata safety', () => {
     expect(store.getArtistAlbums(miletArtist.id, { pageSize: 10 }).items.map((album) => album.title)).toEqual(['Feat Dot Album']);
   });
 
+  it('rebuilds artist grouping cooperatively without dropping artist links', async () => {
+    const store = makeStore();
+    const folder = store.addFolder('D:\\Music');
+    const albumService = new AlbumService();
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\alpha.flac', {
+      id: 'track-alpha',
+      title: 'Alpha',
+      artist: 'Alpha Artist feat. Beta Artist',
+      album: 'Shared Album',
+      albumArtist: 'Alpha Artist',
+    }));
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\beta.flac', {
+      id: 'track-beta',
+      title: 'Beta',
+      artist: 'Beta Artist',
+      album: 'Beta Album',
+      albumArtist: 'Beta Artist',
+    }));
+    store.seedAlbumsForTracks(['track-alpha', 'track-beta'], albumService, '2026-01-01T00:00:00.000Z');
+
+    await store.refreshArtistsCooperatively({ yieldEveryRows: 50 });
+
+    const artists = store.getArtists({ pageSize: 20 }).items;
+    const artistNames = artists.map((artist) => artist.name);
+    const alphaArtist = artists.find((artist) => artist.name === 'Alpha Artist')!;
+    const betaArtist = artists.find((artist) => artist.name === 'Beta Artist')!;
+
+    expect(artistNames).toEqual(expect.arrayContaining(['Alpha Artist', 'Beta Artist']));
+    expect(store.getArtistTracks(alphaArtist.id, { pageSize: 10 }).items.map((track) => track.title)).toEqual(['Alpha']);
+    expect(store.getArtistTracks(betaArtist.id, { pageSize: 10 }).items.map((track) => track.title).sort()).toEqual(['Alpha', 'Beta']);
+    expect(store.getArtistAlbums(betaArtist.id, { pageSize: 10 }).items.map((album) => album.title).sort()).toEqual(['Beta Album', 'Shared Album']);
+  });
+
   it('filters filename track numbers out of the artist index', () => {
     const store = makeStore();
     const folder = store.addFolder('D:\\Music');

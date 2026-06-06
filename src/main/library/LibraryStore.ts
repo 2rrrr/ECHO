@@ -2333,6 +2333,64 @@ export class LibraryStore {
     return states;
   }
 
+  getTrackCacheStatesByPaths(folderId: string, paths: readonly string[], options: { batchSize?: number } = {}): Map<string, StoredTrackCoverState> {
+    const uniquePaths = Array.from(new Set(paths.map((filePath) => resolve(filePath))));
+    const states = new Map<string, StoredTrackCoverState>();
+    const batchSize = Math.max(1, Math.min(500, Math.floor(options.batchSize ?? 400)));
+    if (uniquePaths.length === 0) {
+      return states;
+    }
+
+    for (let index = 0; index < uniquePaths.length; index += batchSize) {
+      const batch = uniquePaths.slice(index, index + batchSize);
+      const placeholders = batch.map(() => '?').join(', ');
+      const rows = this.allRows(
+        `SELECT
+          tracks.path, tracks.id, tracks.size_bytes, tracks.mtime_ms,
+          tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+          tracks.file_identity, tracks.file_identity_source, tracks.quick_hash, tracks.quick_hash_version,
+          tracks.identity_status, tracks.identity_updated_at, tracks.identity_error,
+          covers.source_type, covers.source_hash, covers.mime_type,
+          covers.thumb_path, covers.album_path, covers.large_path, covers.original_ref,
+          covers.cache_version
+        FROM tracks
+        LEFT JOIN covers ON covers.id = tracks.cover_id
+        WHERE tracks.folder_id = ? AND tracks.missing = 0 AND tracks.path IN (${placeholders})`,
+        folderId,
+        ...batch,
+      );
+
+      for (const row of rows) {
+        states.set(resolve(String(row.path)), {
+          id: String(row.id),
+          sizeBytes: Number(row.size_bytes),
+          mtimeMs: Number(row.mtime_ms),
+          coverId: textOrNull(row.cover_id),
+          metadataStatus: textOrNull(row.metadata_status),
+          embeddedMetadataStatus: textOrNull(row.embedded_metadata_status),
+          embeddedCoverStatus: textOrNull(row.embedded_cover_status),
+          coverSource: coverSourceOrNull(row.source_type),
+          sourceHash: textOrNull(row.source_hash),
+          mimeType: textOrNull(row.mime_type),
+          thumbPath: textOrNull(row.thumb_path),
+          albumPath: textOrNull(row.album_path),
+          largePath: textOrNull(row.large_path),
+          originalRef: textOrNull(row.original_ref),
+          cacheVersion: numberOrNull(row.cache_version),
+          fileIdentity: textOrNull(row.file_identity),
+          fileIdentitySource: textOrNull(row.file_identity_source),
+          quickHash: textOrNull(row.quick_hash),
+          quickHashVersion: numberOrNull(row.quick_hash_version),
+          identityStatus: textOrNull(row.identity_status),
+          identityUpdatedAt: textOrNull(row.identity_updated_at),
+          identityError: textOrNull(row.identity_error),
+        });
+      }
+    }
+
+    return states;
+  }
+
   findTrackCoverState(filePath: string): StoredTrackCoverState | null {
     const row = this.getRow(
       `SELECT
@@ -4562,12 +4620,265 @@ export class LibraryStore {
     });
   }
 
+  async refreshArtistsCooperatively(options: { yieldEveryRows?: number } = {}): Promise<void> {
+    const yieldEveryRows = Math.max(50, Math.floor(options.yieldEveryRows ?? 300));
+    let processedRows = 0;
+    const maybeYield = async (): Promise<void> => {
+      processedRows += 1;
+      if (processedRows % yieldEveryRows === 0) {
+        await yieldToMainLoop();
+      }
+    };
+    const timestamp = nowIso();
+    const artistMergeStrategy = normalizeArtistMergeStrategy(this.readSearchOptions().artistMergeStrategy);
+    const stats = new Map<string, ArtistIndexStats>();
+    const fuzzyStatsByBucket = new Map<string, ArtistIndexStats[]>();
+    const trackLinks = new Map<string, { artistId: string; trackId: string; sourceName: string; position: number }>();
+    const albumLinks = new Map<string, { artistId: string; albumId: string; sourceName: string }>();
+    const fuzzyBucketsForKey = (key: string): string[] =>
+      key.length >= 7 ? [`prefix:${key.slice(0, 3)}`, `suffix:${key.slice(-3)}`] : [];
+    const addFuzzyStats = (artist: ArtistIndexStats): void => {
+      for (const bucket of fuzzyBucketsForKey(artist.key)) {
+        const items = fuzzyStatsByBucket.get(bucket);
+        if (items) {
+          items.push(artist);
+        } else {
+          fuzzyStatsByBucket.set(bucket, [artist]);
+        }
+      }
+    };
+    const fuzzyCandidatesForKey = (key: string): ArtistIndexStats[] => {
+      const candidates = new Map<string, ArtistIndexStats>();
+      for (const bucket of fuzzyBucketsForKey(key)) {
+        for (const artist of fuzzyStatsByBucket.get(bucket) ?? []) {
+          candidates.set(artist.key, artist);
+        }
+      }
+      return Array.from(candidates.values());
+    };
+    const ensureArtist = (name: string, context?: { trackId?: string | null; albumId?: string | null }): ArtistIndexStats => {
+      const directKey = artistMergeKeyForName(name, artistMergeStrategy);
+      const direct = stats.get(directKey);
+      if (direct) {
+        direct.name = chooseArtistDisplayName(direct.name, name);
+        return direct;
+      }
+
+      const key =
+        artistMergeStrategy === 'standard'
+          ? findArtistMergeKey(name, fuzzyCandidatesForKey(directKey), artistMergeStrategy, context)
+          : directKey;
+      const current = stats.get(key);
+
+      if (current) {
+        current.name = chooseArtistDisplayName(current.name, name);
+        return current;
+      }
+
+      const next = {
+        id: randomUUID(),
+        key,
+        name,
+        trackIds: new Set<string>(),
+        albumIds: new Set<string>(),
+        coverId: null,
+        coverScore: Number.MAX_SAFE_INTEGER,
+      };
+      stats.set(key, next);
+      addFuzzyStats(next);
+
+      return next;
+    };
+    const linkAlbum = (artist: ArtistIndexStats, albumId: string | null, sourceName: string): void => {
+      if (!albumId) {
+        return;
+      }
+
+      artist.albumIds.add(albumId);
+      albumLinks.set(`${artist.id}:${albumId}`, {
+        artistId: artist.id,
+        albumId,
+        sourceName,
+      });
+    };
+    const considerCover = (artist: ArtistIndexStats, albumId: string | null, coverId: string | null, coverSource: unknown): void => {
+      if (!albumId || !coverId || coverSourceOrNull(coverSource) === 'default') {
+        return;
+      }
+
+      const score = stableArtistAlbumScore(artist.key, albumId);
+      if (score < artist.coverScore) {
+        artist.coverId = coverId;
+        artist.coverScore = score;
+      }
+    };
+
+    const trackRows = this.allRows(
+      `SELECT
+        tracks.id AS track_id,
+        tracks.artist AS artist,
+        album_tracks.album_id AS album_id,
+        albums.cover_id AS album_cover_id,
+        (SELECT source_type FROM covers WHERE covers.id = albums.cover_id) AS album_cover_source
+      FROM tracks
+      LEFT JOIN album_tracks ON album_tracks.track_id = tracks.id
+      LEFT JOIN albums ON albums.id = album_tracks.album_id
+      WHERE tracks.missing = 0
+        AND tracks.artist IS NOT NULL
+        AND TRIM(tracks.artist) != ''
+      ORDER BY tracks.created_at ASC, tracks.id ASC`,
+    );
+
+    for (let position = 0; position < trackRows.length; position += 1) {
+      const row = trackRows[position]!;
+      const trackId = String(row.track_id);
+      const sourceName = normalizeArtistDisplayName(row.artist);
+      const albumId = textOrNull(row.album_id);
+      const coverId = textOrNull(row.album_cover_id);
+      const coverSource = row.album_cover_source;
+
+      for (const name of splitArtistNames(sourceName)) {
+        const artist = ensureArtist(name, { trackId, albumId });
+
+        artist.trackIds.add(trackId);
+        trackLinks.set(`${artist.id}:${trackId}`, {
+          artistId: artist.id,
+          trackId,
+          sourceName,
+          position,
+        });
+        considerCover(artist, albumId, coverId, coverSource);
+      }
+      await maybeYield();
+    }
+
+    const albumRows = this.allRows(
+      `SELECT
+        albums.id AS album_id,
+        albums.album_artist AS album_artist,
+        albums.cover_id AS cover_id,
+        (SELECT source_type FROM covers WHERE covers.id = albums.cover_id) AS cover_source,
+        album_tracks.track_id AS track_id,
+        album_tracks.position AS track_position
+       FROM albums
+       LEFT JOIN album_tracks ON album_tracks.album_id = albums.id
+       WHERE albums.album_artist IS NOT NULL AND TRIM(albums.album_artist) != ''
+       ORDER BY albums.title COLLATE NOCASE, album_tracks.position ASC`,
+    );
+
+    for (const row of albumRows) {
+      const albumId = String(row.album_id);
+      const sourceName = normalizeArtistDisplayName(row.album_artist);
+      const coverId = textOrNull(row.cover_id);
+      const coverSource = row.cover_source;
+      const trackId = textOrNull(row.track_id);
+      const trackPosition = Number(row.track_position ?? trackLinks.size);
+
+      for (const name of splitArtistNames(sourceName)) {
+        const artist = ensureArtist(name, { trackId, albumId });
+        linkAlbum(artist, albumId, sourceName);
+        considerCover(artist, albumId, coverId, coverSource);
+        if (trackId) {
+          artist.trackIds.add(trackId);
+          trackLinks.set(`${artist.id}:${trackId}`, {
+            artistId: artist.id,
+            trackId,
+            sourceName,
+            position: Number.isFinite(trackPosition) ? trackPosition : trackLinks.size,
+          });
+        }
+      }
+      await maybeYield();
+    }
+
+    this.run('DROP TABLE IF EXISTS temp.artist_rebuild_artists');
+    this.run('DROP TABLE IF EXISTS temp.artist_rebuild_artist_tracks');
+    this.run('DROP TABLE IF EXISTS temp.artist_rebuild_artist_albums');
+    this.run('CREATE TEMP TABLE artist_rebuild_artists AS SELECT * FROM artists WHERE 0');
+    this.run('CREATE TEMP TABLE artist_rebuild_artist_tracks AS SELECT * FROM artist_tracks WHERE 0');
+    this.run('CREATE TEMP TABLE artist_rebuild_artist_albums AS SELECT * FROM artist_albums WHERE 0');
+
+    const artists = Array.from(stats.values());
+    for (let index = 0; index < artists.length; index += yieldEveryRows) {
+      const batch = artists.slice(index, index + yieldEveryRows);
+      this.transaction(() => {
+        for (const artist of batch) {
+          this.run(
+            `INSERT OR REPLACE INTO artist_rebuild_artists (
+              id, artist_key, name, sort_name, role, track_count, album_count, cover_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            artist.id,
+            artist.key,
+            artist.name,
+            artist.key,
+            'track',
+            artist.trackIds.size,
+            artist.albumIds.size,
+            artist.coverId,
+            timestamp,
+            timestamp,
+          );
+        }
+      });
+      await yieldToMainLoop();
+    }
+
+    const trackLinkList = Array.from(trackLinks.values());
+    for (let index = 0; index < trackLinkList.length; index += yieldEveryRows) {
+      const batch = trackLinkList.slice(index, index + yieldEveryRows);
+      this.transaction(() => {
+        for (const link of batch) {
+          this.run(
+            `INSERT OR IGNORE INTO artist_rebuild_artist_tracks (artist_id, track_id, source_name, position)
+             VALUES (?, ?, ?, ?)`,
+            link.artistId,
+            link.trackId,
+            link.sourceName,
+            link.position,
+          );
+        }
+      });
+      await yieldToMainLoop();
+    }
+
+    const albumLinkList = Array.from(albumLinks.values());
+    for (let index = 0; index < albumLinkList.length; index += yieldEveryRows) {
+      const batch = albumLinkList.slice(index, index + yieldEveryRows);
+      this.transaction(() => {
+        for (const link of batch) {
+          this.run(
+            `INSERT OR IGNORE INTO artist_rebuild_artist_albums (artist_id, album_id, source_name)
+             VALUES (?, ?, ?)`,
+            link.artistId,
+            link.albumId,
+            link.sourceName,
+          );
+        }
+      });
+      await yieldToMainLoop();
+    }
+
+    this.transaction(() => {
+      this.run('DELETE FROM artist_tracks');
+      this.run('DELETE FROM artist_albums');
+      this.run('DELETE FROM artists');
+      this.run('INSERT INTO artists SELECT * FROM artist_rebuild_artists');
+      this.run('INSERT INTO artist_tracks SELECT * FROM artist_rebuild_artist_tracks');
+      this.run('INSERT INTO artist_albums SELECT * FROM artist_rebuild_artist_albums');
+    });
+
+    this.run('DROP TABLE IF EXISTS temp.artist_rebuild_artists');
+    this.run('DROP TABLE IF EXISTS temp.artist_rebuild_artist_tracks');
+    this.run('DROP TABLE IF EXISTS temp.artist_rebuild_artist_albums');
+  }
+
   seedAlbumsForTracks(
     trackIds: readonly string[],
     albumService: AlbumService,
     now = nowIso(),
     _options: { albumMergeStrategy?: AlbumMergeStrategy } = {},
   ): void {
+    void _options;
     const uniqueTrackIds = Array.from(
       new Set(trackIds.filter((trackId) => typeof trackId === 'string' && trackId.trim()).map((trackId) => trackId.trim())),
     );

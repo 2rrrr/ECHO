@@ -25,6 +25,12 @@ import {
   runMainBackgroundTask,
   runNonCriticalMainWork,
 } from '../diagnostics/MainProcessWorkScheduler';
+import {
+  logLibraryScanPerf,
+  shouldCheckpointScanHealthForDiagnostics,
+  shouldDisableScanGuardForDiagnostics,
+  shouldDisableScanHealthCheckForDiagnostics,
+} from '../diagnostics/LibraryScanPerfDiagnostics';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
@@ -175,6 +181,7 @@ type LibraryServiceDependencies = {
 };
 
 const broadcastLibraryChanged = (): void => {
+  const startedAtMs = performance.now();
   const windows = (electron as unknown as {
     BrowserWindow?: {
       getAllWindows: () => Array<{ webContents: { send: (channel: string, payload?: unknown) => void } }>;
@@ -184,6 +191,11 @@ const broadcastLibraryChanged = (): void => {
   for (const window of windows) {
     window.webContents.send(IpcChannels.LibraryChanged);
   }
+  logLibraryScanPerf({
+    phase: 'broadcastLibraryChanged',
+    durationMs: performance.now() - startedAtMs,
+    batchSize: windows.length,
+  });
 };
 
 const romanizedSearchPattern = /[a-z]{2,}/iu;
@@ -2670,10 +2682,27 @@ export const createLibraryService = (
     },
     onDeferredGroupingRefresh: broadcastLibraryChanged,
     createDatabaseScanGuard: (scanStatus) =>
-      readSettings().dataProtectionDisabled === true
+      shouldDisableScanGuardForDiagnostics()
+        ? (logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'createDatabaseScanGuard',
+            detail: 'scan guard disabled for diagnostics',
+          }), null)
+        : readSettings().dataProtectionDisabled === true
         ? null
         : createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
     createCompletedScanSnapshot: async (scanStatus) => {
+      if (shouldDisableScanGuardForDiagnostics()) {
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'createCompletedScanSnapshot',
+          detail: 'scan guard disabled for diagnostics',
+        });
+        return;
+      }
+
       if (
         scanStatus.addedTracks === 0 &&
         scanStatus.updatedTracks === 0 &&
@@ -2711,12 +2740,45 @@ export const createLibraryService = (
       await restore();
     },
     checkDatabaseHealth: (scanStatus) => {
+      if (shouldDisableScanHealthCheckForDiagnostics()) {
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'checkDatabaseHealth',
+          detail: 'scan health check disabled for diagnostics',
+        });
+        return;
+      }
+
       try {
-        assertDatabaseHealthy(databasePath);
-        if (dependencies.checkpointDatabase) {
-          dependencies.checkpointDatabase('scan-health-check');
+        const healthStartedAtMs = performance.now();
+        assertDatabaseHealthy(databasePath, { cache: true });
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'checkDatabaseHealth.assert_cached',
+          durationMs: performance.now() - healthStartedAtMs,
+        });
+        if (shouldCheckpointScanHealthForDiagnostics()) {
+          const checkpointStartedAtMs = performance.now();
+          if (dependencies.checkpointDatabase) {
+            dependencies.checkpointDatabase('scan-health-check');
+          } else {
+            database.pragma('wal_checkpoint(PASSIVE)');
+          }
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            durationMs: performance.now() - checkpointStartedAtMs,
+          });
         } else {
-          database.pragma('wal_checkpoint(PASSIVE)');
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            detail: 'skipped_by_default',
+          });
         }
       } catch (error) {
         recordLibraryDatabaseMaintenanceEvent({

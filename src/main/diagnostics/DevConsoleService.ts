@@ -13,13 +13,14 @@ import type {
 } from '../../shared/types/diagnostics';
 import { recordDiagnosticConsoleProblem } from './ExceptionRecorder';
 import { getPlaybackPerformanceSnapshot } from './PlaybackPerformanceDiagnostics';
+import { getActiveLibraryScanPerfContext, isLibraryScanPerfDiagnosticsEnabled } from './LibraryScanPerfDiagnostics';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
 const maxEntries = 2500;
 const maxLineLength = 4000;
-const mainStallCheckIntervalMs = 1_000;
-const mainStallThresholdMs = 750;
+const mainStallCheckIntervalMs = 500;
+const mainStallThresholdMs = 1_000;
 const performanceStallLogCooldownMs = 10_000;
 
 const pendingChunks = new Map<DiagnosticConsoleSource, string>();
@@ -573,14 +574,23 @@ export const initializePerformanceStallMonitor = (
       return;
     }
 
+    const scanContext = getActiveLibraryScanPerfContext();
     const payload: DiagnosticPerformanceStallPayload = {
       source: 'main',
       kind: 'event_loop',
       durationMs: driftMs,
       thresholdMs: mainStallThresholdMs,
       timestamp: new Date().toISOString(),
-      details: { expectedIntervalMs: mainStallCheckIntervalMs },
+      details: {
+        expectedIntervalMs: mainStallCheckIntervalMs,
+        libraryScan: scanContext ?? undefined,
+      },
     };
+    if (isLibraryScanPerfDiagnosticsEnabled()) {
+      console.warn(
+        `[library-scan-perf] main_heartbeat durationMs=${Math.round(driftMs)} thresholdMs=${mainStallThresholdMs} jobId=${scanContext?.jobId ?? 'unknown'} phase=${scanContext?.phase ?? 'unknown'}`,
+      );
+    }
 
     Promise.resolve(getAudioSnapshot?.() ?? null)
       .then((audioSnapshot) => {

@@ -30,6 +30,11 @@ import { FileIdentityService, QUICK_HASH_VERSION, type FileIdentityObservation }
 import { createCueTrackPath, readCueSheet, readEmbeddedCueSheet, resolveCueTrack } from '../audio/CueSheet';
 import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { preloadSearchIndexRomanizer } from './SearchIndexTokens';
+import {
+  logLibraryScanPerf,
+  setActiveLibraryScanPerfContext,
+  type LibraryScanPerfContext,
+} from '../diagnostics/LibraryScanPerfDiagnostics';
 
 type ParsedScanItem = {
   file: ScannedAudioFile;
@@ -95,6 +100,7 @@ const normalScanWriteBatchSize = 512;
 const reducedScanWriteBatchSize = 8;
 const scanFileSystemOperationTimeoutMs = 10_000;
 const scanDiscoveryYieldEveryEntries = 32;
+const cueExpansionYieldFileDelta = 32;
 const scanPressureYieldDelayMs = 8;
 const maxStoredScanErrors = 200;
 const scanErrorSummaryThreshold = 20;
@@ -215,6 +221,7 @@ export class ScanJobQueue {
   private readonly pendingDatabaseRecoveries = new Map<string, { snapshot: unknown | null; status: LibraryScanStatus; error: unknown }>();
   private coverCacheDir: string;
   private deferredGroupingRefreshTimer: NodeJS.Timeout | null = null;
+  private deferredGroupingNeedsAlbumRefresh = false;
 
   constructor(
     private readonly store: LibraryStore,
@@ -255,7 +262,14 @@ export class ScanJobQueue {
   }
 
   scanFolder(folder: LibraryFolder, options: LibraryScanOptions = {}): LibraryScanStatus {
+    const startedAtMs = performance.now();
     const job = this.store.createScanJob(folder.id);
+    this.logPerf({
+      jobId: job.id,
+      folderId: folder.id,
+      phase: 'scanFolder_createScanJob',
+      durationMs: performance.now() - startedAtMs,
+    });
     this.enqueueScanJob(job.id, () =>
       this.runJob(
         job.id,
@@ -275,7 +289,15 @@ export class ScanJobQueue {
       throw new Error(`Too many local rescan paths: ${paths.length} > ${maxLocalScanPathCount}`);
     }
 
+    const startedAtMs = performance.now();
     const job = this.store.createScanJob(folder.id);
+    this.logPerf({
+      jobId: job.id,
+      folderId: folder.id,
+      phase: 'scanPaths_createScanJob',
+      durationMs: performance.now() - startedAtMs,
+      fileCount: paths.length,
+    });
     this.enqueueScanJob(job.id, () =>
       this.runPathsJob(
         job.id,
@@ -291,7 +313,14 @@ export class ScanJobQueue {
   }
 
   scanStoredTracks(folder: LibraryFolder, options: LibraryScanOptions = {}): LibraryScanStatus {
+    const startedAtMs = performance.now();
     const job = this.store.createScanJob(folder.id);
+    this.logPerf({
+      jobId: job.id,
+      folderId: folder.id,
+      phase: 'scanStoredTracks_createScanJob',
+      durationMs: performance.now() - startedAtMs,
+    });
     this.enqueueScanJob(job.id, () =>
       this.runStoredTracksJob(
         job.id,
@@ -335,6 +364,7 @@ export class ScanJobQueue {
   }
 
   private enqueueScanJob(jobId: string, runJob: () => Promise<void>): void {
+    const enqueuedAtMs = performance.now();
     const run = this.scanJobTail
       .catch(() => undefined)
       .then(async () => {
@@ -343,12 +373,20 @@ export class ScanJobQueue {
           return;
         }
 
+        this.logPerf({
+          jobId,
+          folderId: current?.folderId,
+          phase: 'enqueueScanJob_first_tick',
+          durationMs: performance.now() - enqueuedAtMs,
+        });
+        await yieldToMainLoop();
         await runJob();
       })
       .finally(async () => {
         this.runningJobs.delete(jobId);
         this.notifyScanSettled(jobId);
         await this.recoverPendingDatabaseFailure(jobId);
+        setActiveLibraryScanPerfContext(null);
       });
 
     this.runningJobs.set(jobId, run);
@@ -372,9 +410,19 @@ export class ScanJobQueue {
         phase: 'discovering',
         startedAt: new Date().toISOString(),
       });
+      this.setPerfPhase(jobId, folder, 'discovering');
+      await yieldToMainLoop();
 
-      const discovery = await this.discoverFiles(jobId, folder, errors, progress, { suppressDiscoveredTotal: changesOnly });
-      const cacheStatesByPath = changesOnly ? this.store.getTrackCacheStatesByFolder(folder.id) : undefined;
+      const discovery = await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'discoverFiles' },
+        () => this.discoverFiles(jobId, folder, errors, progress, { suppressDiscoveredTotal: changesOnly }),
+      );
+      const cacheStatesByPath = changesOnly
+        ? await this.measureScanPhase(
+            { jobId, folderId: folder.id, phase: 'getTrackCacheStatesByFolder', fileCount: discovery.files.length },
+            () => this.store.getTrackCacheStatesByFolder(folder.id),
+          )
+        : undefined;
       const files = changesOnly && cacheStatesByPath
         ? this.filterAddedFiles(discovery.files, cacheStatesByPath)
         : discovery.files;
@@ -424,8 +472,13 @@ export class ScanJobQueue {
         phase: 'discovering',
         startedAt: new Date().toISOString(),
       });
+      this.setPerfPhase(jobId, folder, 'discovering', paths.length);
+      await yieldToMainLoop();
 
-      const files = await this.normalizeLocalRescanPaths(folder, paths);
+      const files = await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'normalizeLocalRescanPaths', fileCount: paths.length },
+        () => this.normalizeLocalRescanPaths(folder, paths),
+      );
       progress.flushNow({
         phase: 'discovering',
         totalFiles: files.length,
@@ -461,8 +514,12 @@ export class ScanJobQueue {
         startedAt: new Date().toISOString(),
       });
 
+      this.setPerfPhase(jobId, folder, 'discovering');
       await yieldToMainLoop();
-      const files = await this.collectStoredTrackRescanFiles(jobId, folder, mode, progress, errors);
+      const files = await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'collectStoredTrackRescanFiles' },
+        () => this.collectStoredTrackRescanFiles(jobId, folder, mode, progress, errors),
+      );
       progress.flushNow({
         phase: 'discovering',
         totalFiles: files.length,
@@ -522,7 +579,10 @@ export class ScanJobQueue {
     let coverCount = 0;
     const addedTrackIds: string[] = [];
     const reducedScanPressure = forceReducedScanPressure || (await this.resolveBooleanOption(this.shouldReduceScanPressure));
-    const scanGuard = await Promise.resolve(this.createDatabaseScanGuard(this.getScanStatus(jobId)));
+    const scanGuard = await this.measureScanPhase(
+      { jobId, folderId: folder.id, phase: 'createDatabaseScanGuard', fileCount: files.length },
+      () => Promise.resolve(this.createDatabaseScanGuard(this.getScanStatus(jobId))),
+    );
     const searchIndexRomanizerReady = preloadSearchIndexRomanizer();
 
     try {
@@ -531,69 +591,72 @@ export class ScanJobQueue {
         totalFiles: files.length,
         errors,
       });
+      this.setPerfPhase(jobId, folder, 'checking_cache', files.length);
 
       const changedFiles: ChangedFile[] = [];
       const coverRepairItems: CoverRepairItem[] = [];
       const identityUpdateItems: IdentityUpdateItem[] = [];
-      const cacheStatesByPath = cacheStatesOverride ?? this.store.getTrackCacheStatesByFolder(folder.id);
+      const cacheStatesByPath = cacheStatesOverride ?? (await this.getTrackCacheStatesForFiles(jobId, folder, files));
       let checkedFiles = 0;
       const cacheYieldFileDelta = reducedScanPressure ? 64 : cacheCheckYieldFileDelta;
 
-      for (const file of files) {
-        this.throwIfCancelled(jobId);
-        checkedFiles += 1;
+      await this.measureScanPhase({ jobId, folderId: folder.id, phase: 'checking_cache', fileCount: files.length }, async () => {
+        for (const file of files) {
+          this.throwIfCancelled(jobId);
+          checkedFiles += 1;
 
-        const existing = cacheStatesByPath.get(resolve(file.path)) ?? null;
+          const existing = cacheStatesByPath.get(resolve(file.path)) ?? null;
 
-        const unchanged = existing && existing.sizeBytes === file.sizeBytes && existing.mtimeMs === file.mtimeMs;
-        const forceReadEmbeddedTags = this.shouldForceReadEmbeddedTags(mode, existing) || this.shouldBackfillPlaceholderMetadata(existing);
+          const unchanged = existing && existing.sizeBytes === file.sizeBytes && existing.mtimeMs === file.mtimeMs;
+          const forceReadEmbeddedTags = this.shouldForceReadEmbeddedTags(mode, existing) || this.shouldBackfillPlaceholderMetadata(existing);
 
-        if (unchanged && !forceReadEmbeddedTags) {
-          if (this.hasCompleteCoverCache(existing)) {
-            if (!reducedScanPressure && !this.hasIdentityObservation(existing)) {
-              identityUpdateItems.push({
+          if (unchanged && !forceReadEmbeddedTags) {
+            if (this.hasCompleteCoverCache(existing)) {
+              if (!reducedScanPressure && !this.hasIdentityObservation(existing)) {
+                identityUpdateItems.push({
+                  file,
+                  state: existing,
+                  identity: null,
+                });
+              }
+              processedFiles += 1;
+              skippedFiles += 1;
+              progress.update({
+                processedFiles,
+                skippedFiles,
+              });
+              if (checkedFiles % cacheYieldFileDelta === 0) {
+                await this.yieldForScanPressure(reducedScanPressure);
+              }
+              continue;
+            }
+
+            if (this.canRepairCoverCache(existing)) {
+              coverRepairItems.push({
                 file,
                 state: existing,
+                cover: null,
                 identity: null,
               });
+              continue;
             }
-            processedFiles += 1;
-            skippedFiles += 1;
-            progress.update({
-              processedFiles,
-              skippedFiles,
-            });
-            if (checkedFiles % cacheYieldFileDelta === 0) {
-              await this.yieldForScanPressure(reducedScanPressure);
-            }
-            continue;
-          }
 
-          if (this.canRepairCoverCache(existing)) {
-            coverRepairItems.push({
+            changedFiles.push({
               file,
-              state: existing,
-              cover: null,
-              identity: null,
+              existingTrackId: existing.id,
             });
             continue;
           }
 
           changedFiles.push({
             file,
-            existingTrackId: existing.id,
+            existingTrackId: existing?.id ?? null,
           });
-          continue;
+          if (checkedFiles % cacheYieldFileDelta === 0) {
+            await this.yieldForScanPressure(reducedScanPressure);
+          }
         }
-
-        changedFiles.push({
-          file,
-          existingTrackId: existing?.id ?? null,
-        });
-        if (checkedFiles % cacheYieldFileDelta === 0) {
-          await this.yieldForScanPressure(reducedScanPressure);
-        }
-      }
+      });
 
       progress.flushNow({
         phase: 'reading_metadata',
@@ -610,59 +673,62 @@ export class ScanJobQueue {
       const metadataConcurrency = reducedOrLargeScanPressure ? 1 : this.metadataConcurrency;
       const coverConcurrency = reducedOrLargeScanPressure ? 1 : this.coverConcurrency;
 
-      await runMainBackgroundTask('library-scan:reading_metadata', () =>
-        this.processWithConcurrency(changedFiles, metadataConcurrency, async (item) => {
-          this.throwIfCancelled(jobId);
+      await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'metadata_read_cover_extract', fileCount: changedFiles.length, batchSize: metadataConcurrency },
+        () => runMainBackgroundTask('library-scan:reading_metadata', () =>
+          this.processWithConcurrency(changedFiles, metadataConcurrency, async (item) => {
+            this.throwIfCancelled(jobId);
 
-          let metadata: MetadataResult;
-          let identity: FileIdentityObservation | null = null;
-
-          try {
-            metadata = await this.metadataReader.read(item.file.path);
-            identity = reducedOrLargeScanPressure ? null : await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-            this.collectWorkerMessages(errors, item.file.path, 'metadata', metadata.warnings, metadata.errors);
-          } catch (error) {
-            const message = compactScanMessage(error instanceof Error ? error.message : String(error));
-            errors.push(`${item.file.path}: metadata: ${message}`);
-            metadata = this.createFallbackMetadata(item.file, message);
-            identity = reducedOrLargeScanPressure ? null : await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-          }
-
-          try {
-            let cover: CoverResult | null = null;
+            let metadata: MetadataResult;
+            let identity: FileIdentityObservation | null = null;
 
             try {
-              cover = await this.coverExtractor.extract(item.file.path, {
-                cacheRoot: this.coverCacheDir,
-                metadata,
-                now: coverTimestamp,
+              metadata = await this.metadataReader.read(item.file.path);
+              identity = reducedOrLargeScanPressure ? null : await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+              this.collectWorkerMessages(errors, item.file.path, 'metadata', metadata.warnings, metadata.errors);
+            } catch (error) {
+              const message = compactScanMessage(error instanceof Error ? error.message : String(error));
+              errors.push(`${item.file.path}: metadata: ${message}`);
+              metadata = this.createFallbackMetadata(item.file, message);
+              identity = reducedOrLargeScanPressure ? null : await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+            }
+
+            try {
+              let cover: CoverResult | null = null;
+
+              try {
+                cover = await this.coverExtractor.extract(item.file.path, {
+                  cacheRoot: this.coverCacheDir,
+                  metadata,
+                  now: coverTimestamp,
+                });
+                this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
+                coverCount += 1;
+              } catch (error) {
+                errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
+              }
+
+              parsedItems.push({
+                ...item,
+                metadata: this.stripEmbeddedCoverData(metadata),
+                cover,
+                identity,
               });
-              this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
-              coverCount += 1;
             } catch (error) {
               errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
             }
 
-            parsedItems.push({
-              ...item,
-              metadata: this.stripEmbeddedCoverData(metadata),
-              cover,
-              identity,
+            processedFiles += 1;
+            progress.update({
+              phase: 'reading_metadata',
+              processedFiles,
+              skippedFiles,
+              coverCount,
+              errors,
             });
-          } catch (error) {
-            errors.push(`${item.file.path}: cover: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
-          }
-
-          processedFiles += 1;
-          progress.update({
-            phase: 'reading_metadata',
-            processedFiles,
-            skippedFiles,
-            coverCount,
-            errors,
-          });
-          await this.yieldForScanPressure(reducedScanPressure);
-        }),
+            await this.yieldForScanPressure(reducedScanPressure);
+          }),
+        ),
       );
 
       this.throwIfCancelled(jobId);
@@ -675,8 +741,10 @@ export class ScanJobQueue {
         errors,
       });
 
-      await runMainBackgroundTask('library-scan:extracting_covers', () =>
-        this.processWithConcurrency(coverRepairItems, coverConcurrency, async (item) => {
+      await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'cover_repair', fileCount: coverRepairItems.length, batchSize: coverConcurrency },
+        () => runMainBackgroundTask('library-scan:extracting_covers', () =>
+          this.processWithConcurrency(coverRepairItems, coverConcurrency, async (item) => {
           this.throwIfCancelled(jobId);
 
           try {
@@ -715,14 +783,18 @@ export class ScanJobQueue {
             errors,
           });
           await this.yieldForScanPressure(reducedScanPressure);
-        }),
+          }),
+        ),
       );
 
-      await this.processWithConcurrency(identityUpdateItems, metadataConcurrency, async (item) => {
-        this.throwIfCancelled(jobId);
-        item.identity = await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-        await this.yieldForScanPressure(reducedScanPressure);
-      });
+      await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'identity_update', fileCount: identityUpdateItems.length, batchSize: metadataConcurrency },
+        () => this.processWithConcurrency(identityUpdateItems, metadataConcurrency, async (item) => {
+          this.throwIfCancelled(jobId);
+          item.identity = await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+          await this.yieldForScanPressure(reducedScanPressure);
+        }),
+      );
 
       this.throwIfCancelled(jobId);
       const timestamp = new Date().toISOString();
@@ -732,25 +804,30 @@ export class ScanJobQueue {
         searchTerms: null,
       }));
 
-      await searchIndexRomanizerReady;
-      await this.processWithConcurrency(preparedParsedItems, metadataConcurrency, async (item) => {
-        this.throwIfCancelled(jobId);
-        item.searchTerms = await this.store.prepareTrackSearchTerms({
-          ...item.file,
-          ...item.metadata.fields,
-          id: item.trackId,
-          coverId: null,
-          fieldSources: item.metadata.fieldSources,
-          embeddedMetadataStatus: item.metadata.embeddedMetadataStatus,
-          embeddedCoverStatus: item.metadata.embeddedCoverStatus,
-          metadataStatus: item.metadata.status,
-          warnings: item.metadata.warnings,
-          errors: item.metadata.errors,
-          updatedAt: timestamp,
-          ...this.toTrackIdentityWrite(item.identity),
-        });
-        await this.yieldForScanPressure(reducedScanPressure);
-      });
+      await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'prepareTrackSearchTerms', fileCount: preparedParsedItems.length, batchSize: metadataConcurrency },
+        async () => {
+          await searchIndexRomanizerReady;
+          await this.processWithConcurrency(preparedParsedItems, metadataConcurrency, async (item) => {
+            this.throwIfCancelled(jobId);
+            item.searchTerms = await this.store.prepareTrackSearchTerms({
+              ...item.file,
+              ...item.metadata.fields,
+              id: item.trackId,
+              coverId: null,
+              fieldSources: item.metadata.fieldSources,
+              embeddedMetadataStatus: item.metadata.embeddedMetadataStatus,
+              embeddedCoverStatus: item.metadata.embeddedCoverStatus,
+              metadataStatus: item.metadata.status,
+              warnings: item.metadata.warnings,
+              errors: item.metadata.errors,
+              updatedAt: timestamp,
+              ...this.toTrackIdentityWrite(item.identity),
+            });
+            await this.yieldForScanPressure(reducedScanPressure);
+          });
+        },
+      );
 
       this.throwIfCancelled(jobId);
       await yieldToMainLoop();
@@ -766,7 +843,12 @@ export class ScanJobQueue {
         errors,
       });
 
-      await runMainBackgroundTask('library-scan:writing_database', async () => {
+      const writeBatchSize = reducedScanPressure ? reducedScanWriteBatchSize : largeScan ? largeScanWriteBatchSize : normalScanWriteBatchSize;
+      let seedAlbumsDurationMs = 0;
+      let seedAlbumsBatchCount = 0;
+      await this.measureScanPhase(
+        { jobId, folderId: folder.id, phase: 'writing_database_transaction', fileCount: preparedParsedItems.length, batchSize: writeBatchSize },
+        () => runMainBackgroundTask('library-scan:writing_database', async () => {
         const coverChangedTrackIds: string[] = [];
         this.store.transaction(() => {
           this.store.upsertScanDirectorySnapshots(folder.id, directorySnapshots, timestamp);
@@ -802,10 +884,12 @@ export class ScanJobQueue {
           }
         });
         if (coverChangedTrackIds.length > 0) {
+          const seedStartedAtMs = performance.now();
           this.store.seedAlbumsForTracks(coverChangedTrackIds, this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+          seedAlbumsDurationMs += performance.now() - seedStartedAtMs;
+          seedAlbumsBatchCount += 1;
         }
 
-        const writeBatchSize = reducedScanPressure ? reducedScanWriteBatchSize : largeScan ? largeScanWriteBatchSize : normalScanWriteBatchSize;
         for (let index = 0; index < preparedParsedItems.length; index += writeBatchSize) {
           const batch = preparedParsedItems.slice(index, index + writeBatchSize);
           const changedTrackIds: string[] = [];
@@ -836,7 +920,10 @@ export class ScanJobQueue {
               changedTrackIds.push(item.trackId);
             }
           });
+          const seedStartedAtMs = performance.now();
           this.store.seedAlbumsForTracks(changedTrackIds, this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+          seedAlbumsDurationMs += performance.now() - seedStartedAtMs;
+          seedAlbumsBatchCount += 1;
 
           progress.flushNow({
             phase: 'writing_database',
@@ -850,10 +937,20 @@ export class ScanJobQueue {
           });
           await this.yieldForScanPressure(reducedScanPressure);
         }
+        }),
+      );
+      this.logPerf({
+        jobId,
+        folderId: folder.id,
+        phase: 'seedAlbumsForTracks',
+        durationMs: seedAlbumsDurationMs,
+        fileCount: preparedParsedItems.length,
+        batchSize: seedAlbumsBatchCount,
       });
 
       let shouldScheduleGroupingRefresh = false;
-      this.store.transaction(() => {
+      await this.measureScanPhase({ jobId, folderId: folder.id, phase: 'finish_scan_transaction', fileCount: files.length }, () => {
+        this.store.transaction(() => {
         progress.flushNow({
           phase: 'grouping_albums',
           processedFiles,
@@ -900,17 +997,41 @@ export class ScanJobQueue {
           errors,
           finishedAt: new Date().toISOString(),
         });
+        });
       });
       if (!skipDeferredGroupingRefresh && shouldScheduleGroupingRefresh) {
-        this.scheduleDeferredGroupingRefresh();
+        this.scheduleDeferredGroupingRefresh(removedTracks > 0);
       }
       try {
         const completedStatus = this.getScanStatus(jobId);
-        this.checkDatabaseHealth(completedStatus);
-        try {
-          await Promise.resolve(this.createCompletedScanSnapshot(completedStatus));
-        } catch (snapshotError) {
-          console.warn('[library-scan] Failed to create completed scan recovery snapshot:', snapshotError);
+        if (!this.hasCompletedScanMaintenanceChanges(completedStatus)) {
+          this.logPerf({
+            jobId,
+            folderId: folder.id,
+            phase: 'checkDatabaseHealth',
+            fileCount: files.length,
+            detail: 'skipped_no_library_changes',
+          });
+          this.logPerf({
+            jobId,
+            folderId: folder.id,
+            phase: 'createCompletedScanSnapshot',
+            fileCount: files.length,
+            detail: 'skipped_no_library_changes',
+          });
+        } else {
+          await this.measureScanPhase(
+            { jobId, folderId: folder.id, phase: 'checkDatabaseHealth', fileCount: files.length },
+            () => this.checkDatabaseHealth(completedStatus),
+          );
+          try {
+            await this.measureScanPhase(
+              { jobId, folderId: folder.id, phase: 'createCompletedScanSnapshot', fileCount: files.length },
+              () => Promise.resolve(this.createCompletedScanSnapshot(completedStatus)),
+            );
+          } catch (snapshotError) {
+            console.warn('[library-scan] Failed to create completed scan recovery snapshot:', snapshotError);
+          }
         }
       } catch (error) {
         const status = this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
@@ -1048,8 +1169,13 @@ export class ScanJobQueue {
       throw error;
     }
 
+    const expandedFiles = await this.measureScanPhase(
+      { jobId, folderId: folder.id, phase: 'expandCueTracks', fileCount: files.length },
+      () => this.expandCueTracks(files, folder, errors, jobId),
+    );
+
     return {
-      files: this.expandCueTracks(files, folder, errors),
+      files: expandedFiles,
       inaccessibleDirectories: Array.from(inaccessibleDirectories),
       protectedPaths: Array.from(protectedPaths),
       directorySnapshots: updatedSnapshots,
@@ -1067,6 +1193,21 @@ export class ScanJobQueue {
     }
 
     return files.filter((file) => !existingPaths.has(this.pathCompareValue(resolve(file.path))));
+  }
+
+  private async getTrackCacheStatesForFiles(
+    jobId: string,
+    folder: LibraryFolder,
+    files: readonly ScannedAudioFile[],
+  ): Promise<Map<string, StoredTrackCoverState>> {
+    if (files.length === 0) {
+      return new Map();
+    }
+
+    return this.measureScanPhase(
+      { jobId, folderId: folder.id, phase: 'getTrackCacheStatesByPaths', fileCount: files.length, batchSize: 400 },
+      () => this.store.getTrackCacheStatesByPaths(folder.id, files.map((file) => file.path), { batchSize: 400 }),
+    );
   }
 
   private async normalizeLocalRescanPaths(folder: LibraryFolder, paths: string[]): Promise<ScannedAudioFile[]> {
@@ -1100,7 +1241,7 @@ export class ScanJobQueue {
       }
     }
 
-    return this.expandCueTracks(files, folder, []);
+    return this.expandCueTracks(files, folder, [], undefined);
   }
 
   private isLocalRescanCandidate(filePath: string): boolean {
@@ -1355,12 +1496,25 @@ export class ScanJobQueue {
     }));
   }
 
-  private expandCueTracks(files: ScannedAudioFile[], folder: LibraryFolder, errors: string[]): ScannedAudioFile[] {
+  private async expandCueTracks(
+    files: ScannedAudioFile[],
+    folder: LibraryFolder,
+    errors: string[],
+    jobId: string | undefined,
+  ): Promise<ScannedAudioFile[]> {
     const sidecarTrackFilesByCuePath = new Map<string, ScannedAudioFile[]>();
     const suppressedAudioPaths = new Set<string>();
+    let checkedFiles = 0;
 
     for (const file of files) {
+      if (jobId) {
+        this.throwIfCancelled(jobId);
+      }
+      checkedFiles += 1;
       if (extname(file.path).toLowerCase() !== '.cue') {
+        if (checkedFiles % cueExpansionYieldFileDelta === 0) {
+          await yieldToMainLoop();
+        }
         continue;
       }
 
@@ -1377,22 +1531,38 @@ export class ScanJobQueue {
       } catch (error) {
         errors.push(`${file.path}: cue: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
       }
+      if (checkedFiles % cueExpansionYieldFileDelta === 0) {
+        await yieldToMainLoop();
+      }
     }
 
     const expanded: ScannedAudioFile[] = [];
     for (const file of files) {
+      if (jobId) {
+        this.throwIfCancelled(jobId);
+      }
+      checkedFiles += 1;
       const normalizedPath = resolve(file.path);
       const sidecarTracks = sidecarTrackFilesByCuePath.get(normalizedPath);
       if (sidecarTracks) {
         expanded.push(...sidecarTracks);
+        if (checkedFiles % cueExpansionYieldFileDelta === 0) {
+          await yieldToMainLoop();
+        }
         continue;
       }
 
       if (extname(file.path).toLowerCase() === '.cue' || suppressedAudioPaths.has(this.pathCompareValue(normalizedPath))) {
+        if (checkedFiles % cueExpansionYieldFileDelta === 0) {
+          await yieldToMainLoop();
+        }
         continue;
       }
 
       expanded.push(...this.expandEmbeddedCueTracks(file));
+      if (checkedFiles % cueExpansionYieldFileDelta === 0) {
+        await yieldToMainLoop();
+      }
     }
 
     return expanded;
@@ -1508,6 +1678,48 @@ export class ScanJobQueue {
     }
   }
 
+  private hasCompletedScanMaintenanceChanges(status: LibraryScanStatus): boolean {
+    return (
+      status.addedTracks > 0 ||
+      status.updatedTracks > 0 ||
+      status.removedTracks > 0 ||
+      (status.coverCount ?? 0) > 0
+    );
+  }
+
+  private setPerfPhase(
+    jobId: string,
+    folder: Pick<LibraryFolder, 'id'>,
+    phase: string,
+    fileCount?: number,
+    batchSize?: number,
+  ): void {
+    setActiveLibraryScanPerfContext({
+      jobId,
+      folderId: folder.id,
+      phase,
+      fileCount,
+      batchSize,
+    });
+  }
+
+  private logPerf(payload: Parameters<typeof logLibraryScanPerf>[0]): void {
+    logLibraryScanPerf(payload);
+  }
+
+  private async measureScanPhase<T>(context: LibraryScanPerfContext, work: () => Promise<T> | T): Promise<T> {
+    setActiveLibraryScanPerfContext(context);
+    const startedAtMs = performance.now();
+    try {
+      return await work();
+    } finally {
+      this.logPerf({
+        ...context,
+        durationMs: performance.now() - startedAtMs,
+      });
+    }
+  }
+
   private async yieldForScanPressure(initialReducedScanPressure = false): Promise<void> {
     await yieldToMainLoop();
     if (initialReducedScanPressure || (await this.resolveBooleanOption(this.shouldReduceScanPressure))) {
@@ -1515,7 +1727,8 @@ export class ScanJobQueue {
     }
   }
 
-  private scheduleDeferredGroupingRefresh(): void {
+  private scheduleDeferredGroupingRefresh(needsAlbumRefresh = false): void {
+    this.deferredGroupingNeedsAlbumRefresh ||= needsAlbumRefresh;
     if (this.deferredGroupingRefreshTimer) {
       return;
     }
@@ -1533,13 +1746,18 @@ export class ScanJobQueue {
       return;
     }
 
+    const needsAlbumRefresh = this.deferredGroupingNeedsAlbumRefresh;
+    this.deferredGroupingNeedsAlbumRefresh = false;
     try {
-      await runMainBackgroundTask('library-scan:grouping_albums', () => {
-        this.store.transaction(() => {
-          this.store.refreshAlbums(this.albumService, undefined, { albumMergeStrategy: this.getAlbumMergeStrategy() });
-          this.store.refreshArtists();
-        });
-      });
+      await this.measureScanPhase(
+        { phase: 'refreshAlbums_refreshArtists' },
+        () => runMainBackgroundTask('library-scan:grouping_albums', () => {
+          if (needsAlbumRefresh) {
+            this.store.refreshAlbums(this.albumService, undefined, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+          }
+          return this.store.refreshArtistsCooperatively();
+        }),
+      );
       this.onDeferredGroupingRefresh();
     } catch (error) {
       console.warn(`Deferred library grouping refresh failed: ${error instanceof Error ? error.message : String(error)}`);
