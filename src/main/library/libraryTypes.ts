@@ -363,6 +363,7 @@ export type ScanOptions = {
   audioExtensions?: readonly string[];
   fileSystemOperationTimeoutMs?: number;
   yieldEveryEntries?: number;
+  backgroundPriority?: boolean;
   onFileSystemError?: (error: ScanFileSystemError) => void;
   onScannerProgress?: (progress: ScannerProgress) => void;
   getDirectorySnapshot?: (directoryPath: string) => ScanDirectorySnapshot | null;

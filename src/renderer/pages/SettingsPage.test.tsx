@@ -2269,14 +2269,13 @@ describe('SettingsPage', () => {
 
     const row = document.querySelector('#settings-row-volume-balance') as HTMLElement;
     fireEvent.click(row.querySelector('.settings-replay-gain-toggle button') as HTMLButtonElement);
-    fireEvent.click(row.querySelector('.settings-replay-gain-simple > button') as HTMLButtonElement);
+    fireEvent.click(row.querySelector('.settings-replay-gain-advanced-toggle') as HTMLButtonElement);
     fireEvent.click(row.querySelectorAll('.settings-replay-gain-toggles .settings-inline-toggle button')[1] as HTMLButtonElement);
     fireEvent.click(row.querySelectorAll('.settings-replay-gain-mode button')[1] as HTMLButtonElement);
-    fireEvent.click(row.querySelector('.settings-replay-gain-toggles > button') as HTMLButtonElement);
     fireEvent.click(document.querySelector('#settings-row-mono-audio button') as HTMLButtonElement);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ gaplessPlaybackEnabled: true }));
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainEnabled: true }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainEnabled: true, replayGainAnalyzeOnPlay: true }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainAnalyzeOnPlay: false }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainMode: 'album' }));
     await waitFor(() => expect(setChannelBalanceStateMock).toHaveBeenCalledWith({ enabled: true, monoMode: 'sum' }));

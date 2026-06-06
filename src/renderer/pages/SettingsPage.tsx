@@ -8690,7 +8690,7 @@ export const SettingsPage = (): JSX.Element => {
 
       const scans: LibraryScanStatus[] = [];
       for (const folder of foldersToScan) {
-        const scan = await library.scanFolder(folder.id, { reduceScanPressure: true });
+        const scan = await library.scanFolder(folder.id);
         scans.push(scan);
         rememberLibraryScanStatus(scan);
         setLibraryScanStatuses(getLibraryScanStatuses());
@@ -8980,6 +8980,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleStartReplayGainAnalysis = async (): Promise<void> => {
+    if (replayGainAnalysisBusy) {
+      return;
+    }
+
     const library = getLibraryBridge();
 
     if (!library) {
@@ -9007,6 +9011,28 @@ export const SettingsPage = (): JSX.Element => {
       setReplayGainAnalysisMessage(null);
       setError(analysisError instanceof Error ? analysisError.message : String(analysisError));
     }
+  };
+
+  const handleReplayGainEnabledChange = (enabled: boolean): void => {
+    patchAppSettings({
+      replayGainEnabled: enabled,
+      ...(enabled ? { replayGainAnalyzeOnPlay: true } : {}),
+    });
+
+    if (enabled) {
+      void handleStartReplayGainAnalysis();
+    }
+  };
+
+  const handleReplayGainPresetSelect = (targetLufs: number): void => {
+    patchAppSettings({
+      replayGainEnabled: true,
+      replayGainMode: 'track',
+      replayGainTargetLufs: targetLufs,
+      replayGainPreventClipping: true,
+      replayGainAnalyzeOnPlay: true,
+    });
+    void handleStartReplayGainAnalysis();
   };
 
   const formatLyricsBackfillMessage = (status: LyricsBackfillJobStatus): string => {
@@ -11042,41 +11068,34 @@ export const SettingsPage = (): JSX.Element => {
                       <ToggleButton
                         active={appSettings?.replayGainEnabled ?? false}
                         disabled={!appSettings}
-                        onClick={() => patchAppSettings({ replayGainEnabled: !(appSettings?.replayGainEnabled ?? false) })}
+                        onClick={() => handleReplayGainEnabledChange(!(appSettings?.replayGainEnabled ?? false))}
                       />
                     </div>
                     <div className="settings-chip-row settings-chip-row--left settings-replay-gain-presets">
                       <ChipButton
                         active={replayGainTargetLufs === SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS}
-                        onClick={() =>
-                          patchAppSettings({
-                            replayGainEnabled: true,
-                            replayGainMode: 'track',
-                            replayGainTargetLufs: SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS,
-                            replayGainPreventClipping: true,
-                            replayGainAnalyzeOnPlay: true,
-                          })
-                        }
+                        onClick={() => handleReplayGainPresetSelect(SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS)}
                       >
                         {t('settings.playback.replayGain.preset.standard')}
                       </ChipButton>
                       <ChipButton
                         active={replayGainTargetLufs === QUIET_REPLAY_GAIN_TARGET_LUFS}
-                        onClick={() =>
-                          patchAppSettings({
-                            replayGainEnabled: true,
-                            replayGainMode: 'track',
-                            replayGainTargetLufs: QUIET_REPLAY_GAIN_TARGET_LUFS,
-                            replayGainPreventClipping: true,
-                            replayGainAnalyzeOnPlay: true,
-                          })
-                        }
+                        onClick={() => handleReplayGainPresetSelect(QUIET_REPLAY_GAIN_TARGET_LUFS)}
                       >
                         {t('settings.playback.replayGain.preset.quiet')}
                       </ChipButton>
                     </div>
                     <button
                       className="settings-action-button"
+                      type="button"
+                      disabled={replayGainAnalysisBusy}
+                      onClick={() => void handleStartReplayGainAnalysis()}
+                    >
+                      <RotateCw className={replayGainAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
+                      {replayGainAnalysisBusy ? t('settings.playback.replayGain.action.analyzing') : t('settings.playback.replayGain.action.analyzeMissing')}
+                    </button>
+                    <button
+                      className="settings-action-button settings-replay-gain-advanced-toggle"
                       type="button"
                       onClick={() => setReplayGainAdvancedOpen((open) => !open)}
                     >
@@ -11168,15 +11187,6 @@ export const SettingsPage = (): JSX.Element => {
                             onChange={(event) => patchAppSettings({ replayGainPreampDb: Number(event.currentTarget.value) })}
                           />
                         </label>
-                        <button
-                          className="settings-action-button"
-                          type="button"
-                          disabled={replayGainAnalysisBusy}
-                          onClick={() => void handleStartReplayGainAnalysis()}
-                        >
-                          <RotateCw className={replayGainAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
-                          {replayGainAnalysisBusy ? t('settings.playback.replayGain.action.analyzing') : t('settings.playback.replayGain.action.analyzeMissing')}
-                        </button>
                       </div>
                     </div>
                   ) : null}

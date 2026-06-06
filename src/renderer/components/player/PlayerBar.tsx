@@ -57,6 +57,10 @@ const seekAnchorMaxAgeSeconds = 3;
 const seekAnchorSettleToleranceSeconds = 0.25;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const endedAutoAdvanceGraceSeconds = 5;
+const endedAutoAdvanceRetryDelayMs = 1200;
+const endedAutoAdvanceMaxAttempts = 3;
+const tailAutoAdvanceToleranceSeconds = 0.35;
+const tailAutoAdvanceWatchdogDelayMs = 1500;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
@@ -88,6 +92,10 @@ const trackMatchesPlaybackIdentity = (track: LibraryTrack | null | undefined, id
     track.stableKey?.trim() === normalizedIdentity ||
     stableStreamingTrackId(track) === normalizedIdentity
   );
+};
+const shouldLetAutomixDriveTailAdvance = (status: AudioStatus | null): boolean => {
+  const automix = status?.automix;
+  return Boolean(automix?.active && (automix.mode === 'armed' || automix.mode === 'transitioning'));
 };
 const activeDownloadStatuses = new Set<DownloadJobStatus>([
   'queued',
@@ -610,6 +618,7 @@ export const PlayerBar = ({
   const [isStreamingDownloadResolving, setIsStreamingDownloadResolving] = useState(false);
   const signalPathAnchorRef = useRef<HTMLDivElement | null>(null);
   const handledEndedTrackRef = useRef<string | null>(null);
+  const pendingEndedTrackRef = useRef<string | null>(null);
   const hydratedTrackIdsRef = useRef(new Set<string>());
   const bpmAnalysisJobIdsRef = useRef(new Map<string, string | 'done'>());
   const streamingBpmAnalysisTrackIdsRef = useRef(new Set<string>());
@@ -1969,7 +1978,10 @@ export const PlayerBar = ({
   }, []);
 
   const runPlaybackAction = useCallback(
-    async (action: () => Promise<PlaybackStatus | null>): Promise<void> => {
+    async (
+      action: () => Promise<PlaybackStatus | null>,
+      options: { rethrow?: boolean } = {},
+    ): Promise<PlaybackStatus | null> => {
       try {
         const status = await action();
         if (status) {
@@ -1994,13 +2006,18 @@ export const PlayerBar = ({
           );
           setQueueCurrentTrackId(status.currentTrackId);
           setPlaybackStatusSnapshot({ playbackStatus: status, error: null });
-          return;
+          return status;
         }
         await refreshStatus();
+        return null;
       } catch (actionError) {
         const message = actionError instanceof Error ? actionError.message : String(actionError);
         setError(formatAudioHostError(message));
         setPlaybackStatusSnapshot({ error: shouldSuppressAudioHostError(message) ? null : message });
+        if (options.rethrow === true) {
+          throw actionError;
+        }
+        return null;
       }
     },
     [refreshStatus, setQueueCurrentTrackId],
@@ -2235,6 +2252,34 @@ export const PlayerBar = ({
   const currentQueueFilePathForEndedPlayback = queue.currentTrack?.path ?? null;
   const currentQueueIdForEndedPlayback = queue.currentQueueId;
   const playNextFromQueue = queue.playNext;
+  const runAutoAdvanceFromQueue = useCallback(
+    (playbackKey: string): void => {
+      pendingEndedTrackRef.current = playbackKey;
+      void (async () => {
+        try {
+          for (let attempt = 0; attempt < endedAutoAdvanceMaxAttempts; attempt += 1) {
+            try {
+              const status = await runPlaybackAction(() => playNextFromQueue({ autoAdvance: true }), { rethrow: true });
+              if (status || state === 'ended') {
+                handledEndedTrackRef.current = playbackKey;
+              }
+              return;
+            } catch {
+              if (attempt >= endedAutoAdvanceMaxAttempts - 1 || handledEndedTrackRef.current === playbackKey) {
+                return;
+              }
+              await new Promise((resolve) => window.setTimeout(resolve, endedAutoAdvanceRetryDelayMs));
+            }
+          }
+        } finally {
+          if (pendingEndedTrackRef.current === playbackKey) {
+            pendingEndedTrackRef.current = null;
+          }
+        }
+      })();
+    },
+    [playNextFromQueue, runPlaybackAction, state],
+  );
 
   useEffect(() => {
     const endedMatchesCurrent =
@@ -2255,13 +2300,13 @@ export const PlayerBar = ({
       !endedPlaybackKey ||
       !endedMatchesCurrent ||
       !endedAtNaturalEnd ||
+      pendingEndedTrackRef.current === endedPlaybackKey ||
       handledEndedTrackRef.current === endedPlaybackKey
     ) {
       return;
     }
 
-    handledEndedTrackRef.current = endedPlaybackKey;
-    void runPlaybackAction(() => playNextFromQueue({ autoAdvance: true }));
+    runAutoAdvanceFromQueue(endedPlaybackKey);
   }, [
     currentQueueFilePathForEndedPlayback,
     currentQueueIdForEndedPlayback,
@@ -2271,14 +2316,64 @@ export const PlayerBar = ({
     endedStatusFilePath,
     endedStatusPositionSeconds,
     endedStatusTrackId,
-    playNextFromQueue,
-    runPlaybackAction,
+    runAutoAdvanceFromQueue,
     state,
+  ]);
+
+  useEffect(() => {
+    const tailPlaybackKey = trackId ?? filePath ?? currentQueueIdForEndedPlayback ?? null;
+    if (
+      visualState !== 'playing' ||
+      state !== 'playing' ||
+      seekPreviewSeconds !== null ||
+      shouldLetAutomixDriveTailAdvance(playbackAudioStatus) ||
+      !tailPlaybackKey ||
+      durationSeconds <= 0 ||
+      positionSeconds < Math.max(0, durationSeconds - tailAutoAdvanceToleranceSeconds) ||
+      pendingEndedTrackRef.current === tailPlaybackKey ||
+      handledEndedTrackRef.current === tailPlaybackKey
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      const clock = progressClockRef.current;
+      const samePlayback = clock.trackKey === tailPlaybackKey || trackId === tailPlaybackKey || filePath === tailPlaybackKey;
+      const tailPositionSeconds = Math.max(clock.positionSeconds, realtimePositionSeconds, positionSeconds);
+      const stillAtTail =
+        clock.durationSeconds > 0 &&
+        tailPositionSeconds >= Math.max(0, clock.durationSeconds - tailAutoAdvanceToleranceSeconds);
+
+      if (
+        samePlayback &&
+        clock.state === 'playing' &&
+        stillAtTail &&
+        pendingEndedTrackRef.current !== tailPlaybackKey &&
+        handledEndedTrackRef.current !== tailPlaybackKey
+      ) {
+        runAutoAdvanceFromQueue(tailPlaybackKey);
+      }
+    }, tailAutoAdvanceWatchdogDelayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    currentQueueIdForEndedPlayback,
+    durationSeconds,
+    filePath,
+    positionSeconds,
+    playbackAudioStatus,
+    realtimePositionSeconds,
+    runAutoAdvanceFromQueue,
+    seekPreviewSeconds,
+    state,
+    trackId,
+    visualState,
   ]);
 
   useEffect(() => {
     if (state === 'playing') {
       handledEndedTrackRef.current = null;
+      pendingEndedTrackRef.current = null;
     }
   }, [state, trackId]);
 

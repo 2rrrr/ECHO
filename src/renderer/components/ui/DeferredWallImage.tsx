@@ -123,6 +123,7 @@ export const DeferredWallImage = ({
   const cancelSlotRef = useRef<(() => void) | null>(null);
   const releaseSlotRef = useRef<(() => void) | null>(null);
   const [isNearViewport, setIsNearViewport] = useState(priority);
+  const [isInViewport, setIsInViewport] = useState(priority);
   const [canLoad, setCanLoad] = useState(priority);
 
   useEffect(() => {
@@ -131,8 +132,37 @@ export const DeferredWallImage = ({
     releaseSlotRef.current?.();
     releaseSlotRef.current = null;
     setIsNearViewport(priority);
+    setIsInViewport(priority);
     setCanLoad(priority);
   }, [priority, src]);
+
+  useEffect(() => {
+    if (priority || isInViewport) {
+      return undefined;
+    }
+
+    const anchor = anchorRef.current;
+    if (!anchor || typeof window.IntersectionObserver !== 'function') {
+      return undefined;
+    }
+
+    const observer = new window.IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsNearViewport(true);
+          setIsInViewport(true);
+          observer.disconnect();
+        }
+      },
+      {
+        root: getPageScrollContainer(anchor),
+        rootMargin: '0px',
+      },
+    );
+
+    observer.observe(anchor);
+    return () => observer.disconnect();
+  }, [isInViewport, priority]);
 
   useEffect(() => {
     if (priority || isNearViewport) {
@@ -163,12 +193,16 @@ export const DeferredWallImage = ({
   }, [isNearViewport, priority, rootMargin]);
 
   useEffect(() => {
-    if (canLoad || !isNearViewport || (paused && !priority)) {
+    if (canLoad || !isNearViewport) {
       return undefined;
     }
 
-    if (priority) {
+    if (priority || isInViewport) {
       setCanLoad(true);
+      return undefined;
+    }
+
+    if (paused) {
       return undefined;
     }
 
@@ -189,7 +223,7 @@ export const DeferredWallImage = ({
         cancelSlotRef.current = null;
       }
     };
-  }, [canLoad, isNearViewport, paused, priority]);
+  }, [canLoad, isInViewport, isNearViewport, paused, priority]);
 
   useEffect(() => {
     return () => {

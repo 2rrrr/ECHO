@@ -57,4 +57,34 @@ describe('MainProcessWorkScheduler', () => {
     expect(work).not.toHaveBeenCalled();
     expect(fallback).toHaveBeenCalledWith('playback-active');
   });
+
+  it('treats paused playback as active main work pressure', async () => {
+    audioState.current = 'paused';
+    const work = vi.fn(() => 'fresh');
+    const fallback = vi.fn(() => 'cached');
+
+    await expect(runNonCriticalMainWork({
+      name: 'library:stats',
+      work,
+      fallback,
+    })).resolves.toBe('cached');
+
+    expect(work).not.toHaveBeenCalled();
+    expect(fallback).toHaveBeenCalledWith('playback-active');
+  });
+
+  it('treats ended playback as active main work pressure while auto-advance settles', async () => {
+    audioState.current = 'ended';
+    const work = vi.fn(() => 'fresh');
+    const fallback = vi.fn(() => 'cached');
+
+    await expect(runNonCriticalMainWork({
+      name: 'library:stats',
+      work,
+      fallback,
+    })).resolves.toBe('cached');
+
+    expect(work).not.toHaveBeenCalled();
+    expect(fallback).toHaveBeenCalledWith('playback-active');
+  });
 });

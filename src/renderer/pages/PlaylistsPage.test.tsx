@@ -629,6 +629,91 @@ describe('PlaylistsPage actions menu', () => {
     await waitFor(() => expect(screen.getByLabelText('queue-track-ids').textContent).toBe('streaming:netease:track-2,streaming:netease:track-3'));
   });
 
+  it('loads every remote playlist page before starting playlist playback', async () => {
+    const firstItem = item({
+      id: 'item-1',
+      mediaType: 'stream_track',
+      mediaId: 'streaming:netease:track-1',
+      sourceProvider: 'netease',
+      sourceItemId: 'track-1',
+      titleSnapshot: 'Song One',
+      track: null,
+    });
+    const secondItem = item({
+      id: 'item-2',
+      mediaType: 'stream_track',
+      mediaId: 'streaming:netease:track-2',
+      sourceProvider: 'netease',
+      sourceItemId: 'track-2',
+      titleSnapshot: 'Song Two',
+      track: null,
+    });
+    const thirdItem = item({
+      id: 'item-3',
+      mediaType: 'stream_track',
+      mediaId: 'streaming:netease:track-3',
+      sourceProvider: 'netease',
+      sourceItemId: 'track-3',
+      titleSnapshot: 'Song Three',
+      track: null,
+    });
+    const firstPage: LibraryPage<LibraryPlaylistItem> = {
+      items: [firstItem],
+      page: 1,
+      pageSize: 100,
+      total: 3,
+      hasMore: true,
+    };
+    const secondPage: LibraryPage<LibraryPlaylistItem> = {
+      items: [secondItem, thirdItem],
+      page: 2,
+      pageSize: 100,
+      total: 3,
+      hasMore: false,
+    };
+    const getPlaylistItems = vi.fn().mockImplementation((_playlistId: string, query?: { page?: number }) =>
+      Promise.resolve(query?.page === 2 ? secondPage : firstPage),
+    );
+    const playMediaItem = vi.fn().mockImplementation((request: { item: { trackId: string } }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.item.trackId,
+        positionMs: 0,
+        durationMs: 180000,
+        filePath: null,
+      }),
+    );
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ sourceProvider: 'netease', sourcePlaylistId: '163289102', itemCount: 3 })]),
+        getPlaylistItems,
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+        startPlaybackHistory: vi.fn().mockResolvedValue({ historyId: 'history-1' }),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+        playMediaItem,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueProbe />
+        <PlaylistsPage />
+      </PlaybackQueueProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /播放歌单/ }));
+
+    await waitFor(() => expect(playMediaItem).toHaveBeenCalledWith(expect.objectContaining({
+      item: expect.objectContaining({ trackId: 'streaming:netease:track-1' }),
+    })));
+    expect(getPlaylistItems).toHaveBeenCalledWith('playlist-1', { page: 2, pageSize: 100, search: '' });
+    await waitFor(() =>
+      expect(screen.getByLabelText('queue-track-ids').textContent).toBe('streaming:netease:track-1,streaming:netease:track-2,streaming:netease:track-3'),
+    );
+  });
+
   it('hides streaming quality for local playlists', async () => {
     window.echo = {
       library: {

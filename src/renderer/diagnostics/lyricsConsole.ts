@@ -8,6 +8,15 @@ type LyricsConsoleOptions = {
 
 const lastLogAtByKey = new Map<string, number>();
 
+const formatLyricsConsolePayload = (payload: Record<string, unknown>): string => {
+  try {
+    const serialized = JSON.stringify(payload);
+    return serialized && serialized !== '{}' ? ` ${serialized}` : '';
+  } catch {
+    return ' [unserializable payload]';
+  }
+};
+
 const isTestEnvironment = (): boolean => {
   const maybeProcess = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
   return maybeProcess?.env?.NODE_ENV === 'test' || maybeProcess?.env?.VITEST === 'true';
@@ -34,5 +43,5 @@ export const logLyricsConsole = (
   }
 
   const level = options.level ?? 'info';
-  console[level](`[lyrics:${event}]`, payload);
+  console[level](`[lyrics:${event}]${formatLyricsConsolePayload(payload)}`);
 };
