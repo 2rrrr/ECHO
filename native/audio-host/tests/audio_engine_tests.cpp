@@ -152,7 +152,7 @@ void testConvolutionRejectsLongImpulseAndClipsSafely()
 
     requireFinite(buffer, "hot convolution finite");
     require(processor.hasClippingRisk(), "hot convolution reports clipping risk");
-    require(std::abs(buffer.getSample(0, 0)) <= 1.0f, "hot convolution limited");
+    require(std::abs(buffer.getSample(0, 0)) > 1.0f, "hot convolution reports risk without limiting inside FIR");
 }
 
 void testChannelBalanceDelayCompensation()
@@ -319,6 +319,30 @@ void testDspChainLimiterProtectsActiveOutput()
     }
 }
 
+void testDspChainLimiterIgnoresNearFullScaleOutput()
+{
+    echo::DspChain::setSafetyLimiterEnabled(true);
+    echo::EqProcessor eqProcessor;
+    echo::ConvolutionProcessor convolutionProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    echo::DspHeadroomProcessor headroomProcessor;
+    echo::DspChain dspChain(eqProcessor, convolutionProcessor, channelBalanceProcessor, headroomProcessor);
+    dspChain.prepare(48000.0, 128, 2);
+    eqProcessor.setEnabled(true);
+
+    auto buffer = makeBuffer(2, 128);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        auto* samples = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            samples[sample] = sample % 2 == 0 ? 0.99f : -0.99f;
+    }
+
+    dspChain.processBlock(buffer, 0, buffer.getNumSamples());
+    require(! dspChain.isSafetyLimiterProtecting(), "DSP safety limiter must not engage below full scale");
+    require(std::abs(buffer.getSample(0, 0) - 0.99f) <= nearTolerance, "near full-scale output must pass unchanged");
+}
+
 void testDspChainLimiterCanBeBypassed()
 {
     echo::DspChain::setSafetyLimiterEnabled(false);
@@ -451,7 +475,7 @@ void testRapidChangesStayFinite()
     }
 }
 
-void testEqLimiterProtectsEnabledOutput()
+void testEqReportsRiskWithoutLimitingEnabledOutput()
 {
     echo::EqProcessor processor;
     processor.prepare(48000.0, 4096, 2);
@@ -468,14 +492,16 @@ void testEqLimiterProtectsEnabledOutput()
 
     processor.processBlock(buffer, 0, buffer.getNumSamples());
 
-    require(processor.hasClippingRisk(), "enabled EQ limiter must keep clipping risk visible");
-    requireFinite(buffer, "enabled EQ limiter must keep output finite");
+    require(processor.hasClippingRisk(), "enabled EQ must keep clipping risk visible");
+    requireFinite(buffer, "enabled EQ risk path must keep output finite");
+    bool hotOutput = false;
     for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
     {
         const auto* samples = buffer.getReadPointer(channel);
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-            require(std::abs(samples[sample]) <= 1.0f + nearTolerance, "enabled EQ limiter must cap output");
+            hotOutput = hotOutput || std::abs(samples[sample]) > 1.0f;
     }
+    require(hotOutput, "enabled EQ must not cap hot output before final DSP limiter");
 }
 
 void testCoefficientUpdatesStopInSteadyState()
@@ -1317,7 +1343,7 @@ int main()
         { "flat enabled is transparent", testFlatEnabledIsTransparent },
         { "bypass returns to dry", testBypassReturnsToDry },
         { "rapid changes stay finite", testRapidChangesStayFinite },
-        { "EQ limiter protects enabled output", testEqLimiterProtectsEnabledOutput },
+        { "EQ reports risk without limiting enabled output", testEqReportsRiskWithoutLimitingEnabledOutput },
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
         { "PEQ band controls clamp and bypass", testPeqBandControlsClampAndBypass },
         { "PEQ additional filter types stay finite", testPeqAdditionalFilterTypesStayFinite },
@@ -1330,6 +1356,7 @@ int main()
         { "Channel balance band gain compensation", testChannelBalanceBandGainCompensation },
         { "DSP chain bypass preserves dry buffer", testDspChainBypassPreservesDryBuffer },
         { "DSP chain limiter protects active output", testDspChainLimiterProtectsActiveOutput },
+        { "DSP chain limiter ignores near full-scale output", testDspChainLimiterIgnoresNearFullScaleOutput },
         { "DSP chain limiter can be bypassed", testDspChainLimiterCanBeBypassed },
         { "DSP headroom only applies to active DSP", testDspHeadroomOnlyAppliesToActiveDsp },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },

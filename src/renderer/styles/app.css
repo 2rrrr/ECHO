@@ -4426,6 +4426,29 @@
 
 .plugins-page {
   gap: 18px;
+  position: relative;
+}
+
+.plugins-drop-overlay {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px dashed rgba(79, 70, 229, 0.48);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(37, 54, 75, 0.16);
+  color: #334155;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  inset: 8px;
+  justify-content: center;
+  min-height: 180px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 25;
+}
+
+.plugins-drop-overlay svg {
+  color: #4f46e5;
 }
 
 .plugins-header {
@@ -15945,6 +15968,12 @@ html[data-theme="dark"] .history-play-count {
 .liked-tabs,
 .liked-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.liked-sync-actions {
+  display: inline-flex;
   flex-wrap: wrap;
   gap: 8px;
 }

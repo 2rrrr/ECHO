@@ -9,16 +9,25 @@ vi.mock('../components/library/TrackList', () => ({
   TrackList: ({
     tracks,
     canLoadMore,
+    totalCount,
+    loadedCount,
+    isLoadingMore,
     onEndReached,
     onToggleLiked,
   }: {
     tracks: LibraryTrack[];
     canLoadMore?: boolean;
+    totalCount?: number;
+    loadedCount?: number;
+    isLoadingMore?: boolean;
     onEndReached?: () => void;
     onToggleLiked?: (track: LibraryTrack) => void;
   }) => (
     <section aria-label="mock-track-list">
       <span>{tracks.length} liked tracks</span>
+      <span>
+        loaded {loadedCount ?? tracks.length} / {totalCount ?? tracks.length} {isLoadingMore ? 'loading' : 'idle'}
+      </span>
       {tracks.map((track) => (
         <button key={track.id} type="button" onClick={() => onToggleLiked?.(track)}>
           Unlike {track.title}
@@ -159,10 +168,40 @@ afterEach(() => {
 });
 
 describe('LikedPage', () => {
-  it('keeps liked media local-only and hides provider shortcuts', async () => {
-    const getLikedTracks = vi.fn().mockResolvedValue(page([]));
+  it('syncs provider liked songs from the liked page', async () => {
+    const neteasePage = page(
+      [
+        playlistItem('netease-1', {
+          mediaType: 'stream_track',
+          mediaId: 'streaming:netease:1',
+          sourceProvider: 'netease',
+          sourceItemId: '1',
+          titleSnapshot: 'NetEase 1',
+        }),
+        playlistItem('netease-2', {
+          mediaType: 'stream_track',
+          mediaId: 'streaming:netease:2',
+          sourceProvider: 'netease',
+          sourceItemId: '2',
+          titleSnapshot: 'NetEase 2',
+        }),
+      ],
+      { total: 955, hasMore: true },
+    );
+    const getLikedTracks = vi
+      .fn()
+      .mockResolvedValueOnce(page([]))
+      .mockResolvedValueOnce(neteasePage)
+      .mockResolvedValue(neteasePage);
     const getLikedAlbums = vi.fn().mockResolvedValue(page([]));
-    installLibrary(getLikedTracks, getLikedAlbums);
+    const syncLikedSongs = vi.fn().mockResolvedValue({
+      playlistId: 'liked',
+      importedCount: 2,
+      addedCount: 1,
+      providers: [{ provider: 'netease', success: true, importedCount: 2, addedCount: 1, total: 2 }],
+      syncedAt: '2026-05-16T00:00:00.000Z',
+    });
+    installLibrary(getLikedTracks, getLikedAlbums, syncLikedSongs);
 
     renderLikedPage();
 
@@ -172,8 +211,17 @@ describe('LikedPage', () => {
     await waitFor(() =>
       expect(getLikedAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 100, search: '', sort: 'recent', sourceProvider: 'local' }),
     );
-    expect(screen.queryByRole('button', { name: /网易云喜欢/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /QQ 喜欢/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '网易云' }));
+
+    await waitFor(() => expect(syncLikedSongs).toHaveBeenCalledWith('netease'));
+    await waitFor(() =>
+      expect(getLikedTracks).toHaveBeenCalledWith({ page: 1, pageSize: 100, search: '', sort: 'recent', sourceProvider: 'netease' }),
+    );
+    expect(screen.getByText('网易云 我喜欢已同步：2 首，新增 1 首。')).toBeTruthy();
+    expect(screen.getByText('loaded 2 / 955 idle')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '本地' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: '网易云' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'QQ音乐' })).toBeTruthy();
   });
 
   it('clears only local liked tracks from the liked page', async () => {

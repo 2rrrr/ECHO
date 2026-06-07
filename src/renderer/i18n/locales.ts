@@ -1864,10 +1864,6 @@ export type TranslationKey =
   | 'settings.about.updates.title'
   | 'settings.about.version.description'
   | 'settings.about.version.title'
-  | 'settings.appearance.density.compact'
-  | 'settings.appearance.density.description'
-  | 'settings.appearance.density.standard'
-  | 'settings.appearance.density.title'
   | 'settings.appearance.artistAvatars.action.clear'
   | 'settings.appearance.artistAvatars.action.queueing'
   | 'settings.appearance.artistAvatars.action.refreshMissing'
@@ -4240,7 +4236,7 @@ const zhCN: TranslationMap = {
   'route.connect.description': 'DLNA / AirPlay 无线播放。',
   'route.connect.label': '连接',
   'route.dsp.description': '信号链调音工作台。',
-  'route.dsp.label': 'DSP',
+  'route.dsp.label': '音效处理',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '断开',
   'connectPage.controls.pause': '暂停',
@@ -5016,10 +5012,6 @@ const zhCN: TranslationMap = {
   'settings.about.updates.state.notAvailable': '已是最新',
   'settings.about.updates.state.error': '检查失败',
   'settings.about.updates.state.disabled': '已关闭',
-  'settings.appearance.density.compact': '紧凑',
-  'settings.appearance.density.description': '曲库列表采用更紧凑的桌面密度，不再使用过大的卡片行。',
-  'settings.appearance.density.standard': '标准',
-  'settings.appearance.density.title': '界面密度',
   'settings.appearance.artistAvatars.action.clear': '清除头像缓存',
   'settings.appearance.artistAvatars.action.queueing': '加入队列中...',
   'settings.appearance.artistAvatars.action.refreshMissing': '刷新缺失头像',
@@ -7315,7 +7307,7 @@ const zhTW: TranslationMap = {
   'route.connect.description': 'DLNA / AirPlay 無線播放。',
   'route.connect.label': '連接',
   'route.dsp.description': '訊號鏈調音工作台。',
-  'route.dsp.label': 'DSP',
+  'route.dsp.label': '音效處理',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '中斷連接',
   'connectPage.controls.pause': '暫停',
@@ -9111,9 +9103,6 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.message.lowContrast': '目前文字對比不足，可能影響閱讀。可自動修正或手動調整文字顏色。',
   'settings.appearance.themeCustom.message.reset': '已重置目前主題的自訂。',
   'settings.appearance.themeCustom.message.saved': '已儲存目前主題自訂。',
-  'settings.appearance.density.title': '介面密度',
-  'settings.appearance.density.compact': '緊湊',
-  'settings.appearance.density.standard': '標準',
   'settings.appearance.artistAvatars.action.clear': '清除頭像快取',
   'settings.appearance.artistAvatars.action.queueing': '加入佇列中...',
   'settings.appearance.artistAvatars.action.refreshMissing': '重新整理缺失頭像',
@@ -12046,10 +12035,6 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
-  'settings.appearance.density.title': '表示密度',
-  'settings.appearance.density.description': 'ライブラリ一覧はよりコンパクトなデスクトップ密度を使い、大きすぎるカード行は使いません。',
-  'settings.appearance.density.compact': 'コンパクト',
-  'settings.appearance.density.standard': '標準',
   'settings.appearance.artistAvatars.action.clear': 'アバターキャッシュを消去',
   'settings.appearance.artistAvatars.action.queueing': 'キューに追加中...',
   'settings.appearance.artistAvatars.action.refreshMissing': '不足アバターを更新',
@@ -15167,10 +15152,6 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
-  'settings.appearance.density.title': 'Interface Density',
-  'settings.appearance.density.description': 'Library lists use a tighter desktop density instead of oversized card rows.',
-  'settings.appearance.density.compact': 'Compact',
-  'settings.appearance.density.standard': 'Standard',
   'settings.appearance.artistAvatars.action.clear': 'Clear Avatar Cache',
   'settings.appearance.artistAvatars.action.queueing': 'Queueing...',
   'settings.appearance.artistAvatars.action.refreshMissing': 'Refresh Missing Avatars',

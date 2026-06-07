@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Disc3, Heart, Play, Search, Shuffle, Trash2 } from 'lucide-react';
+import { Disc3, Heart, Loader2, Play, RefreshCw, Search, Shuffle, Trash2 } from 'lucide-react';
 import type { LibraryAlbum, LibraryPage, LibraryPlaylistItem, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import type { StreamingProviderName } from '../../shared/types/streaming';
 import { AlbumDetailView } from '../components/album/AlbumDetailView';
@@ -22,6 +22,18 @@ const sortOptions: Array<{ value: LibrarySort; label: string }> = [
 ];
 
 type LikedTab = 'tracks' | 'albums';
+type LikedSyncProvider = Extract<StreamingProviderName, 'netease' | 'qqmusic'>;
+type LikedTrackSourceProvider = 'local' | LikedSyncProvider;
+
+const likedSyncProviders: Array<{ provider: LikedSyncProvider; label: string }> = [
+  { provider: 'netease', label: '网易云' },
+  { provider: 'qqmusic', label: 'QQ音乐' },
+];
+
+const likedTrackSourceProviders: Array<{ provider: LikedTrackSourceProvider; label: string }> = [
+  { provider: 'local', label: '本地' },
+  ...likedSyncProviders,
+];
 
 const isLikedStreamingProvider = (provider: string | null | undefined): provider is Extract<StreamingProviderName, 'netease' | 'qqmusic'> =>
   provider === 'netease' || provider === 'qqmusic';
@@ -119,6 +131,9 @@ export const LikedPage = (): JSX.Element => {
   const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
   const [sort, setSort] = useState<LibrarySort>('recent');
   const [error, setError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [syncingLikedProvider, setSyncingLikedProvider] = useState<LikedSyncProvider | null>(null);
+  const [trackSourceProvider, setTrackSourceProvider] = useState<LikedTrackSourceProvider>('local');
   const [isTrackLoading, setIsTrackLoading] = useState(false);
   const [isAlbumLoading, setIsAlbumLoading] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
@@ -127,6 +142,7 @@ export const LikedPage = (): JSX.Element => {
   const shouldRestorePageScrollRef = useRef(false);
   const trackRequestIdRef = useRef(0);
   const albumRequestIdRef = useRef(0);
+  const trackSourceProviderRef = useRef<LikedTrackSourceProvider>('local');
   const { currentTrackId, playTrack, replaceQueue } = usePlaybackQueue();
 
   const tracks = useMemo(() => trackItems.map(itemToTrack), [trackItems]);
@@ -143,7 +159,7 @@ export const LikedPage = (): JSX.Element => {
   });
 
   const loadTracks = useCallback(
-    async (nextPage: number, mode: 'replace' | 'append'): Promise<void> => {
+    async (nextPage: number, mode: 'replace' | 'append', sourceProvider = trackSourceProviderRef.current): Promise<void> => {
       const requestId = trackRequestIdRef.current + 1;
       trackRequestIdRef.current = requestId;
       setIsTrackLoading(true);
@@ -164,7 +180,7 @@ export const LikedPage = (): JSX.Element => {
           pageSize,
           search,
           sort,
-          sourceProvider: 'local',
+          sourceProvider,
         });
 
         if (trackRequestIdRef.current !== requestId) {
@@ -237,7 +253,7 @@ export const LikedPage = (): JSX.Element => {
   useEffect(() => {
     void loadTracks(1, 'replace');
     void loadAlbums(1, 'replace');
-  }, [loadAlbums, loadTracks]);
+  }, [loadAlbums, loadTracks, trackSourceProvider]);
 
   useEffect(() => {
     const reloadTracks = (): void => void loadTracks(1, 'replace');
@@ -252,7 +268,7 @@ export const LikedPage = (): JSX.Element => {
 
   useLayoutEffect(() => {
     writePageScrollTop(pageRootRef.current, 0);
-  }, [search, sort, tab]);
+  }, [search, sort, tab, trackSourceProvider]);
 
   useLayoutEffect(() => {
     if (selectedAlbum || !shouldRestorePageScrollRef.current) {
@@ -301,6 +317,61 @@ export const LikedPage = (): JSX.Element => {
     replaceQueue(playable, { startTrackId: playable[0].id, source: { type: 'manual', label: '喜欢的歌曲' } });
     await playTrack(playable[0], { source: { type: 'manual', label: '喜欢的歌曲' } });
   }, [playTrack, replaceQueue, tracks]);
+
+  const selectTrackSourceProvider = useCallback((provider: LikedTrackSourceProvider): void => {
+    trackSourceProviderRef.current = provider;
+    setTrackSourceProvider(provider);
+    setSyncStatus(null);
+    setError(null);
+  }, []);
+
+  const handleSyncLikedSongs = useCallback(
+    async (provider: LikedSyncProvider): Promise<void> => {
+      const streaming = window.echo?.streaming;
+      const providerLabel = likedSyncProviders.find((item) => item.provider === provider)?.label ?? provider;
+      selectTrackSourceProvider(provider);
+      setTab('tracks');
+      if (!streaming?.syncLikedSongs) {
+        setError('当前环境无法同步流媒体我喜欢。');
+        return;
+      }
+
+      setSyncingLikedProvider(provider);
+      setSyncStatus(null);
+      setError(null);
+      try {
+        const result = await streaming.syncLikedSongs(provider);
+        const providerResult = result.providers.find((item) => item.provider === provider);
+        if (providerResult && !providerResult.success) {
+          throw new Error(providerResult.error ?? `${providerLabel} 我喜欢同步失败。`);
+        }
+
+        const importedCount = providerResult?.importedCount ?? result.importedCount;
+        const addedCount = providerResult?.addedCount ?? result.addedCount;
+        setSyncStatus(`${providerLabel} 我喜欢已同步：${importedCount} 首，新增 ${addedCount} 首。`);
+        window.dispatchEvent(new Event(likedTracksChangedEvent));
+        window.dispatchEvent(new Event(likedChangedEvent));
+      } catch (syncError) {
+        setError(syncError instanceof Error ? syncError.message : String(syncError));
+      } finally {
+        setSyncingLikedProvider(null);
+      }
+    },
+    [selectTrackSourceProvider],
+  );
+
+  const handleTrackSourceClick = useCallback(
+    (provider: LikedTrackSourceProvider): void => {
+      if (provider === 'local') {
+        selectTrackSourceProvider(provider);
+        setTab('tracks');
+        return;
+      }
+
+      void handleSyncLikedSongs(provider);
+    },
+    [handleSyncLikedSongs, selectTrackSourceProvider],
+  );
 
   const handleToggleTrackLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
     if (track.mediaType === 'streaming' && isLikedStreamingProvider(track.provider) && track.providerTrackId) {
@@ -399,6 +470,27 @@ export const LikedPage = (): JSX.Element => {
       <div className="liked-actions">
         {tab === 'tracks' ? (
           <>
+            <div className="liked-sync-actions" aria-label="选择喜欢歌曲来源">
+              {likedTrackSourceProviders.map((item) => {
+                const isLocal = item.provider === 'local';
+                const isActive = trackSourceProvider === item.provider;
+                const isSyncing = !isLocal && syncingLikedProvider === item.provider;
+                return (
+                  <button
+                    className={`queue-tool-button ${isActive ? 'is-active' : ''}`}
+                    type="button"
+                    key={item.provider}
+                    disabled={syncingLikedProvider !== null}
+                    aria-pressed={isActive}
+                    title={isLocal ? '只显示本地喜欢' : `同步并只显示${item.label}账号的我喜欢`}
+                    onClick={() => handleTrackSourceClick(item.provider)}
+                  >
+                    {isSyncing ? <Loader2 className="spinning-icon" size={16} /> : isLocal ? <Disc3 size={16} /> : <RefreshCw size={16} />}
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
             <button className="queue-tool-button" type="button" disabled={tracks.length === 0} onClick={() => void handlePlayAll()}>
               <Play size={16} fill="currentColor" /> 播放全部
             </button>
@@ -407,7 +499,12 @@ export const LikedPage = (): JSX.Element => {
             </button>
           </>
         ) : null}
-        <button className="queue-tool-button danger" type="button" disabled={(tab === 'tracks' ? trackTotal : albumTotal) === 0} onClick={() => void handleClear()}>
+        <button
+          className="queue-tool-button danger"
+          type="button"
+          disabled={tab === 'tracks' ? trackSourceProvider !== 'local' || trackTotal === 0 : albumTotal === 0}
+          onClick={() => void handleClear()}
+        >
           <Trash2 size={16} /> 清空
         </button>
       </div>
@@ -415,9 +512,13 @@ export const LikedPage = (): JSX.Element => {
       {tab === 'tracks' ? (
         tracks.length > 0 ? (
           <TrackList
+            key={`${trackSourceProvider}:${search}:${sort}`}
             tracks={tracks}
             currentTrackId={currentTrackId}
             canLoadMore={trackHasMore && !isTrackLoading}
+            isLoadingMore={isTrackLoading}
+            totalCount={trackTotal}
+            loadedCount={tracks.length}
             likedTrackIds={likedTrackMap}
             onEndReached={() => void loadTracks(trackPage + 1, 'append')}
             onPlay={(track) => void playTrack(track, { replaceQueueWith: tracks.filter((item) => !item.unavailable), source: { type: 'manual', label: '喜欢的歌曲' } })}
@@ -453,7 +554,7 @@ export const LikedPage = (): JSX.Element => {
         </>
       )}
 
-      {error || isLoading ? <div className="list-footer"><span>{error ?? '正在读取喜欢的音乐...'}</span></div> : null}
+      {error || syncStatus || isLoading ? <div className="list-footer"><span>{error ?? syncStatus ?? '正在读取喜欢的音乐...'}</span></div> : null}
       {tab === 'albums' ? <MediaWallScrollSpacer height={likedAlbumSpacerHeight} /> : null}
     </div>
   );

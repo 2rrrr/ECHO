@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { SettingsPage } from './SettingsPage';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { PluginSummary } from '../../shared/types/plugins';
-import { defaultSidebarRouteOrder } from '../../shared/types/sidebar';
+import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder } from '../../shared/types/sidebar';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import {
   createDefaultGlobalShortcuts,
@@ -980,7 +980,7 @@ describe('SettingsPage', () => {
       ...settings,
       downloadsFeatureUnlocked: true,
       sidebarRouteOrder: [...defaultSidebarRouteOrder],
-      sidebarHiddenRouteIds: [],
+      sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds],
     };
     getSettingsMock.mockResolvedValue(currentSettings);
     setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => {
@@ -995,7 +995,7 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
     const row = screen.getByText('settings.appearance.sidebar.title').closest('.setting-row') as HTMLElement;
-    fireEvent.click(within(row).getByRole('button', { name: /settings\.appearance\.sidebar\.summary\.allVisible/ }));
+    fireEvent.click(within(row).getByRole('button', { name: /settings\.appearance\.sidebar\.summary\.hidden/ }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenLastCalledWith({ appearanceSidebarLayoutExpanded: true }));
     expect(within(row).getByText('route.dsp.label')).toBeTruthy();
     const streamingItem = within(row).getByText('route.streaming.label').closest('.settings-sidebar-route-item') as HTMLElement;
@@ -1004,7 +1004,7 @@ describe('SettingsPage', () => {
     await waitFor(() =>
       expect(setSettingsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          sidebarHiddenRouteIds: ['streaming'],
+          sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds, 'streaming'],
         }),
       ),
     );
@@ -1041,7 +1041,7 @@ describe('SettingsPage', () => {
     await waitFor(() => {
       const lastPatch = setSettingsMock.mock.calls.at(-1)?.[0] as Partial<AppSettings>;
       expect(lastPatch.sidebarRouteOrder?.slice(0, 2)).toEqual(['songs', 'home']);
-      expect(lastPatch.sidebarHiddenRouteIds).toEqual(['streaming']);
+      expect(lastPatch.sidebarHiddenRouteIds).toEqual([...defaultSidebarHiddenRouteIds, 'streaming']);
     });
   });
 
@@ -1050,7 +1050,7 @@ describe('SettingsPage', () => {
     let currentSettings: AppSettings = {
       ...settings,
       sidebarRouteOrder: [...defaultSidebarRouteOrder],
-      sidebarHiddenRouteIds: [],
+      sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds],
       appearanceSidebarLayoutExpanded: false,
     };
     getSettingsMock.mockResolvedValue(currentSettings);
@@ -1066,7 +1066,7 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
     const row = screen.getByText('settings.appearance.sidebar.title').closest('.setting-row') as HTMLElement;
-    const toggle = within(row).getByRole('button', { name: /settings\.appearance\.sidebar\.summary\.allVisible/ });
+    const toggle = within(row).getByRole('button', { name: /settings\.appearance\.sidebar\.summary\.hidden/ });
 
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(within(row).queryByText('route.home.label')).toBeNull();

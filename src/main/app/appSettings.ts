@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
 import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
-import { defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
+import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type {
   ArtistOnlineInfoSource,
   ArtistStreamingAlbumsProvider,
@@ -377,7 +377,7 @@ export const defaultSettings: AppSettings = {
   appWindowAcrylicTransparencyPercent: defaultAppWindowAcrylicTransparencyPercent,
   appearancePreferences: { ...defaultAppearancePreferences },
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
-  sidebarHiddenRouteIds: [],
+  sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds],
   sidebarAutoHideEnabled: false,
   sidebarIconOnlyEnabled: false,
   featureCommentsHidden: false,

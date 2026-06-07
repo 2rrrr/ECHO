@@ -28,21 +28,15 @@ float moveTowards(float current, float target, float step)
 
 float protectClippingSample(float sample, bool shouldProtect, bool& risk)
 {
+    (void)shouldProtect;
+
     if (! std::isfinite(sample))
         return 0.0f;
 
-    constexpr float threshold = 0.98f;
-    constexpr float headroom = 1.0f - threshold;
+    constexpr float riskThreshold = 0.98f;
     const float magnitude = std::abs(sample);
-    if (magnitude <= threshold)
-        return sample;
-
-    risk = true;
-    if (! shouldProtect)
-        return sample;
-
-    const float limited = threshold + headroom * std::tanh((magnitude - threshold) / headroom);
-    return std::copysign(std::min(1.0f, limited), sample);
+    risk = risk || magnitude > riskThreshold;
+    return sample;
 }
 } // namespace
 

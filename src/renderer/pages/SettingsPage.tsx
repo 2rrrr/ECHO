@@ -54,6 +54,7 @@ import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS }
 import { isDownloadFeatureUnlockCode, isFinalThemeUnlockCode } from '../../shared/constants/featureUnlocks';
 import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import {
+  defaultSidebarHiddenRouteIds,
   defaultSidebarRouteOrder,
   lockedVisibleSidebarRouteIds,
   normalizeSidebarHiddenRouteIds,
@@ -1096,7 +1097,6 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     'system',
     'wallpaper',
     'font',
-    'density',
     'sidebar',
     'side bar',
     'left sidebar',
@@ -7037,7 +7037,7 @@ export const SettingsPage = (): JSX.Element => {
   const handleSidebarRoutesReset = useCallback((): void => {
     patchAppSettings({
       sidebarRouteOrder: [...defaultSidebarRouteOrder],
-      sidebarHiddenRouteIds: [],
+      sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds],
     });
   }, [patchAppSettings]);
 
@@ -12400,8 +12400,8 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={SlidersHorizontal} id="eq" title={t('settings.nav.eq.label')}>
               <SettingRow
-                title="DSP 工作台"
-                description="EQ、余量、声道与输出保护已经搬到侧栏里的调音工作区。"
+                title="音效处理工作台"
+                description="EQ、余量、声道与输出保护已经搬到侧栏里的音效处理工作区。"
               >
                 <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--dsp-workbench">
                   <div className="settings-status-grid settings-status-grid--audio">
@@ -12425,7 +12425,7 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" onClick={handleOpenDspPage}>
                       <SlidersHorizontal size={15} />
-                      打开 DSP 工作台
+                      打开音效处理
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void refreshStatus()}>
                       <RefreshCw size={15} />
@@ -12433,7 +12433,7 @@ export const SettingsPage = (): JSX.Element => {
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    这里保留状态摘要；具体调音请从左侧 DSP 进入，布局更接近 Roon 的链路式工作流。
+                    这里保留状态摘要；具体调音请从左侧音效处理进入，布局更接近 Roon 的链路式工作流。
                   </p>
                 </div>
               </SettingRow>
@@ -13039,12 +13039,6 @@ export const SettingsPage = (): JSX.Element => {
                     </button>
                   </div>
                   </div>
-                </div>
-              </SettingRow>
-              <SettingRow title={t('settings.appearance.density.title')} description={t('settings.appearance.density.description')}>
-                <div className="settings-chip-row">
-                  <ChipButton active>{t('settings.appearance.density.compact')}</ChipButton>
-                  <ChipButton>{t('settings.appearance.density.standard')}</ChipButton>
                 </div>
               </SettingRow>
               <SettingRow

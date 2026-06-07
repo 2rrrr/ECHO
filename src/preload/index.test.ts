@@ -1633,6 +1633,9 @@ describe('preload SMTC API', () => {
     await exposedApi!.plugins.openDirectory('echo.playback-panel');
     await exposedApi!.plugins.exportPackage('echo.playback-panel');
     await exposedApi!.plugins.importPackage();
+    const pluginPackageFile = new File(['{}'], 'plugin.echo', { type: 'application/json' });
+    vi.mocked(webUtils.getPathForFile).mockReturnValueOnce('D:\\Echo\\plugin.echo');
+    await exposedApi!.plugins.importPackage(pluginPackageFile);
     await exposedApi!.plugins.runCommand({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
     await exposedApi!.plugins.queryMetadata({ track: { title: 'Song' } });
     await exposedApi!.plugins.querySources({ query: 'Song' });
@@ -1654,6 +1657,7 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsOpenDirectory, 'echo.playback-panel');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsExportPackage, 'echo.playback-panel');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsImportPackage);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsImportPackage, 'D:\\Echo\\plugin.echo');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsRunCommand, {
       pluginId: 'echo.playback-panel',
       commandId: 'show-status',

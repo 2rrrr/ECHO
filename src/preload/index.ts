@@ -2307,7 +2307,20 @@ const echoApi: EchoApi = {
     reload: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsReload, pluginId),
     openDirectory: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsOpenDirectory, pluginId),
     exportPackage: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsExportPackage, pluginId),
-    importPackage: () => ipcRenderer.invoke(IpcChannels.PluginsImportPackage),
+    importPackage: (source) => {
+      if (source === undefined) {
+        return ipcRenderer.invoke(IpcChannels.PluginsImportPackage);
+      }
+      if (typeof source === 'string') {
+        return ipcRenderer.invoke(IpcChannels.PluginsImportPackage, source);
+      }
+
+      const sourcePath = webUtils?.getPathForFile(source) || '';
+      if (!sourcePath) {
+        throw new Error('plugin_package_path_unavailable');
+      }
+      return ipcRenderer.invoke(IpcChannels.PluginsImportPackage, sourcePath);
+    },
     runCommand: (request) => ipcRenderer.invoke(IpcChannels.PluginsRunCommand, request),
     queryMetadata: (request) => ipcRenderer.invoke(IpcChannels.PluginsQueryMetadata, request),
     querySources: (request) => ipcRenderer.invoke(IpcChannels.PluginsQuerySources, request),
