@@ -81,6 +81,9 @@ const streamingSourceLabel = (track: LibraryTrack | null): string | null => {
   }
 
   const provider = track.provider?.trim();
+  if (provider === 'kugou') {
+    return null;
+  }
   return provider ? (streamingProviderLabels[provider] ?? provider) : '在线';
 };
 

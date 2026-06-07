@@ -187,6 +187,7 @@ export type AppSettings = {
   appearanceThemePresetOverrides?: AppThemePresetOverrides;
   appearanceCustomThemes?: AppThemeCustomTheme[];
   appearanceThemeCustomId?: string | null;
+  finalThemeUnlockVersion?: string | null;
   appearanceThemePresetsExpanded?: boolean;
   appearanceThemeCustomExpanded?: boolean;
   appearanceSidebarLayoutExpanded?: boolean;

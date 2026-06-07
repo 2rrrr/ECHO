@@ -539,8 +539,17 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceThemePreset: 'matsuriLantern' }).appearanceThemePreset).toBe('matsuriLantern');
     expect(normalizeSettings({ appearanceThemePreset: 'ginzaNoir' }).appearanceThemePreset).toBe('ginzaNoir');
     expect(normalizeSettings({ appearanceThemePreset: 'frostJazz' }).appearanceThemePreset).toBe('frostJazz');
-    expect(normalizeSettings({ appearanceThemePreset: 'FINAL' }).appearanceThemePreset).toBe('FINAL');
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL' }).appearanceThemePreset).toBe('classic');
     expect(normalizeSettings({ appearanceThemePreset: 'midnight' as never }).appearanceThemePreset).toBe('classic');
+  });
+
+  it('keeps FINAL locked unless the current unlock version is stored', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+    const { finalThemeUnlockVersion } = await import('../../shared/constants/featureUnlocks');
+
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion: 'true' }).appearanceThemePreset).toBe('classic');
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }).appearanceThemePreset).toBe('FINAL');
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }).finalThemeUnlockVersion).toBe(finalThemeUnlockVersion);
   });
 
   it('normalizes appearance theme preset expansion state', async () => {

@@ -51,7 +51,7 @@ import type {
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
-import { isDownloadFeatureUnlockCode, isFinalThemeUnlockCode } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion, isDownloadFeatureUnlockCode, isFinalThemeUnlockCode } from '../../shared/constants/featureUnlocks';
 import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import {
   defaultSidebarHiddenRouteIds,
@@ -525,7 +525,7 @@ const networkProviderLabels: Record<AppSettings['networkMetadataProviders'][numb
   'cover-art-archive': 'Cover Art Archive',
   mock: 'Mock',
 };
-const visibleNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music', 'kugou-music', 'musicbrainz'];
+const visibleNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music', 'musicbrainz'];
 const defaultNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music'];
 const artistOnlineInfoSourceOptions: Array<{ source: ArtistOnlineInfoSource; label: string; description: string }> = [
   { source: 'baidu-baike', label: '百度百科', description: '中文艺人和大众歌手优先' },
@@ -771,7 +771,7 @@ const accountLoginUrls: Record<AccountProvider, string> = {
   osu: 'https://osu.ppy.sh/',
 };
 
-const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'kugou', 'bilibili', 'soundcloud', 'osu'];
+const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'soundcloud', 'osu'];
 const buildYouTubeBrowserOptions = (t: (key: TranslationKey, params?: Record<string, string | number>) => string): Array<{ value: YouTubeBrowser; label: string }> => [
   { value: 'edge', label: 'Edge' },
   { value: 'chrome', label: 'Chrome' },
@@ -3661,8 +3661,17 @@ const getUpdateStateLabel = (state: UpdateStatus['state']): TranslationKey => {
   }
 };
 
-const readFinalThemeUnlocked = (): boolean =>
-  readBooleanStoragePreference(finalThemeUnlockedStorageKey, false);
+const readFinalThemeUnlocked = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(finalThemeUnlockedStorageKey) === finalThemeUnlockVersion;
+  } catch {
+    return false;
+  }
+};
 
 const writeFinalThemeUnlocked = (): void => {
   if (typeof window === 'undefined') {
@@ -3670,7 +3679,7 @@ const writeFinalThemeUnlocked = (): void => {
   }
 
   try {
-    window.localStorage.setItem(finalThemeUnlockedStorageKey, 'true');
+    window.localStorage.setItem(finalThemeUnlockedStorageKey, finalThemeUnlockVersion);
   } catch {
     // Ignore storage failures; the unlock can still work for this session.
   }
@@ -4225,6 +4234,7 @@ export const SettingsPage = (): JSX.Element => {
   const mysteriousKeyUnlockNoticeShownRef = useRef(false);
   const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(() => readFinalThemeUnlocked());
   const finalThemeUnlockNoticeShownRef = useRef(false);
+  const finalThemeRelockAppliedRef = useRef(false);
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [audioDiagnosticsCopied, setAudioDiagnosticsCopied] = useState(false);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
@@ -5261,28 +5271,6 @@ export const SettingsPage = (): JSX.Element => {
     mysteriousKeyUnlockNoticeShownRef.current = true;
     window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'Mysterious key 已解锁。' }));
   }, [mysteriousKeySearchUnlocked]);
-
-  useEffect(() => {
-    if (!finalThemeSearchUnlocked) {
-      return;
-    }
-
-    if (!finalThemeUnlocked) {
-      writeFinalThemeUnlocked();
-      setFinalThemeUnlocked(true);
-    }
-
-    setSettingsQuery('');
-    setActiveSection('appearance');
-    setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true } : current));
-
-    if (finalThemeUnlockNoticeShownRef.current) {
-      return;
-    }
-
-    finalThemeUnlockNoticeShownRef.current = true;
-    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'FINAL theme unlocked.' }));
-  }, [finalThemeSearchUnlocked, finalThemeUnlocked]);
 
   const settingsSearchResults = useMemo<SettingsSearchResult[]>(() => {
     const query = normalizeSettingsSearchText(settingsQuery);
@@ -6711,7 +6699,12 @@ export const SettingsPage = (): JSX.Element => {
           }
         : current,
     );
-    patchAppSettings(activeThemeCustom ? { appearanceThemePreset, appearanceThemeCustomId: null } : { appearanceThemePreset });
+    const nextFinalThemeUnlockVersion = finalThemeUnlocked ? finalThemeUnlockVersion : null;
+    patchAppSettings(
+      activeThemeCustom
+        ? { appearanceThemePreset, appearanceThemeCustomId: null, finalThemeUnlockVersion: nextFinalThemeUnlockVersion }
+        : { appearanceThemePreset, finalThemeUnlockVersion: nextFinalThemeUnlockVersion },
+    );
   };
 
   const handleRandomThemeCreate = (): void => {
@@ -6726,6 +6719,7 @@ export const SettingsPage = (): JSX.Element => {
             ...current,
             appearanceThemePreset: 'classic',
             appearanceThemeCustomId: null,
+            finalThemeUnlockVersion: null,
           }
         : current,
     );
@@ -6735,10 +6729,7 @@ export const SettingsPage = (): JSX.Element => {
   const themeCustomValues = mergeThemeToneValues(selectedThemePreset, themeCustomTone, themeCustomDraft);
   const themeCustomWarnings = getThemeContrastWarnings(themeCustomValues);
   const selectedThemePresetOption = themePresetOptions.find((option) => option.preset === selectedThemePreset) ?? themePresetOptions[0];
-  const visibleThemePresetOptions = useMemo(
-    () => finalThemeUnlocked ? themePresetOptions : themePresetOptions.filter((option) => option.preset !== 'FINAL'),
-    [finalThemeUnlocked],
-  );
+  const visibleThemePresetOptions = themePresetOptions;
   const themePresetsExpanded = appSettings?.appearanceThemePresetsExpanded === true;
   const themeCustomGradientPreview = `linear-gradient(135deg, ${themeCustomValues.appBg} 0%, ${themeCustomValues.appBg2} 52%, ${themeCustomValues.appBg3} 100%)`;
 
@@ -7180,6 +7171,63 @@ export const SettingsPage = (): JSX.Element => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
   }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
+
+  useEffect(() => {
+    if (!finalThemeSearchUnlocked) {
+      return;
+    }
+
+    if (!finalThemeUnlocked) {
+      writeFinalThemeUnlocked();
+      setFinalThemeUnlocked(true);
+      setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true, finalThemeUnlockVersion } : current));
+      patchAppSettings({ appearanceThemePresetsExpanded: true, finalThemeUnlockVersion });
+    }
+
+    setSettingsQuery('');
+    setActiveSection('appearance');
+    setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true } : current));
+
+    if (finalThemeUnlockNoticeShownRef.current) {
+      return;
+    }
+
+    finalThemeUnlockNoticeShownRef.current = true;
+    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'FINAL theme unlocked.' }));
+  }, [finalThemeSearchUnlocked, finalThemeUnlocked, patchAppSettings]);
+
+  useEffect(() => {
+    if (finalThemeUnlocked || finalThemeRelockAppliedRef.current || appSettings?.appearanceThemePreset !== 'FINAL') {
+      return;
+    }
+
+    finalThemeRelockAppliedRef.current = true;
+    const fallbackPreset: AppThemePreset = 'classic';
+    updateThemePreferences(appSettings.appearanceTheme ?? defaultThemeMode, fallbackPreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: null,
+      customThemes: savedThemeCustomThemes,
+    });
+    setSelectedThemePreset(fallbackPreset);
+    setActiveThemeCustomId(null);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: fallbackPreset,
+            appearanceThemeCustomId: null,
+          }
+        : current,
+    );
+    patchAppSettings({ appearanceThemePreset: fallbackPreset, appearanceThemeCustomId: null, finalThemeUnlockVersion: null });
+  }, [
+    appSettings?.appearanceTheme,
+    appSettings?.appearanceThemePreset,
+    finalThemeUnlocked,
+    patchAppSettings,
+    savedThemeCustomThemes,
+    savedThemePresetOverrides,
+  ]);
 
   const handleWindowAcrylicToggle = useCallback((): void => {
     const app = getAppBridge();
@@ -12920,15 +12968,18 @@ export const SettingsPage = (): JSX.Element => {
                       {visibleThemePresetOptions.map((option) => {
                         const activePreset = selectedThemePreset;
                         const isActive = activePreset === option.preset;
+                        const isFinalThemeLocked = option.preset === 'FINAL' && !finalThemeUnlocked;
 
                         return (
                           <button
+                            aria-disabled={isFinalThemeLocked}
                             aria-pressed={isActive}
-                            className={`settings-theme-preset-card${isActive ? ' active' : ''}`}
+                            className={`settings-theme-preset-card${isActive ? ' active' : ''}${isFinalThemeLocked ? ' locked' : ''}`}
                             data-preset={option.preset}
+                            disabled={isFinalThemeLocked}
                             key={option.preset}
                             onClick={() => handleThemePresetChange(option.preset)}
-                            title={t(option.descriptionKey)}
+                            title={isFinalThemeLocked ? '需持有FINAL耳机解锁主题' : t(option.descriptionKey)}
                             type="button"
                           >
                             <span
@@ -12941,6 +12992,7 @@ export const SettingsPage = (): JSX.Element => {
                             <span className="settings-theme-preset-copy">
                               <strong>{t(option.labelKey)}</strong>
                               <em>{t(option.descriptionKey)}</em>
+                              {isFinalThemeLocked ? <small>需持有FINAL耳机解锁主题</small> : null}
                             </span>
                             <span aria-hidden="true" className="settings-theme-preset-swatches">
                               {option.swatches.map((swatch) => (

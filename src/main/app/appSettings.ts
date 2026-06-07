@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
+import { finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
 import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type {
@@ -368,6 +369,7 @@ export const defaultSettings: AppSettings = {
   appearanceThemePresetOverrides: {},
   appearanceCustomThemes: [],
   appearanceThemeCustomId: null,
+  finalThemeUnlockVersion: null,
   appearanceThemePresetsExpanded: false,
   appearanceThemeCustomExpanded: false,
   appearanceSidebarLayoutExpanded: false,
@@ -1604,10 +1606,16 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   );
   const replayGainTargetLufs = Number(settings.replayGainTargetLufs);
   const replayGainPreampDb = Number(settings.replayGainPreampDb);
+  const finalThemeUnlocked = settings.finalThemeUnlockVersion === finalThemeUnlockVersion;
   const appearanceCustomThemes = normalizeThemeCustomThemes(settings.appearanceCustomThemes);
-  const appearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
+  const requestedAppearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
+  const requestedAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === requestedAppearanceThemeCustomId);
+  const appearanceThemeCustomId = !finalThemeUnlocked && requestedAppearanceCustomTheme?.basePreset === 'FINAL'
+    ? null
+    : requestedAppearanceThemeCustomId;
   const activeAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === appearanceThemeCustomId);
-  const appearanceThemePreset = activeAppearanceCustomTheme?.basePreset ?? normalizeAppearanceThemePreset(settings.appearanceThemePreset);
+  const requestedAppearanceThemePreset = activeAppearanceCustomTheme?.basePreset ?? normalizeAppearanceThemePreset(settings.appearanceThemePreset);
+  const appearanceThemePreset = !finalThemeUnlocked && requestedAppearanceThemePreset === 'FINAL' ? 'classic' : requestedAppearanceThemePreset;
   const downloadsFeatureUnlocked = settings.downloadsFeatureUnlocked === true;
 
   return {
@@ -1622,6 +1630,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appearanceThemePresetOverrides: normalizeThemePresetOverrides(settings.appearanceThemePresetOverrides),
     appearanceCustomThemes,
     appearanceThemeCustomId,
+    finalThemeUnlockVersion: finalThemeUnlocked ? finalThemeUnlockVersion : null,
     appearanceThemePresetsExpanded: settings.appearanceThemePresetsExpanded === true,
     appearanceThemeCustomExpanded: settings.appearanceThemeCustomExpanded === true,
     appearanceSidebarLayoutExpanded: settings.appearanceSidebarLayoutExpanded === true,

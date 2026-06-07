@@ -1910,7 +1910,7 @@ describe('SettingsPage', () => {
     expect(document.documentElement.dataset.themePreset).toBe('darkSideMoon');
   });
 
-  it('locks the FINAL theme preset until finalaudio is entered in settings search', async () => {
+  it('locks the FINAL theme preset until the exact new key is entered in settings search', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
     setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
@@ -1921,18 +1921,47 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    expandThemePresetGrid();
 
-    expect(screen.queryByText('settings.appearance.themePreset.FINAL')).toBeNull();
+    const lockedPresetButton = (await screen.findByText('settings.appearance.themePreset.FINAL')).closest('button') as HTMLButtonElement;
+    expect(lockedPresetButton.disabled).toBe(true);
+    expect(screen.getByText('需持有FINAL耳机解锁主题')).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText('settings.header.searchPlaceholder'), { target: { value: 'finalaudio' } });
 
+    await waitFor(() => expect(lockedPresetButton.disabled).toBe(true));
+
+    fireEvent.change(screen.getByPlaceholderText('settings.header.searchPlaceholder'), { target: { value: ' FINAL-8K-7Q4M-H2ND-2026 ' } });
+
+    await waitFor(() => expect(lockedPresetButton.disabled).toBe(true));
+
+    fireEvent.change(screen.getByPlaceholderText('settings.header.searchPlaceholder'), { target: { value: 'FINAL-8K-7Q4M-H2ND-2026' } });
+
     const presetButton = (await screen.findByText('settings.appearance.themePreset.FINAL')).closest('button') as HTMLButtonElement;
-    expect(window.localStorage.getItem('echo-next:settings:final-theme-unlocked')).toBe('true');
+    await waitFor(() => expect(presetButton.disabled).toBe(false));
+    expect(window.localStorage.getItem('echo-next:settings:final-theme-unlocked')).toBe('2026-06-final-key-v2');
 
     fireEvent.click(presetButton);
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'FINAL' }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion: '2026-06-final-key-v2' }));
     expect(document.documentElement.dataset.themePreset).toBe('FINAL');
+  });
+
+  it('relocks an old FINAL theme unlock on the new key version', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const finalSettings: AppSettings = { ...settings, appearanceThemePreset: 'FINAL' };
+    window.localStorage.setItem('echo-next:settings:final-theme-unlocked', 'true');
+    getSettingsMock.mockResolvedValue(finalSettings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...finalSettings, ...patch }));
+    resetSettingsMock.mockResolvedValue(finalSettings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'classic', appearanceThemeCustomId: null, finalThemeUnlockVersion: null }));
+    expect(document.documentElement.dataset.themePreset).toBe('classic');
   });
 
   it('creates a custom theme, saves a color, and clears it when a built-in preset is selected', async () => {

@@ -1595,6 +1595,29 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
   padding: 10px;
 }
 
+.settings-page .settings-theme-preset-card.locked {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.settings-page .settings-theme-preset-card.locked:hover {
+  border-color: var(--theme-panel-border);
+  background: var(--theme-panel-bg);
+}
+
+.settings-page .settings-theme-preset-card.locked .settings-theme-preset-preview {
+  filter: grayscale(0.8);
+}
+
+.settings-page .settings-theme-preset-copy small {
+  display: block;
+  margin-top: 4px;
+  color: var(--theme-accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .settings-page .settings-theme-preset-preview {
   min-height: 48px;
 }
