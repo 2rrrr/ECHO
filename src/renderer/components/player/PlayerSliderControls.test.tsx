@@ -30,7 +30,7 @@ const deferred = <T,>(): { promise: Promise<T>; resolve: (value: T) => void } =>
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  window.echo = undefined;
+  delete (window as unknown as { echo?: unknown }).echo;
 });
 
 describe('player slider controls', () => {

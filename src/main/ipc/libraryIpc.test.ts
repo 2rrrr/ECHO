@@ -10,6 +10,7 @@ import type {
   LibraryDatabaseRestoreResult,
   LibraryAllUserDataDeleteResult,
   LibraryHealthReport,
+  LibraryPlaylist,
 } from '../../shared/types/library';
 import type { RemoteBackgroundGlobalStatus, RemoteSource } from '../../shared/types/remoteSources';
 
@@ -216,7 +217,7 @@ const installLibraryService = () => {
   };
   const service = {
     getTrack: vi.fn((_trackId?: string) => track),
-    getPlaylist: vi.fn(() => ({
+    getPlaylist: vi.fn<() => LibraryPlaylist>(() => ({
       id: 'playlist-1',
       name: 'Export Mix',
       description: 'For export',
@@ -274,6 +275,47 @@ const installLibraryService = () => {
       page: 1,
       pageSize: 500,
       total: 2,
+      hasMore: false,
+    })),
+    getLikedSongsPlaylist: vi.fn(() => ({
+      id: 'liked-tracks',
+      name: '喜欢的歌曲',
+      description: null,
+      kind: 'system',
+      sourceProvider: 'local',
+      sourcePlaylistId: null,
+      coverId: null,
+      coverThumb: null,
+      sortMode: 'manual',
+      itemCount: 2,
+      createdAt: '2026-05-14T00:00:00.000Z',
+      updatedAt: '2026-05-14T00:00:00.000Z',
+    })),
+    getLikedTracks: vi.fn((query?: { sourceProvider?: string }) => ({
+      items: [
+        {
+          id: 'liked-item-1',
+          playlistId: 'liked-tracks',
+          mediaType: 'stream_track',
+          mediaId: 'stream-qq-1',
+          sourceProvider: 'qqmusic',
+          sourceItemId: 'qq-song-1',
+          titleSnapshot: 'QQ Song',
+          artistSnapshot: 'QQ Artist',
+          albumSnapshot: 'QQ Album',
+          durationSnapshot: 321,
+          coverId: null,
+          coverThumb: null,
+          position: 0,
+          addedAt: '2026-05-14T00:00:00.000Z',
+          addedFrom: 'qqmusic-liked-sync',
+          unavailable: false,
+          track: null,
+        },
+      ].filter((item) => !query?.sourceProvider || item.sourceProvider === query.sourceProvider),
+      page: 1,
+      pageSize: 500,
+      total: query?.sourceProvider === 'qqmusic' ? 1 : 0,
       hasMore: false,
     })),
     createPlaylist: vi.fn((request: { name: string }) => ({
@@ -1134,6 +1176,40 @@ describe('library IPC', () => {
 
     expect(service.getPlaylist).toHaveBeenCalledWith('playlist-1');
     expect(service.getPlaylistItems).toHaveBeenCalledWith('playlist-1', { page: 1, pageSize: 500 });
+  });
+
+  it('exports liked playlists for one source provider', async () => {
+    const service = installLibraryService();
+    service.getPlaylist.mockReturnValueOnce({
+      id: 'liked-tracks',
+      name: '喜欢的歌曲',
+      description: null,
+      kind: 'system',
+      sourceProvider: 'local',
+      sourcePlaylistId: null,
+      coverId: null,
+      coverThumb: null,
+      sortMode: 'manual',
+      itemCount: 2,
+      createdAt: '2026-05-14T00:00:00.000Z',
+      updatedAt: '2026-05-14T00:00:00.000Z',
+    });
+    const root = makeTempRoot();
+    const outputPath = join(root, 'qq-liked.csv');
+    showSaveDialogMock.mockResolvedValueOnce({ canceled: false, filePath: outputPath });
+
+    const result = await handlers[IpcChannels.LibraryExportPlaylist]!(null, { playlistId: 'liked-tracks', format: 'csv', sourceProvider: 'qqmusic' });
+
+    expect(result).toBe(outputPath);
+    expect(service.getLikedTracks).toHaveBeenCalledWith({ page: 1, pageSize: 500, sourceProvider: 'qqmusic' });
+    expect(service.getPlaylistItems).not.toHaveBeenCalled();
+    const content = readFileSync(outputPath, 'utf8');
+    expect(content).toContain('QQ Song,QQ Artist,QQ Album,321,,qqmusic,qq-song-1,false');
+    expect(showSaveDialogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultPath: '喜欢的歌曲 - QQ音乐.csv',
+      }),
+    );
   });
 
   it('returns null when playlist export is cancelled', async () => {

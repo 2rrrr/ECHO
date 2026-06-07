@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Disc3, Heart, Loader2, Play, RefreshCw, Search, Shuffle, Trash2 } from 'lucide-react';
-import type { LibraryAlbum, LibraryPage, LibraryPlaylistItem, LibrarySort, LibraryTrack } from '../../shared/types/library';
+import { Disc3, Download, Heart, Loader2, Play, RefreshCw, Search, Shuffle, Trash2 } from 'lucide-react';
+import type { LibraryAlbum, LibraryPage, LibraryPlaylistItem, LibrarySort, LibraryTrack, PlaylistExportFormat } from '../../shared/types/library';
 import type { StreamingProviderName } from '../../shared/types/streaming';
 import { AlbumDetailView } from '../components/album/AlbumDetailView';
 import { TrackList } from '../components/library/TrackList';
@@ -19,6 +19,12 @@ const sortOptions: Array<{ value: LibrarySort; label: string }> = [
   { value: 'titleDesc', label: '标题 Z-A' },
   { value: 'artist', label: '艺人' },
   { value: 'album', label: '专辑' },
+];
+const likedExportOptions: Array<{ value: PlaylistExportFormat; label: string }> = [
+  { value: 'json', label: 'JSON' },
+  { value: 'txt', label: 'TXT' },
+  { value: 'm3u8', label: 'M3U8' },
+  { value: 'csv', label: 'CSV' },
 ];
 
 type LikedTab = 'tracks' | 'albums';
@@ -134,6 +140,8 @@ export const LikedPage = (): JSX.Element => {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [syncingLikedProvider, setSyncingLikedProvider] = useState<LikedSyncProvider | null>(null);
   const [trackSourceProvider, setTrackSourceProvider] = useState<LikedTrackSourceProvider>('local');
+  const [likedExportFormat, setLikedExportFormat] = useState<PlaylistExportFormat>('json');
+  const [isExportingLikedTracks, setIsExportingLikedTracks] = useState(false);
   const [isTrackLoading, setIsTrackLoading] = useState(false);
   const [isAlbumLoading, setIsAlbumLoading] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
@@ -404,6 +412,34 @@ export const LikedPage = (): JSX.Element => {
     window.dispatchEvent(new Event(likedChangedEvent));
   }, []);
 
+  const handleExportLikedTracks = useCallback(async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library?.getLikedSongsPlaylist || !library.exportPlaylist) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to export liked tracks.');
+      setSyncStatus(null);
+      return;
+    }
+
+    setIsExportingLikedTracks(true);
+    setError(null);
+    setSyncStatus(null);
+    try {
+      const playlist = await library.getLikedSongsPlaylist();
+      const exportedPath = await library.exportPlaylist({
+        playlistId: playlist.id,
+        format: likedExportFormat,
+        sourceProvider: trackSourceProvider,
+      });
+      const sourceLabel = likedTrackSourceProviders.find((item) => item.provider === trackSourceProvider)?.label ?? trackSourceProvider;
+      setSyncStatus(exportedPath ? `${sourceLabel}我喜欢已导出：${exportedPath}` : '已取消导出。');
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
+      setSyncStatus(null);
+    } finally {
+      setIsExportingLikedTracks(false);
+    }
+  }, [likedExportFormat, trackSourceProvider]);
+
   const handleToggleAlbumLiked = useCallback(async (album: LibraryAlbum): Promise<void> => {
     await window.echo.library.unlikeAlbum(album.id);
     setAlbumItems((current) => current.filter((item) => (item.mediaId ?? item.id) !== album.id));
@@ -507,6 +543,17 @@ export const LikedPage = (): JSX.Element => {
             <button className="queue-tool-button" type="button" disabled={tracks.length === 0} onClick={() => void handleShuffleAll()}>
               <Shuffle size={16} /> 随机播放
             </button>
+            <StyledSelect
+              className="liked-sort-control"
+              value={likedExportFormat}
+              options={likedExportOptions}
+              onChange={setLikedExportFormat}
+              ariaLabel="导出格式"
+            />
+            <button className="queue-tool-button" type="button" disabled={isExportingLikedTracks} onClick={() => void handleExportLikedTracks()}>
+              {isExportingLikedTracks ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
+              {isExportingLikedTracks ? '导出中' : '导出'}
+            </button>
           </>
         ) : null}
         <button
@@ -564,7 +611,7 @@ export const LikedPage = (): JSX.Element => {
         </>
       )}
 
-      {error || syncStatus || isLoading ? <div className="list-footer"><span>{error ?? syncStatus ?? '正在读取喜欢的音乐...'}</span></div> : null}
+      {error || syncStatus || isLoading || isExportingLikedTracks ? <div className="list-footer"><span>{error ?? syncStatus ?? (isExportingLikedTracks ? '正在导出我喜欢...' : '正在读取喜欢的音乐...')}</span></div> : null}
       {tab === 'albums' ? <MediaWallScrollSpacer height={likedAlbumSpacerHeight} /> : null}
     </div>
   );

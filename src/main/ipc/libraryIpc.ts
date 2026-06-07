@@ -739,7 +739,7 @@ const normalizeUpdatePlaylistRequest = (
   };
 };
 
-const normalizeExportPlaylistRequest = (value: unknown): { playlistId: string; format: PlaylistExportFormat } => {
+const normalizeExportPlaylistRequest = (value: unknown): { playlistId: string; format: PlaylistExportFormat; sourceProvider?: LibraryPageQuery['sourceProvider'] } => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('playlist export request must be an object');
   }
@@ -753,9 +753,15 @@ const normalizeExportPlaylistRequest = (value: unknown): { playlistId: string; f
     throw new Error('playlist export format must be json, txt, m3u8, or csv');
   }
 
+  const sourceProvider =
+    typeof input.sourceProvider === 'string' && sourceProviderValues.has(input.sourceProvider)
+      ? (input.sourceProvider as LibraryPageQuery['sourceProvider'])
+      : undefined;
+
   return {
     playlistId: requireText(input.playlistId, 'playlistId'),
     format,
+    sourceProvider,
   };
 };
 
@@ -1616,8 +1622,14 @@ const playlistExportFilter = (format: PlaylistExportFormat): Electron.FileFilter
   }
 };
 
+const likedExportSourceLabels: Partial<Record<NonNullable<LibraryPageQuery['sourceProvider']>, string>> = {
+  local: '本地',
+  netease: '网易云',
+  qqmusic: 'QQ音乐',
+};
+
 const exportPlaylist = async (request: unknown): Promise<string | null> => {
-  const { playlistId, format } = normalizeExportPlaylistRequest(request);
+  const { playlistId, format, sourceProvider } = normalizeExportPlaylistRequest(request);
   const service = getLibraryService();
   const playlist = service.getPlaylist(playlistId);
 
@@ -1625,11 +1637,20 @@ const exportPlaylist = async (request: unknown): Promise<string | null> => {
     throw new Error(`Unknown playlist ${playlistId}`);
   }
 
+  if (sourceProvider) {
+    const likedSongsPlaylistId = service.getLikedSongsPlaylist().id;
+    if (playlistId !== likedSongsPlaylistId) {
+      throw new Error('sourceProvider export filtering is only supported for liked songs');
+    }
+  }
+
   const items: LibraryPlaylistItem[] = [];
   let page = 1;
   const pageSize = 500;
   for (;;) {
-    const result = service.getPlaylistItems(playlistId, { page, pageSize });
+    const result = sourceProvider
+      ? service.getLikedTracks({ page, pageSize, sourceProvider })
+      : service.getPlaylistItems(playlistId, { page, pageSize });
     items.push(...result.items);
     if (!result.hasMore) {
       break;
@@ -1639,7 +1660,7 @@ const exportPlaylist = async (request: unknown): Promise<string | null> => {
 
   const result = await dialog.showSaveDialog({
     title: '导出歌单',
-    defaultPath: `${safeExportFileName(playlist.name)}.${format}`,
+    defaultPath: `${safeExportFileName(sourceProvider ? `${playlist.name} - ${likedExportSourceLabels[sourceProvider] ?? sourceProvider}` : playlist.name)}.${format}`,
     filters: playlistExportFilter(format),
   });
 

@@ -3280,7 +3280,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
           sourceKey,
           items: result.items
             .map(playlistItemToTrack)
-            .filter((track): track is LibraryTrack => Boolean(track) && track.unavailable !== true && Boolean(track.path) && !excludedTrackIds.has(track.id))
+            .filter((track): track is LibraryTrack => track !== null && track.unavailable !== true && Boolean(track.path) && !excludedTrackIds.has(track.id))
             .map((track) => createQueueItem(track, source)),
         };
 
@@ -3381,7 +3381,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
         return result.items
           .map(playlistItemToTrack)
-          .filter((track): track is LibraryTrack => Boolean(track) && track.id !== activeTrackId && track.unavailable !== true && Boolean(track.path) && !excludeTrackIds.has(track.id))
+          .filter((track): track is LibraryTrack => track !== null && track.id !== activeTrackId && track.unavailable !== true && Boolean(track.path) && !excludeTrackIds.has(track.id))
           .map((track) => createQueueItem(track, source));
       } catch {
         return [];
