@@ -51,7 +51,7 @@ import type {
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
-import { finalThemeUnlockVersion, isDownloadFeatureUnlockCode, isFinalThemeUnlockCode } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockPluginId, finalThemeUnlockVersion, isDownloadFeatureUnlockCode } from '../../shared/constants/featureUnlocks';
 import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import {
   defaultSidebarHiddenRouteIds,
@@ -398,7 +398,6 @@ const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; 
 const playbackAdvancedPanelExpandedStorageKey = 'echo:settings:playback:advanced-panel-expanded';
 const integrationsAccountPanelExpandedStorageKey = 'echo:settings:integrations:account-panel-expanded';
 const integrationsCredentialPanelExpandedStorageKey = 'echo:settings:integrations:credential-panel-expanded';
-const finalThemeUnlockedStorageKey = 'echo-next:settings:final-theme-unlocked';
 const integrationCredentialSettingIds = new Set([
   'settings-row-spotify-auth-config',
   'settings-row-tidal-auth-config',
@@ -1821,14 +1820,23 @@ const collectPluginThemeOptions = (plugins: PluginSummary[]): PluginThemeOption[
       return [];
     }
 
-    return (plugin.contributes.themePresets ?? []).map((theme) => ({
-      ...theme,
-      pluginId: plugin.id,
-      pluginName: plugin.name,
-      pluginVersion: plugin.version,
-      customThemeId: pluginThemeCustomId(plugin.id, theme.id),
-    }));
+    return (plugin.contributes.themePresets ?? [])
+      .filter((theme) => theme.basePreset !== 'FINAL')
+      .map((theme) => ({
+        ...theme,
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        pluginVersion: plugin.version,
+        customThemeId: pluginThemeCustomId(plugin.id, theme.id),
+      }));
   });
+
+const isFinalThemeUnlockPlugin = (plugin: PluginSummary): boolean =>
+  plugin.id === finalThemeUnlockPluginId &&
+  plugin.enabled === true &&
+  plugin.disabledByHost !== true &&
+  !plugin.error &&
+  plugin.status !== 'disabled';
 
 type ThemeTone = 'light' | 'dark';
 type ThemeColorField = keyof Pick<
@@ -3479,6 +3487,9 @@ const isThemeExportPayload = (value: unknown): value is Partial<ThemeExportPaylo
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
 const readThemeExportPreset = (value: unknown): AppThemePreset | null => {
+  if (value === 'FINAL') {
+    return null;
+  }
   if (!themePresetOptions.some((option) => option.preset === value)) {
     return null;
   }
@@ -3658,30 +3669,6 @@ const getUpdateStateLabel = (state: UpdateStatus['state']): TranslationKey => {
       return 'settings.about.updates.state.disabled';
     default:
       return 'settings.about.updates.state.idle';
-  }
-};
-
-const readFinalThemeUnlocked = (): boolean => {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    return window.localStorage.getItem(finalThemeUnlockedStorageKey) === finalThemeUnlockVersion;
-  } catch {
-    return false;
-  }
-};
-
-const writeFinalThemeUnlocked = (): void => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(finalThemeUnlockedStorageKey, finalThemeUnlockVersion);
-  } catch {
-    // Ignore storage failures; the unlock can still work for this session.
   }
 };
 
@@ -4232,8 +4219,8 @@ export const SettingsPage = (): JSX.Element => {
   const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
   const [mysteriousKeyVisible, setMysteriousKeyVisible] = useState(false);
   const mysteriousKeyUnlockNoticeShownRef = useRef(false);
-  const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(() => readFinalThemeUnlocked());
-  const finalThemeUnlockNoticeShownRef = useRef(false);
+  const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(false);
+  const [finalThemeUnlockChecked, setFinalThemeUnlockChecked] = useState(false);
   const finalThemeRelockAppliedRef = useRef(false);
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [audioDiagnosticsCopied, setAudioDiagnosticsCopied] = useState(false);
@@ -5256,7 +5243,6 @@ export const SettingsPage = (): JSX.Element => {
   }, [appSettings?.downloadsFeatureUnlocked, mysteriousKeyVisible, settingsNavigationItems, t, windowsIntegrationAvailable]);
 
   const mysteriousKeySearchUnlocked = activeSection === 'general' && normalizeSettingsSearchText(settingsQuery) === 'zimin';
-  const finalThemeSearchUnlocked = isFinalThemeUnlockCode(settingsQuery);
 
   useEffect(() => {
     if (!mysteriousKeySearchUnlocked) {
@@ -5631,6 +5617,11 @@ export const SettingsPage = (): JSX.Element => {
       const customThemeId = normalizeThemeCustomId(settings.appearanceThemeCustomId ?? null, customThemes);
       const activeCustomTheme = customThemes.find((theme) => theme.id === customThemeId);
       const basePreset = activeCustomTheme?.basePreset ?? settings.appearanceThemePreset ?? defaultThemePreset;
+      const settingsFinalThemeUnlocked = settings.finalThemeUnlockVersion === finalThemeUnlockVersion;
+      if (settingsFinalThemeUnlocked) {
+        setFinalThemeUnlocked(true);
+        setFinalThemeUnlockChecked(true);
+      }
       setThemeCustomThemes(customThemes);
       setActiveThemeCustomId(customThemeId);
       setSelectedThemePreset(basePreset);
@@ -5639,7 +5630,7 @@ export const SettingsPage = (): JSX.Element => {
         settings.appearanceTheme ?? defaultThemeMode,
         basePreset,
         settings.appearanceThemePresetOverrides ?? {},
-        { customThemeId, customThemes },
+        { customThemeId, customThemes, finalThemeUnlocked: settingsFinalThemeUnlocked },
       );
       setThemeCustomDraft(activeCustomTheme?.light ?? settings.appearanceThemePresetOverrides?.[basePreset]?.light ?? {});
       if (settings.appearancePreferences) {
@@ -5678,14 +5669,14 @@ export const SettingsPage = (): JSX.Element => {
   }, []);
 
   useEffect(() => {
-    if (activeSection !== 'appearance') {
-      return undefined;
-    }
-
     let disposed = false;
     const plugins = getPluginsBridge();
     if (!plugins) {
-      setPluginThemeOptions([]);
+      setFinalThemeUnlocked(false);
+      setFinalThemeUnlockChecked(true);
+      if (activeSection === 'appearance') {
+        setPluginThemeOptions([]);
+      }
       return undefined;
     }
 
@@ -5693,12 +5684,20 @@ export const SettingsPage = (): JSX.Element => {
       .list()
       .then((result) => {
         if (!disposed) {
-          setPluginThemeOptions(collectPluginThemeOptions(result.plugins));
+          setFinalThemeUnlocked(result.plugins.some(isFinalThemeUnlockPlugin));
+          setFinalThemeUnlockChecked(true);
+          if (activeSection === 'appearance') {
+            setPluginThemeOptions(collectPluginThemeOptions(result.plugins));
+          }
         }
       })
       .catch(() => {
         if (!disposed) {
-          setPluginThemeOptions([]);
+          setFinalThemeUnlocked(false);
+          setFinalThemeUnlockChecked(true);
+          if (activeSection === 'appearance') {
+            setPluginThemeOptions([]);
+          }
         }
       });
 
@@ -5971,10 +5970,11 @@ export const SettingsPage = (): JSX.Element => {
       appearanceCustomThemes: previewThemes,
       appearanceThemeCustomId: activeThemeCustom?.id ?? null,
     }, {
+      finalThemeUnlocked,
       customThemeId: activeThemeCustom?.id ?? null,
       customThemes: previewThemes,
     });
-  }, [activeSection, activeThemeCustom, appSettings?.appearanceTheme, savedThemeCustomThemes, savedThemePresetOverrides, selectedThemePreset, themeCustomDraft, themeCustomTone]);
+  }, [activeSection, activeThemeCustom, appSettings?.appearanceTheme, finalThemeUnlocked, savedThemeCustomThemes, savedThemePresetOverrides, selectedThemePreset, themeCustomDraft, themeCustomTone]);
 
   useEffect(() => {
     const handleSettingsChanged = (event: Event): void => {
@@ -5997,7 +5997,11 @@ export const SettingsPage = (): JSX.Element => {
             nextSettings?.appearanceTheme ?? appPatch.appearanceTheme ?? defaultThemeMode,
             activeCustomTheme?.basePreset ?? nextSettings?.appearanceThemePreset ?? appPatch.appearanceThemePreset ?? defaultThemePreset,
             nextSettings?.appearanceThemePresetOverrides ?? appPatch.appearanceThemePresetOverrides ?? {},
-            { customThemeId, customThemes },
+            {
+              customThemeId,
+              customThemes,
+              finalThemeUnlocked: nextSettings?.finalThemeUnlockVersion === finalThemeUnlockVersion,
+            },
           );
         } else if (appPatch.appearanceTheme || appPatch.appearanceThemePreset) {
           setSelectedThemePreset(nextSettings?.appearanceThemePreset ?? appPatch.appearanceThemePreset ?? defaultThemePreset);
@@ -6008,6 +6012,7 @@ export const SettingsPage = (): JSX.Element => {
             {
               customThemeId: nextSettings?.appearanceThemeCustomId ?? null,
               customThemes: nextSettings?.appearanceCustomThemes ?? [],
+              finalThemeUnlocked: nextSettings?.finalThemeUnlockVersion === finalThemeUnlockVersion,
             },
           );
         }
@@ -6019,6 +6024,7 @@ export const SettingsPage = (): JSX.Element => {
             {
               customThemeId: nextSettings?.appearanceThemeCustomId ?? null,
               customThemes: nextSettings?.appearanceCustomThemes ?? [],
+              finalThemeUnlocked: nextSettings?.finalThemeUnlockVersion === finalThemeUnlockVersion,
             },
           );
         }
@@ -6644,6 +6650,7 @@ export const SettingsPage = (): JSX.Element => {
   const applyThemeSettingsPatch = (patch: Partial<AppSettings>, animate = true): void => {
     applyThemeSettings({ ...(appSettings ?? {}), ...patch }, {
       animate,
+      finalThemeUnlocked,
       customThemeId: Object.prototype.hasOwnProperty.call(patch, 'appearanceThemeCustomId')
         ? patch.appearanceThemeCustomId ?? null
         : activeThemeCustom?.id ?? appSettings?.appearanceThemeCustomId ?? null,
@@ -6658,6 +6665,7 @@ export const SettingsPage = (): JSX.Element => {
       animate: true,
       customThemeId: activeThemeCustom?.id ?? null,
       customThemes: savedThemeCustomThemes,
+      finalThemeUnlocked,
     });
     applyThemeSettingsPatch({ appearanceTheme });
     setAppSettings((current) => (current ? { ...current, appearanceTheme } : current));
@@ -6687,6 +6695,7 @@ export const SettingsPage = (): JSX.Element => {
       animate: true,
       customThemeId: nextCustomId,
       customThemes: savedThemeCustomThemes,
+      finalThemeUnlocked,
     });
     setSelectedThemePreset(appearanceThemePreset);
     setActiveThemeCustomId(nextCustomId);
@@ -6699,12 +6708,50 @@ export const SettingsPage = (): JSX.Element => {
           }
         : current,
     );
-    const nextFinalThemeUnlockVersion = finalThemeUnlocked ? finalThemeUnlockVersion : null;
+    const nextFinalThemeUnlockVersion = appearanceThemePreset === 'FINAL' && finalThemeUnlocked ? finalThemeUnlockVersion : null;
+    const finalThemeUnlockPatch = appearanceThemePreset === 'FINAL' || appSettings?.finalThemeUnlockVersion
+      ? { finalThemeUnlockVersion: nextFinalThemeUnlockVersion }
+      : {};
     patchAppSettings(
       activeThemeCustom
-        ? { appearanceThemePreset, appearanceThemeCustomId: null, finalThemeUnlockVersion: nextFinalThemeUnlockVersion }
-        : { appearanceThemePreset, finalThemeUnlockVersion: nextFinalThemeUnlockVersion },
+        ? { appearanceThemePreset, appearanceThemeCustomId: null, ...finalThemeUnlockPatch }
+        : { appearanceThemePreset, ...finalThemeUnlockPatch },
     );
+  };
+
+  const revokeFinalThemeSelection = (message?: string): void => {
+    const fallbackPreset: AppThemePreset = 'classic';
+    const safeCustomThemes = savedThemeCustomThemes.filter((theme) => theme.basePreset !== 'FINAL');
+    pendingRandomThemeDraftRef.current = null;
+    skipNextThemePreviewRef.current = true;
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, fallbackPreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: null,
+      customThemes: safeCustomThemes,
+    });
+    setSelectedThemePreset(fallbackPreset);
+    setActiveThemeCustomId(null);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: fallbackPreset,
+            appearanceCustomThemes: safeCustomThemes,
+            appearanceThemeCustomId: null,
+            finalThemeUnlockVersion: null,
+          }
+        : current,
+    );
+    setThemeCustomThemes(safeCustomThemes);
+    patchAppSettings({
+      appearanceThemePreset: fallbackPreset,
+      appearanceCustomThemes: safeCustomThemes,
+      appearanceThemeCustomId: null,
+      finalThemeUnlockVersion: null,
+    });
+    if (message) {
+      setThemeCustomMessage(message);
+    }
   };
 
   const handleRandomThemeCreate = (): void => {
@@ -6821,6 +6868,11 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomSave = (): void => {
+    if (selectedThemePreset === 'FINAL' || activeThemeCustom?.basePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
+
     const currentTheme = activeThemeCustom;
     const pendingRandomTheme = pendingRandomThemeDraftRef.current;
     const buildSavedRandomTheme = (): AppThemeCustomTheme => {
@@ -6846,6 +6898,7 @@ export const SettingsPage = (): JSX.Element => {
       animate: true,
       customThemeId: nextThemeId,
       customThemes: nextThemes,
+      finalThemeUnlocked,
     });
     setThemeCustomThemes(nextThemes);
     setActiveThemeCustomId(nextThemeId);
@@ -6865,6 +6918,11 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomReset = (): void => {
+    if (selectedThemePreset === 'FINAL' || activeThemeCustom?.basePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
+
     pendingRandomThemeDraftRef.current = null;
     setThemeCustomDraft({});
     if (activeThemeCustom) {
@@ -6873,13 +6931,14 @@ export const SettingsPage = (): JSX.Element => {
         animate: true,
         customThemeId: activeThemeCustom.id,
         customThemes: nextThemes,
+        finalThemeUnlocked,
       });
       setThemeCustomThemes(nextThemes);
       setAppSettings((current) => (current ? { ...current, appearanceCustomThemes: nextThemes } : current));
       patchAppSettings({ appearanceCustomThemes: nextThemes });
     } else {
       const nextOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, null);
-      updateThemePresetOverrides(nextOverrides, appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, { animate: true });
+      updateThemePresetOverrides(nextOverrides, appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, { animate: true, finalThemeUnlocked });
       setAppSettings((current) => (current ? { ...current, appearanceThemePresetOverrides: nextOverrides } : current));
       patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceThemePresetOverrides: nextOverrides });
     }
@@ -6887,6 +6946,11 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomExport = (): void => {
+    if (selectedThemePreset === 'FINAL' || activeThemeCustom?.basePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
+
     const payload = createThemeExportPayload(savedThemeCustomThemes, activeThemeCustom, selectedThemePreset, themeCustomTone, themeCustomDraft);
     downloadTextFile(`echo-theme-${payload.theme.name}.echo-theme.json`, `${JSON.stringify(payload, null, 2)}\n`);
     setThemeCustomMessage(t('settings.appearance.themeCustom.message.exported'));
@@ -6913,6 +6977,9 @@ export const SettingsPage = (): JSX.Element => {
 
           let importedTheme: AppThemeCustomTheme | undefined;
           if (parsed.version === 2 && parsed.schema === 'echo-next.custom-theme') {
+            if (parsed.theme && typeof parsed.theme === 'object' && !Array.isArray(parsed.theme) && (parsed.theme as Partial<AppThemeCustomTheme>).basePreset === 'FINAL') {
+              throw new Error('FINAL custom themes cannot be imported');
+            }
             importedTheme = normalizeThemeCustomTheme(parsed.theme);
           } else if (parsed.version === 1 && parsed.schema === 'echo-next.theme-preset') {
             const importedPreset = readThemeExportPreset(parsed.preset);
@@ -6931,6 +6998,9 @@ export const SettingsPage = (): JSX.Element => {
           if (!importedTheme) {
             throw new Error('Invalid theme payload');
           }
+          if (importedTheme.basePreset === 'FINAL') {
+            throw new Error('FINAL custom themes cannot be imported');
+          }
 
           const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes.filter((theme) => theme.id !== importedTheme.id), importedTheme]);
           setThemeCustomThemes(nextThemes);
@@ -6941,6 +7011,7 @@ export const SettingsPage = (): JSX.Element => {
             animate: true,
             customThemeId: importedTheme.id,
             customThemes: nextThemes,
+            finalThemeUnlocked,
           });
           setAppSettings((current) =>
             current
@@ -6965,6 +7036,11 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handlePluginThemeApply = (pluginTheme: PluginThemeOption): void => {
+    if (pluginTheme.basePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
+
     pendingRandomThemeDraftRef.current = null;
     const existingTheme = savedThemeCustomThemes.find((theme) => theme.id === pluginTheme.customThemeId);
     const importedTheme = buildPluginThemeCustomTheme(pluginTheme, existingTheme);
@@ -6975,6 +7051,7 @@ export const SettingsPage = (): JSX.Element => {
       animate: true,
       customThemeId: importedTheme.id,
       customThemes: nextThemes,
+      finalThemeUnlocked,
     });
     setThemeCustomThemes(nextThemes);
     setActiveThemeCustomId(importedTheme.id);
@@ -6999,6 +7076,11 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomCreate = (): void => {
+    if (selectedThemePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
+
     pendingRandomThemeDraftRef.current = null;
     const nextTheme = buildThemeCustomTheme(savedThemeCustomThemes, selectedThemePreset, themeCustomTone, themeCustomDraft);
     const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes, nextTheme]);
@@ -7006,6 +7088,7 @@ export const SettingsPage = (): JSX.Element => {
       animate: true,
       customThemeId: nextTheme.id,
       customThemes: nextThemes,
+      finalThemeUnlocked,
     });
     setThemeCustomThemes(nextThemes);
     setActiveThemeCustomId(nextTheme.id);
@@ -7024,12 +7107,18 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomSelect = (theme: AppThemeCustomTheme): void => {
+    if (theme.basePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
+
     pendingRandomThemeDraftRef.current = null;
     skipNextThemePreviewRef.current = true;
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, theme.basePreset, savedThemePresetOverrides, {
       animate: true,
       customThemeId: theme.id,
       customThemes: savedThemeCustomThemes,
+      finalThemeUnlocked,
     });
     setActiveThemeCustomId(theme.id);
     setSelectedThemePreset(theme.basePreset);
@@ -7065,6 +7154,10 @@ export const SettingsPage = (): JSX.Element => {
     if (!activeThemeCustom) {
       return;
     }
+    if (activeThemeCustom.basePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
 
     pendingRandomThemeDraftRef.current = null;
     const nextThemes = duplicateThemeCustomTheme(savedThemeCustomThemes, activeThemeCustom.id);
@@ -7073,6 +7166,7 @@ export const SettingsPage = (): JSX.Element => {
       animate: true,
       customThemeId: nextTheme.id,
       customThemes: nextThemes,
+      finalThemeUnlocked,
     });
     setThemeCustomThemes(nextThemes);
     setActiveThemeCustomId(nextTheme.id);
@@ -7095,6 +7189,10 @@ export const SettingsPage = (): JSX.Element => {
     if (!activeThemeCustom) {
       return;
     }
+    if (activeThemeCustom.basePreset === 'FINAL') {
+      revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
+      return;
+    }
     if (!window.confirm(t('settings.appearance.themeCustom.action.delete'))) {
       return;
     }
@@ -7106,6 +7204,7 @@ export const SettingsPage = (): JSX.Element => {
       animate: true,
       customThemeId: null,
       customThemes: nextThemes,
+      finalThemeUnlocked,
     });
     setThemeCustomThemes(nextThemes);
     setActiveThemeCustomId(null);
@@ -7173,31 +7272,7 @@ export const SettingsPage = (): JSX.Element => {
   }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
 
   useEffect(() => {
-    if (!finalThemeSearchUnlocked) {
-      return;
-    }
-
-    if (!finalThemeUnlocked) {
-      writeFinalThemeUnlocked();
-      setFinalThemeUnlocked(true);
-      setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true, finalThemeUnlockVersion } : current));
-      patchAppSettings({ appearanceThemePresetsExpanded: true, finalThemeUnlockVersion });
-    }
-
-    setSettingsQuery('');
-    setActiveSection('appearance');
-    setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true } : current));
-
-    if (finalThemeUnlockNoticeShownRef.current) {
-      return;
-    }
-
-    finalThemeUnlockNoticeShownRef.current = true;
-    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'FINAL theme unlocked.' }));
-  }, [finalThemeSearchUnlocked, finalThemeUnlocked, patchAppSettings]);
-
-  useEffect(() => {
-    if (finalThemeUnlocked || finalThemeRelockAppliedRef.current || appSettings?.appearanceThemePreset !== 'FINAL') {
+    if (!finalThemeUnlockChecked || finalThemeUnlocked || finalThemeRelockAppliedRef.current || appSettings?.appearanceThemePreset !== 'FINAL') {
       return;
     }
 
@@ -7223,6 +7298,7 @@ export const SettingsPage = (): JSX.Element => {
   }, [
     appSettings?.appearanceTheme,
     appSettings?.appearanceThemePreset,
+    finalThemeUnlockChecked,
     finalThemeUnlocked,
     patchAppSettings,
     savedThemeCustomThemes,
