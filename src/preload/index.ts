@@ -1280,7 +1280,11 @@ const playSystemSource = async (
 };
 
 const createSystemPlaybackSourceFromNativeStatus = (status: AudioStatus | null): SystemPlaybackSource | null => {
-  const filePath = status?.currentFilePath?.trim();
+  if (!status) {
+    return null;
+  }
+
+  const filePath = status.currentFilePath?.trim();
   if (!filePath) {
     return null;
   }
