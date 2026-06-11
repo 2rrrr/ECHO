@@ -106,6 +106,7 @@
     "productName": "ECHO NEXT",
     "executableName": "ECHO NEXT",
     "npmRebuild": false,
+    "afterPack": "scripts/after-pack-integrity.mjs",
     "icon": "software.ico",
     "directories": {
       "output": "dist"

@@ -53,6 +53,10 @@ describe('createMainWindowWebPreferences', () => {
       backgroundThrottling: false,
     });
   });
+
+  it('sets a concrete DevTools policy on shared renderer windows', () => {
+    expect(createMainWindowWebPreferences()).toHaveProperty('devTools');
+  });
 });
 
 describe('mainWindowMinimumSize', () => {

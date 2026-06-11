@@ -1094,12 +1094,14 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenLastCalledWith({ appearanceSidebarLayoutExpanded: true }));
     expect(within(row).getByText('route.dsp.label')).toBeTruthy();
     const streamingItem = within(row).getByText('route.streaming.label').closest('.settings-sidebar-route-item') as HTMLElement;
-    fireEvent.click(streamingItem.querySelector('.settings-sidebar-visibility-button') as HTMLButtonElement);
+    expect((streamingItem.querySelector('.settings-sidebar-visibility-button') as HTMLButtonElement).disabled).toBe(true);
+    const queueItem = within(row).getByText('route.queue.label').closest('.settings-sidebar-route-item') as HTMLElement;
+    fireEvent.click(queueItem.querySelector('.settings-sidebar-visibility-button') as HTMLButtonElement);
 
     await waitFor(() =>
       expect(setSettingsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds, 'streaming'],
+          sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds, 'queue'],
         }),
       ),
     );
@@ -1136,7 +1138,7 @@ describe('SettingsPage', () => {
     await waitFor(() => {
       const lastPatch = setSettingsMock.mock.calls.at(-1)?.[0] as Partial<AppSettings>;
       expect(lastPatch.sidebarRouteOrder?.slice(0, 2)).toEqual(['songs', 'home']);
-      expect(lastPatch.sidebarHiddenRouteIds).toEqual([...defaultSidebarHiddenRouteIds, 'streaming']);
+      expect(lastPatch.sidebarHiddenRouteIds).toEqual([...defaultSidebarHiddenRouteIds, 'queue']);
     });
   });
 

@@ -14,6 +14,7 @@ import type {
 import { recordDiagnosticConsoleProblem } from './ExceptionRecorder';
 import { getPlaybackPerformanceSnapshot } from './PlaybackPerformanceDiagnostics';
 import { getActiveLibraryScanPerfContext, isLibraryScanPerfDiagnosticsEnabled } from './LibraryScanPerfDiagnostics';
+import { areDeveloperToolsAllowed } from '../app/securityPolicy';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
@@ -1388,6 +1389,11 @@ export const clearDevConsole = (): void => {
 };
 
 export const openDevConsoleDevTools = (sender: WebContents): void => {
+  if (!areDeveloperToolsAllowed()) {
+    pushEntry('system', 'warn', 'DevTools blocked in packaged build. Set ECHO_ENABLE_DEVTOOLS=1 before launch to allow field diagnostics.');
+    return;
+  }
+
   const owner = BrowserWindow.fromWebContents(sender);
   owner?.webContents.openDevTools({ mode: 'detach' });
 };

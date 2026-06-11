@@ -26,6 +26,7 @@ export type SidebarRouteId = typeof sidebarRouteIds[number];
 
 export const defaultSidebarRouteOrder: SidebarRouteId[] = [...sidebarRouteIds];
 export const defaultSidebarHiddenRouteIds: SidebarRouteId[] = [
+  'streaming',
   'inbox',
   'plugins',
   'import-folder',
@@ -33,9 +34,11 @@ export const defaultSidebarHiddenRouteIds: SidebarRouteId[] = [
   'import-file',
 ];
 export const lockedVisibleSidebarRouteIds: SidebarRouteId[] = ['settings'];
+export const lockedHiddenSidebarRouteIds: SidebarRouteId[] = ['streaming'];
 
 const sidebarRouteIdSet = new Set<string>(sidebarRouteIds);
 const lockedVisibleSidebarRouteIdSet = new Set<string>(lockedVisibleSidebarRouteIds);
+const lockedHiddenSidebarRouteIdSet = new Set<string>(lockedHiddenSidebarRouteIds);
 
 export const isSidebarRouteId = (value: unknown): value is SidebarRouteId =>
   typeof value === 'string' && sidebarRouteIdSet.has(value);
@@ -65,15 +68,15 @@ export const normalizeSidebarRouteOrder = (value: unknown): SidebarRouteId[] => 
 };
 
 export const normalizeSidebarHiddenRouteIds = (value: unknown): SidebarRouteId[] => {
-  const hiddenRouteIds: SidebarRouteId[] = [];
-  const seen = new Set<SidebarRouteId>();
+  const hiddenRouteIds: SidebarRouteId[] = [...lockedHiddenSidebarRouteIds];
+  const seen = new Set<SidebarRouteId>(lockedHiddenSidebarRouteIds);
 
   if (!Array.isArray(value)) {
     return hiddenRouteIds;
   }
 
   for (const item of value) {
-    if (!isSidebarRouteId(item) || lockedVisibleSidebarRouteIdSet.has(item) || seen.has(item)) {
+    if (!isSidebarRouteId(item) || lockedVisibleSidebarRouteIdSet.has(item) || lockedHiddenSidebarRouteIdSet.has(item) || seen.has(item)) {
       continue;
     }
 

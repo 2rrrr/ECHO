@@ -42,6 +42,7 @@ import { markStartupStage, openSafeModeStartupConsoleIfEnabled } from '../diagno
 import { closeDevConsoleWindow } from '../diagnostics/DevConsoleService';
 import { closeDesktopLyricsWindow, restoreDesktopLyricsWindowOnStartup } from './desktopLyricsWindow';
 import { closeMiniPlayerWindow, restoreMiniPlayerWindowOnStartup } from './miniPlayerWindow';
+import { runPackageIntegrityGuard } from './packageIntegrity';
 
 const sendAccountStatusesChanged = (statuses: AccountStatus[]): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -221,6 +222,12 @@ export const registerAppLifecycle = (): void => {
     markStartupStage('diagnostics:init:start');
     getCrashReportService().initialize();
     markStartupStage('diagnostics:init:complete');
+    markStartupStage('package-integrity:verify:start');
+    const packageIntegrityOk = await runPackageIntegrityGuard();
+    markStartupStage(packageIntegrityOk ? 'package-integrity:verify:complete' : 'package-integrity:verify:failed');
+    if (!packageIntegrityOk) {
+      return;
+    }
     const dataProtectionDisabled = appSettings.dataProtectionDisabled === true;
     markStartupStage(dataProtectionDisabled ? 'data-protection:startup:skipped' : 'data-protection:startup:start', {
       reason: dataProtectionDisabled ? 'disabled-by-setting' : undefined,

@@ -348,6 +348,7 @@ const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
 const settingsSectionNavigationEvent = 'app:navigate:settings-section';
 const lyricsMiniPlayerAutoHideDistancePx = 118;
 const lyricsMiniPlayerAutoHideDelayMs = 460;
+const temporarilyBlockedRouteIds = new Set<AppRouteId>(['streaming']);
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
 
@@ -377,20 +378,32 @@ const getWindowsAudioDefaultFormatWarningRate = (warnings: string[] | null | und
   return null;
 };
 
+const isTemporarilyBlockedRouteId = (routeId: AppRouteId): boolean => temporarilyBlockedRouteIds.has(routeId);
+
+const readFallbackRouteId = (routes: AppRoute[]): AppRouteId => {
+  const defaultRoute =
+    routes.find((route) => route.id === 'home' && !isTemporarilyBlockedRouteId(route.id)) ??
+    routes.find((route) => route.id === 'songs' && !isTemporarilyBlockedRouteId(route.id)) ??
+    routes.find((route) => !isTemporarilyBlockedRouteId(route.id)) ??
+    routes[0];
+
+  return defaultRoute?.id ?? 'songs';
+};
+
 const readInitialRouteId = (routes: AppRoute[]): AppRouteId => {
-  const defaultRoute = routes.find((route) => route.id === 'home') ?? routes.find((route) => route.id === 'songs') ?? routes[0];
+  const fallbackRouteId = readFallbackRouteId(routes);
 
   try {
     const pendingRoute = window.localStorage.getItem(pendingRouteStorageKey);
     if (pendingRoute && routes.some((route) => route.id === pendingRoute)) {
       window.localStorage.removeItem(pendingRouteStorageKey);
-      return pendingRoute as AppRouteId;
+      return isTemporarilyBlockedRouteId(pendingRoute as AppRouteId) ? fallbackRouteId : pendingRoute as AppRouteId;
     }
   } catch {
     // Fall back to the normal entrypoint when localStorage is unavailable.
   }
 
-  return defaultRoute?.id ?? 'songs';
+  return fallbackRouteId;
 };
 
 export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
@@ -1183,29 +1196,32 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   const navigateRoute = useCallback(
     (routeId: AppRouteId, trigger = 'navigateRoute'): void => {
-      if (routeId === activeRouteId) {
+      const nextRouteId = isTemporarilyBlockedRouteId(routeId) ? readFallbackRouteId(routes) : routeId;
+      const nextTrigger = nextRouteId === routeId ? trigger : `${trigger}:blocked`;
+
+      if (nextRouteId === activeRouteId) {
         logRouteSwitchDiagnostic('start', {
           from: activeRouteId,
-          to: routeId,
-          trigger,
+          to: nextRouteId,
+          trigger: nextTrigger,
           result: 'same-route',
           ...getRouteSwitchPlaybackDetails(),
         });
         return;
       }
 
-      if (routeId === 'lyrics' && activeRouteId !== 'lyrics') {
+      if (nextRouteId === 'lyrics' && activeRouteId !== 'lyrics') {
         previousRouteIdRef.current = activeRouteId;
       }
 
-      if (routeId !== 'lyrics') {
+      if (nextRouteId !== 'lyrics') {
         setIsLyricsQueueDrawerOpen(false);
       }
 
-      beginRouteSwitchTrace(routeId, trigger);
-      setActiveRouteId(routeId);
+      beginRouteSwitchTrace(nextRouteId, nextTrigger);
+      setActiveRouteId(nextRouteId);
     },
-    [activeRouteId, beginRouteSwitchTrace, getRouteSwitchPlaybackDetails],
+    [activeRouteId, beginRouteSwitchTrace, getRouteSwitchPlaybackDetails, routes],
   );
 
   useEffect(() => {
@@ -1245,6 +1261,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       navigateRoute('songs', 'downloads-locked');
     }
   }, [activeRouteId, downloadsFeatureUnlocked, navigateRoute]);
+
+  useEffect(() => {
+    if (isTemporarilyBlockedRouteId(activeRouteId)) {
+      navigateRoute(readFallbackRouteId(routes), 'blocked-route-recovery');
+    }
+  }, [activeRouteId, navigateRoute, routes]);
 
   const setLyricsViewMode = useCallback((mode: LyricsViewMode): void => {
     rememberLyricsViewMode(mode);

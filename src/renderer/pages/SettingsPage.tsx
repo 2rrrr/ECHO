@@ -61,6 +61,7 @@ import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider, p
 import {
   defaultSidebarHiddenRouteIds,
   defaultSidebarRouteOrder,
+  lockedHiddenSidebarRouteIds,
   lockedVisibleSidebarRouteIds,
   normalizeSidebarHiddenRouteIds,
   normalizeSidebarRouteOrder,
@@ -974,6 +975,7 @@ const sidebarSettingsRouteItems: SidebarSettingsRouteItem[] = [
 
 const sidebarSettingsRouteItemById = new Map(sidebarSettingsRouteItems.map((item) => [item.id, item]));
 const lockedVisibleSidebarRouteIdSet = new Set<SidebarRouteId>(lockedVisibleSidebarRouteIds);
+const lockedHiddenSidebarRouteIdSet = new Set<SidebarRouteId>(lockedHiddenSidebarRouteIds);
 
 type PlayerBarButtonSettingsItem = {
   id: PlayerBarButtonId;
@@ -7589,7 +7591,7 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleSidebarRouteVisibilityToggle = useCallback(
     (routeId: SidebarRouteId): void => {
-      if (lockedVisibleSidebarRouteIdSet.has(routeId)) {
+      if (lockedVisibleSidebarRouteIdSet.has(routeId) || lockedHiddenSidebarRouteIdSet.has(routeId)) {
         return;
       }
 
@@ -13169,7 +13171,9 @@ export const SettingsPage = (): JSX.Element => {
                                 groupItems.map((item) => {
                                   const label = t(item.labelKey);
                                   const isLockedVisible = lockedVisibleSidebarRouteIdSet.has(item.id);
-                                  const isVisible = isLockedVisible || !sidebarHiddenRouteIdSet.has(item.id);
+                                  const isLockedHidden = lockedHiddenSidebarRouteIdSet.has(item.id);
+                                  const isVisible = isLockedVisible || (!isLockedHidden && !sidebarHiddenRouteIdSet.has(item.id));
+                                  const isFixed = isLockedVisible || isLockedHidden;
 
                                   return (
                                     <div
@@ -13188,15 +13192,15 @@ export const SettingsPage = (): JSX.Element => {
                                       </span>
                                       <span className="settings-sidebar-route-copy">
                                         <strong>{label}</strong>
-                                        <em>{isLockedVisible ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}</em>
+                                        <em>{isFixed ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}</em>
                                       </span>
                                       <span className="settings-sidebar-route-actions">
                                         <button
                                           aria-label={isVisible ? t('settings.appearance.sidebar.hideAria', { label }) : t('settings.appearance.sidebar.showAria', { label })}
                                           aria-pressed={isVisible}
                                           className="settings-icon-button settings-sidebar-visibility-button"
-                                          disabled={!appSettings || isLockedVisible}
-                                          title={isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}
+                                          disabled={!appSettings || isFixed}
+                                          title={isFixed ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}
                                           type="button"
                                           onClick={() => handleSidebarRouteVisibilityToggle(item.id)}
                                         >

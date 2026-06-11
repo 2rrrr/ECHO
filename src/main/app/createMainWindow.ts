@@ -12,6 +12,7 @@ import { getCrashReportService } from '../diagnostics/CrashReportService';
 import { closeDevConsoleWindow, recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
 import { applyMainWindowBackgroundMaterial, isMainWindowAcrylicSupportedPlatform } from './windowBackgroundMaterial';
+import { areDeveloperToolsAllowed } from './securityPolicy';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
@@ -39,6 +40,7 @@ export const createMainWindowWebPreferences = (): Electron.BrowserWindowConstruc
   preload: resolvePreloadPath(),
   contextIsolation: true,
   nodeIntegration: false,
+  devTools: areDeveloperToolsAllowed(),
   sandbox: false,
   backgroundThrottling: false,
 });

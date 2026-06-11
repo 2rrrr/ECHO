@@ -214,6 +214,34 @@ describe('AppLayout standalone routes', () => {
     expect(container.querySelector('[data-route-id="songs"]')).toBeNull();
   });
 
+  it('falls back to Home when a blocked streaming route is restored from storage', async () => {
+    window.localStorage.clear();
+    window.localStorage.setItem('echo-next.pending-route', 'streaming');
+
+    const routesWithStreaming: AppRoute[] = [
+      routesWithHome[0],
+      {
+        id: 'streaming',
+        label: 'Streaming',
+        labelKey: 'route.streaming.label',
+        description: 'Streaming',
+        icon: Music2,
+        placement: 'main',
+        element: <div>Streaming shell</div>,
+      },
+      routes[0],
+    ];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithStreaming} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByText('Home shell')).toBeTruthy();
+    expect(screen.queryByText('Streaming shell')).toBeNull();
+  });
+
   it('mounts Songs lazily and keeps it mounted only after the first visit', async () => {
     window.localStorage.clear();
     const onSongsMount = vi.fn();
