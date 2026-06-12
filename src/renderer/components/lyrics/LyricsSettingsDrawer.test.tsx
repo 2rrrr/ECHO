@@ -55,6 +55,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsSmartReadableColorsEnabled: false,
+  lyricsImmersiveCoverStyleEnabled: false,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -1199,6 +1200,42 @@ describe('LyricsSettingsDrawer', () => {
     );
     expect(displaySettingsChangedListener).toHaveBeenCalledWith(
       expect.objectContaining({ detail: { lyricsSmartReadableColorsEnabled: true } }),
+    );
+
+    window.removeEventListener('settings:changed', settingsChangedListener);
+    window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+  });
+
+  it('toggles immersive album cover lyrics style without changing the saved background mode', async () => {
+    const setSettings = vi.fn(async (patch: Partial<AppSettings>) => makeSettings({ lyricsBackgroundMode: 'coverColor', ...patch }));
+    const settingsChangedListener = vi.fn();
+    const displaySettingsChangedListener = vi.fn();
+    window.addEventListener('settings:changed', settingsChangedListener);
+    window.addEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsBackgroundMode: 'coverColor' })),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-immersive-cover-style-toggle input')).toBeTruthy());
+    const toggle = container.querySelector('.lyrics-immersive-cover-style-toggle input') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.checked).toBe(true);
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsImmersiveCoverStyleEnabled: true }));
+    expect(setSettings).not.toHaveBeenCalledWith(expect.objectContaining({ lyricsBackgroundMode: expect.any(String) }));
+    expect(settingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsImmersiveCoverStyleEnabled: true } }),
+    );
+    expect(displaySettingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsImmersiveCoverStyleEnabled: true } }),
     );
 
     window.removeEventListener('settings:changed', settingsChangedListener);

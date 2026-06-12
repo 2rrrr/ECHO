@@ -13573,13 +13573,13 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
   display: none;
 }
 
+html[data-theme-preset] .app-shell.app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-track[data-waveform="true"] .progress-thumb,
+html[data-theme-custom="true"] .app-shell.app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-track[data-waveform="true"] .progress-thumb,
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-track[data-waveform="true"] .progress-thumb {
-  width: 2px;
-  height: 28px;
+  width: 0 !important;
+  height: 0 !important;
   border: 0 !important;
-  border-radius: 999px;
-  background: var(--theme-accent-solid-bg) !important;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.46),
-    0 0 12px color-mix(in srgb, var(--theme-accent-solid-bg) 34%, transparent) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  opacity: 0 !important;
 }

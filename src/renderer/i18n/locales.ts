@@ -1408,6 +1408,8 @@ export type TranslationKey =
   | 'lyricsSettings.background.clearWallpaperHint'
   | 'lyricsSettings.background.highResolutionCover'
   | 'lyricsSettings.background.highResolutionCoverDescription'
+  | 'lyricsSettings.background.immersiveCoverStyle'
+  | 'lyricsSettings.background.immersiveCoverStyleDescription'
   | 'lyricsSettings.background.mode.customWallpaper'
   | 'lyricsSettings.background.mode.theme'
   | 'lyricsSettings.background.modeAria'
@@ -4583,6 +4585,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.background.clearWallpaperHint': '恢复为跟随主题',
   'lyricsSettings.background.highResolutionCover': '请求网络元数据的高清封面',
   'lyricsSettings.background.highResolutionCoverDescription': '仅在跟随封面时临时请求高清封面作为歌词背景；关闭时只使用本地封面兜底。',
+  'lyricsSettings.background.immersiveCoverStyle': '沉浸式专辑封面样式',
+  'lyricsSettings.background.immersiveCoverStyleDescription': '在主歌词页铺满当前歌曲专辑封面，并自动增强文字对比；不会改动下方保存的背景模式。',
   'lyricsSettings.background.mode.cover': '跟随封面',
   'lyricsSettings.background.mode.coverColor': '封面取色',
   'lyricsSettings.background.mode.customWallpaper': '自定义壁纸',
@@ -7677,6 +7681,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.background.clearWallpaperHint': '恢復為跟隨主題',
   'lyricsSettings.background.highResolutionCover': '請求網路中繼資料的高清封面',
   'lyricsSettings.background.highResolutionCoverDescription': '僅在跟隨封面時暫時請求高清封面作為歌詞背景；關閉時只使用本機封面備援。',
+  'lyricsSettings.background.immersiveCoverStyle': '沉浸式專輯封面樣式',
+  'lyricsSettings.background.immersiveCoverStyleDescription': '在主歌詞頁鋪滿目前歌曲專輯封面，並自動增強文字對比；不會改動下方儲存的背景模式。',
   'lyricsSettings.background.mode.cover': '跟隨封面',
   'lyricsSettings.background.mode.coverColor': '封面取色',
   'lyricsSettings.background.mode.customWallpaper': '自訂桌布',
@@ -10605,6 +10611,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.background.clearWallpaperHint': 'テーマ連動へ戻す',
   'lyricsSettings.background.highResolutionCover': 'ネットワークメタデータから高解像度カバーを取得',
   'lyricsSettings.background.highResolutionCoverDescription': 'カバー連動時だけ一時的に高解像度カバーを歌詞背景として取得します。オフの場合はローカルカバーのみを使います。',
+  'lyricsSettings.background.immersiveCoverStyle': '没入アルバムカバースタイル',
+  'lyricsSettings.background.immersiveCoverStyleDescription': 'メイン歌詞ページに現在の曲のアルバムカバーを全面表示し、文字コントラストを自動で高めます。下の保存済み背景モードは変更しません。',
   'lyricsSettings.background.mode.cover': 'カバーに合わせる',
   'lyricsSettings.background.mode.coverColor': 'カバー色',
   'lyricsSettings.background.mode.customWallpaper': 'カスタム壁紙',
@@ -13597,6 +13605,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.background.clearWallpaperHint': 'Restore follow theme',
   'lyricsSettings.background.highResolutionCover': 'Request high-res covers from network metadata',
   'lyricsSettings.background.highResolutionCoverDescription': 'Only request a high-res cover temporarily when following the cover; when off, local cover art is used as fallback.',
+  'lyricsSettings.background.immersiveCoverStyle': 'Immersive album cover style',
+  'lyricsSettings.background.immersiveCoverStyleDescription': 'Fills the main lyrics page with the current album cover and boosts text contrast automatically without changing the saved background mode below.',
   'lyricsSettings.background.mode.cover': 'Follow cover',
   'lyricsSettings.background.mode.coverColor': 'Cover color',
   'lyricsSettings.background.mode.customWallpaper': 'Custom wallpaper',

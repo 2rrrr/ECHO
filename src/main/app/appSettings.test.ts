@@ -166,6 +166,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsContextOpacityPercent).toBe(49);
     expect(settings.lyricsColor).toBe('#314054');
     expect(settings.lyricsSmartReadableColorsEnabled).toBe(false);
+    expect(settings.lyricsImmersiveCoverStyleEnabled).toBe(false);
     expect(settings.lyricsHighResolutionNetworkCoverEnabled).toBe(false);
     expect(settings.lyricsBackgroundMode).toBe('theme');
     expect(settings.lyricsCustomWallpaperPath).toBeNull();
@@ -1578,6 +1579,7 @@ describe('app settings normalization', () => {
         lyricsContextOpacityPercent: 1000,
         lyricsColor: 'red',
         lyricsSmartReadableColorsEnabled: 'yes' as never,
+        lyricsImmersiveCoverStyleEnabled: 'yes' as never,
         lyricsHighResolutionNetworkCoverEnabled: 'yes' as never,
         lyricsBackgroundMode: 'album' as never,
         lyricsCustomWallpaperPath: 'D:\\Outside\\wallpaper.png',
@@ -1629,6 +1631,7 @@ describe('app settings normalization', () => {
       lyricsContextOpacityPercent: 100,
       lyricsColor: '#314054',
       lyricsSmartReadableColorsEnabled: false,
+      lyricsImmersiveCoverStyleEnabled: false,
       lyricsHighResolutionNetworkCoverEnabled: false,
       lyricsBackgroundMode: 'theme',
       lyricsCustomWallpaperPath: null,
@@ -1659,6 +1662,7 @@ describe('app settings normalization', () => {
         lyricsPlayerBarDrawerColor: '#ff8a80',
         lyricsColor: '#ff3366',
         lyricsSmartReadableColorsEnabled: true,
+        lyricsImmersiveCoverStyleEnabled: true,
         lyricsSmartAlignmentEnabled: true,
         lyricsHighResolutionNetworkCoverEnabled: true,
         lyricsBackgroundMode: 'cover',
@@ -1685,6 +1689,7 @@ describe('app settings normalization', () => {
       lyricsPlayerBarDrawerColor: '#FF8A80',
       lyricsColor: '#FF3366',
       lyricsSmartReadableColorsEnabled: true,
+      lyricsImmersiveCoverStyleEnabled: true,
       lyricsSmartAlignmentEnabled: true,
       lyricsHighResolutionNetworkCoverEnabled: true,
       lyricsBackgroundMode: 'cover',

@@ -170,6 +170,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsContextOpacityPercent"
   | "lyricsCoverOpacityPercent"
   | "lyricsSmartReadableColorsEnabled"
+  | "lyricsImmersiveCoverStyleEnabled"
   | "lyricsHighResolutionNetworkCoverEnabled"
   | "lyricsCoverBlurPx"
   | "lyricsCoverBrightnessPercent"
@@ -225,6 +226,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsContextOpacityPercent: 49,
   lyricsCoverOpacityPercent: 100,
   lyricsSmartReadableColorsEnabled: false,
+  lyricsImmersiveCoverStyleEnabled: false,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
@@ -1066,6 +1068,7 @@ const selectLyricsDisplaySettings = (
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
+  lyricsImmersiveCoverStyleEnabled: settings.lyricsImmersiveCoverStyleEnabled === true,
   lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
   lyricsCoverBlurPx: settings.lyricsCoverBlurPx,
   lyricsCoverBrightnessPercent: settings.lyricsCoverBrightnessPercent,
@@ -1187,6 +1190,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsContextOpacityPercent",
   "lyricsCoverOpacityPercent",
   "lyricsSmartReadableColorsEnabled",
+  "lyricsImmersiveCoverStyleEnabled",
   "lyricsHighResolutionNetworkCoverEnabled",
   "lyricsCoverBlurPx",
   "lyricsCoverBrightnessPercent",
@@ -1971,23 +1975,30 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       writeClipboardText,
     ],
   );
+  const shouldUseImmersiveCoverStyle =
+    lyricsDisplaySettings.lyricsImmersiveCoverStyleEnabled === true &&
+    lyricsViewMode === "lyrics";
+  const requestedLyricsBackgroundMode = shouldUseImmersiveCoverStyle
+    ? "cover"
+    : lyricsDisplaySettings.lyricsBackgroundMode;
   const shouldRequestNetworkBackgroundCover =
     lyricsDisplaySettings.lowLoadPlaybackModeEnabled !== true &&
-    lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled === true &&
-    lyricsDisplaySettings.lyricsBackgroundMode === "cover" &&
+    (lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled === true ||
+      (shouldUseImmersiveCoverStyle && Boolean(backgroundCoverUrl))) &&
+    requestedLyricsBackgroundMode === "cover" &&
     Boolean(currentTrack?.id) &&
     currentTrack?.isTemporary !== true &&
     !isSnapshotTrackId(trackId) &&
     !isSnapshotTrackId(currentTrack?.id);
   const effectiveLyricsBackgroundMode =
-    lyricsDisplaySettings.lyricsBackgroundMode === "customWallpaper" &&
+    requestedLyricsBackgroundMode === "customWallpaper" &&
     !lyricsDisplaySettings.lyricsCustomWallpaperPath
       ? "theme"
-      : lyricsDisplaySettings.lyricsBackgroundMode === "cover" && !backgroundCoverUrl && !shouldRequestNetworkBackgroundCover
+      : requestedLyricsBackgroundMode === "cover" && !backgroundCoverUrl && !shouldRequestNetworkBackgroundCover
         ? "theme"
-        : lyricsDisplaySettings.lyricsBackgroundMode === "coverColor" && coverColorSampleUrls.length === 0
+        : requestedLyricsBackgroundMode === "coverColor" && coverColorSampleUrls.length === 0
           ? "theme"
-          : lyricsDisplaySettings.lyricsBackgroundMode;
+          : requestedLyricsBackgroundMode;
   const effectiveLyricsBackgroundScalePercent =
     effectiveLyricsBackgroundMode === "cover"
       ? Math.max(100, lyricsDisplaySettings.lyricsBackgroundScalePercent)
@@ -1996,7 +2007,8 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     ? `echo-wallpaper://lyrics/custom?path=${encodeURIComponent(lyricsDisplaySettings.lyricsCustomWallpaperPath)}`
     : null;
   const lyricsBackgroundCoverUrl = networkBackgroundCoverUrl ?? backgroundCoverUrl;
-  const lyricsSmartReadableEnabled = lyricsDisplaySettings.lyricsSmartReadableColorsEnabled === true;
+  const lyricsSmartReadableEnabled =
+    shouldUseImmersiveCoverStyle || lyricsDisplaySettings.lyricsSmartReadableColorsEnabled === true;
   const lyricsUsesManualColor =
     lyricsDisplaySettings.lyricsColor.toUpperCase() !== fallbackLyricsDisplaySettings.lyricsColor.toUpperCase();
   const shouldEnhanceLyricsReadability = lyricsReadabilityEnhanced || lyricsSmartReadableEnabled;
@@ -4392,6 +4404,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     <div
       className="lyrics-page"
       data-background={effectiveLyricsBackgroundMode}
+      data-immersive-cover-style={shouldUseImmersiveCoverStyle ? "true" : undefined}
       data-lyrics-color-mode={lyricsUsesManualColor ? "manual" : "theme"}
       data-smart-readable={smartReadableColors ? "true" : undefined}
       data-album-transition={isAlbumNavigating ? "true" : undefined}

@@ -279,6 +279,34 @@ describe('LyricsMatchEngine', () => {
     expect(lrclib.search).not.toHaveBeenCalled();
   });
 
+  it('races providers for remote tracks without a provider-native lyrics source', async () => {
+    const slow = provider('netease', [result({ provider: 'netease', providerLyricsId: 'slow-priority-hit' })], 120);
+    const fast = provider('lrclib', [result({ providerLyricsId: 'fast-remote-hit' })], 0);
+    const engine = new LyricsMatchEngine([fast, slow]);
+    const startedAt = Date.now();
+
+    const matched = await engine.match(
+      {
+        ...query,
+        trackId: 'remote-browser:webdav:/music/Echo Song.flac',
+        mediaType: 'remote',
+        sourceId: 'webdav',
+        stableKey: 'remote-browser:webdav:/music/Echo Song.flac',
+      },
+      {
+        enabledProviders: ['netease', 'lrclib'],
+        deepSearchEnabled: true,
+        providerTimeoutMs: 500,
+        totalMatchTimeoutMs: 800,
+      },
+    );
+
+    expect(Date.now() - startedAt).toBeLessThan(100);
+    expect(matched.accepted?.providerLyricsId).toBe('fast-remote-hit');
+    expect(fast.search).toHaveBeenCalled();
+    expect(slow.search).toHaveBeenCalled();
+  });
+
   it('can race providers in parallel for high-throughput backfill', async () => {
     const slow = provider('netease', [result({ provider: 'netease', providerLyricsId: 'slow-priority-hit' })], 120);
     const fast = provider('lrclib', [result({ providerLyricsId: 'fast-accepted-hit' })], 0);

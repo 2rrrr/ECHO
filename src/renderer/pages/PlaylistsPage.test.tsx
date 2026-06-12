@@ -627,7 +627,11 @@ describe('PlaylistsPage actions menu', () => {
     await waitFor(() => expect(playMediaItem).toHaveBeenCalledWith(expect.objectContaining({
       item: expect.objectContaining({ trackId: 'streaming:netease:track-2' }),
     })));
-    await waitFor(() => expect(screen.getByLabelText('queue-track-ids').textContent).toBe('streaming:netease:track-2,streaming:netease:track-3'));
+    await waitFor(() =>
+      expect(screen.getByLabelText('queue-track-ids').textContent).toBe(
+        'streaming:netease:track-1,streaming:netease:track-2,streaming:netease:track-3',
+      ),
+    );
   });
 
   it('loads every remote playlist page before starting playlist playback', async () => {

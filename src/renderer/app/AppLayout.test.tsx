@@ -1424,6 +1424,19 @@ describe('AppLayout standalone routes', () => {
     });
     expect(miniHost.dataset.autoHideState).toBe('visible');
     expect(miniHost.classList.contains('lyrics-player-drawer-host--auto-hidden')).toBe(false);
+
+    act(() => {
+      fireEvent.mouseMove(window, { clientX: 1, clientY: 1 });
+      vi.advanceTimersByTime(20);
+      vi.advanceTimersByTime(300);
+    });
+    expect(miniHost.dataset.autoHideState).toBe('hidden');
+
+    act(() => {
+      fireEvent.mouseMove(window, { clientX: window.innerWidth - 1, clientY: window.innerHeight - 8 });
+      vi.advanceTimersByTime(20);
+    });
+    expect(miniHost.dataset.autoHideState).toBe('visible');
   });
 
   it('uses the lyrics mini player bar automatically on the MV page', async () => {

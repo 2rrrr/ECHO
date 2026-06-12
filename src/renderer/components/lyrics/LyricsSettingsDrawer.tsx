@@ -108,6 +108,9 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsContextOpacityPercent'
   | 'lyricsColor'
   | 'lyricsSmartReadableColorsEnabled'
+  | 'lyricsImmersiveCoverStyleEnabled'
+  | 'lyricsImmersiveCoverGlassEnabled'
+  | 'lyricsImmersiveCoverGlassBlurPx'
   | 'lyricsHighResolutionNetworkCoverEnabled'
   | 'lyricsBackgroundMode'
   | 'lyricsCustomWallpaperPath'
@@ -164,6 +167,9 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsSmartReadableColorsEnabled: false,
+  lyricsImmersiveCoverStyleEnabled: false,
+  lyricsImmersiveCoverGlassEnabled: false,
+  lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -673,6 +679,9 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
   lyricsColor: settings.lyricsColor,
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
+  lyricsImmersiveCoverStyleEnabled: settings.lyricsImmersiveCoverStyleEnabled === true,
+  lyricsImmersiveCoverGlassEnabled: settings.lyricsImmersiveCoverGlassEnabled === true,
+  lyricsImmersiveCoverGlassBlurPx: settings.lyricsImmersiveCoverGlassBlurPx,
   lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
@@ -2680,6 +2689,20 @@ export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'd
             <ImageIcon size={17} />
             <h3>{t('lyricsSettings.background.title')}</h3>
           </div>
+
+          <label className="audio-toggle-row lyrics-immersive-cover-style-toggle">
+            <span>
+              <Captions size={17} />
+              <strong>{t('lyricsSettings.background.immersiveCoverStyle')}</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsImmersiveCoverStyleEnabled === true}
+              disabled={isBusy}
+              onChange={(event) => void patchSettings({ lyricsImmersiveCoverStyleEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>{t('lyricsSettings.background.immersiveCoverStyleDescription')}</p>
 
           <label className="audio-toggle-row lyrics-smart-readable-toggle">
             <span>

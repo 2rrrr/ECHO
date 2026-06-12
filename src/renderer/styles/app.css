@@ -6601,9 +6601,7 @@
   border: 0;
   border-radius: 999px;
   background: var(--theme-accent-solid-bg);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.5),
-    0 0 12px color-mix(in srgb, var(--theme-accent-solid-bg) 34%, transparent);
+  box-shadow: none;
   opacity: 1;
   transform: translate(-50%, -50%);
 }

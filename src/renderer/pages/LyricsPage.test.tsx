@@ -161,6 +161,7 @@ const makeAppSettings = (
   lyricsContextOpacityPercent: 49,
   lyricsColor: "#314054",
   lyricsSmartReadableColorsEnabled: false,
+  lyricsImmersiveCoverStyleEnabled: false,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
@@ -548,6 +549,11 @@ describe("LyricsPage", () => {
     expect(css).toMatch(/html\[data-theme="dark"\] \.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-backdrop::before \{\s*background: none;/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-cover \{[\s\S]*?width: clamp\(82px, 6\.2vw, 112px\);[\s\S]*?margin-top: 0;/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-copy h1 \{[\s\S]*?font-size: clamp\(26px, 2\.15vw, 36px\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page\[data-immersive-cover-style="true"\]\[data-background="cover"\]:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;[\s\S]*?backdrop-filter: none;/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page\[data-immersive-cover-style="true"\]\[data-background="cover"\]\[data-view-mode="lyrics"\] > \.lyrics-track-header-floating \{[\s\S]*?background: transparent !important;[\s\S]*?box-shadow: none !important;[\s\S]*?backdrop-filter: none !important;/);
+    expect(css).toContain('--lyrics-immersive-cover-bleed: max(42px, 4.5vw);');
+    expect(css).toContain('inset: calc(-1 * var(--lyrics-immersive-cover-bleed));');
+    expect(css).not.toContain('text-shadow: 0 3px 16px rgba(0, 0, 0, 0.54);');
     expect(css).not.toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{\s*display: none;/);
     expect(css).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{\s*grid-template-rows: 58px minmax\(0, 1fr\);/);
     expect(css).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{[\s\S]*?top: 66px;[\s\S]*?grid-template-columns: 64px minmax\(0, 1fr\);/);
@@ -1975,6 +1981,105 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
       'url("echo-cover://original/cover%201")',
     );
+    expect(window.echo.library.resolveLyricsBackgroundCover).not.toHaveBeenCalled();
+  });
+
+  it("keeps the immersive album cover lyrics style disabled by default", async () => {
+    const track = makeTrack({ coverId: "cover 1" });
+    mockEcho(track);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findAllByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.immersiveCoverStyle).toBeUndefined();
+    expect(page.dataset.background).toBe("theme");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe("none");
+  });
+
+  it("uses the current album cover as a full-page lyrics background when immersive cover style is enabled", async () => {
+    const track = makeTrack({ coverId: "cover 1" });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "theme",
+      lyricsImmersiveCoverStyleEnabled: true,
+      lyricsSmartReadableColorsEnabled: false,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findAllByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.immersiveCoverStyle).toBe("true");
+    expect(page.dataset.background).toBe("cover");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
+      'url("echo-cover://original/cover%201")',
+    );
+    expect(container.querySelector(".lyrics-mv-panel")?.getAttribute("data-lyrics-readability")).toBe("true");
+    expect(window.echo.library.resolveLyricsBackgroundCover).toHaveBeenCalledWith("track-1");
+  });
+
+  it("keeps immersive cover style active when the lyrics player drawer header is enabled", async () => {
+    const track = makeTrack({ coverId: "cover 1" });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "theme",
+      lyricsImmersiveCoverStyleEnabled: true,
+      lyricsSmartReadableColorsEnabled: false,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} usePlayerDrawerHeader />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findAllByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.immersiveCoverStyle).toBe("true");
+    expect(page.dataset.background).toBe("cover");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
+      'url("echo-cover://original/cover%201")',
+    );
+    expect(container.querySelector(".lyrics-mv-panel")?.getAttribute("data-lyrics-readability")).toBe("true");
+  });
+
+  it("falls back to the theme background when immersive cover style has no album artwork", async () => {
+    const track = makeTrack({ coverId: null, coverThumb: null });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "theme",
+      lyricsImmersiveCoverStyleEnabled: true,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.immersiveCoverStyle).toBe("true");
+    expect(page.dataset.background).toBe("theme");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe("none");
     expect(window.echo.library.resolveLyricsBackgroundCover).not.toHaveBeenCalled();
   });
 

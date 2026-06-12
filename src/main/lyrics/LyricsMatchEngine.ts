@@ -58,12 +58,19 @@ const providerOrderPriority = (order: LyricsProviderId[], provider: LyricsProvid
 const sortProvidersByOrder = (providers: LyricsProvider[], order: LyricsProviderId[]): LyricsProvider[] =>
   [...providers].sort((left, right) => providerOrderPriority(order, right) - providerOrderPriority(order, left));
 
-const streamingPrimaryProviderFromQuery = (query: LyricsQuery): LyricsProviderId => {
+const primaryProviderFromQuery = (query: LyricsQuery): LyricsProviderId | null => {
+  if (query.mediaType === 'remote') {
+    return null;
+  }
+
   if (query.mediaType !== 'streaming') {
     return 'netease';
   }
 
   const identity = `${query.trackId ?? ''}\n${query.stableKey ?? ''}`;
+  if (/(?:^|\n)streaming:netease:/u.test(identity)) {
+    return 'netease';
+  }
   if (/(?:^|\n)streaming:qqmusic:/u.test(identity)) {
     return 'qqmusic';
   }
@@ -74,7 +81,7 @@ const streamingPrimaryProviderFromQuery = (query: LyricsQuery): LyricsProviderId
     return 'kuwo';
   }
 
-  return 'netease';
+  return null;
 };
 
 const hasText = (value: string | null | undefined): boolean => typeof value === 'string' && value.trim().length > 0;
@@ -210,7 +217,7 @@ export class LyricsMatchEngine {
     const pending = new Map<LyricsProviderId, Promise<MatchedLyricsCandidate[]>>();
     const collected: MatchedLyricsCandidate[] = [...localCollected];
     let accepted: MatchedLyricsCandidate | null = null;
-    const primaryProviderId = streamingPrimaryProviderFromQuery(query);
+    const primaryProviderId = primaryProviderFromQuery(query);
     const primaryProvider = settings.preferPrimaryProvider && !settings.collectAllCandidates
       ? networkProviders.find((provider) => provider.id === primaryProviderId)
       : undefined;

@@ -64,14 +64,18 @@ describe('PlayerProgress', () => {
     expect(css).not.toContain('requestAnimationFrame');
   });
 
-  it('keeps lyrics mini-player waveform progress frameless across theme overrides', () => {
-    const css = readFileSync('src/renderer/styles/theme-presets.css', 'utf8');
+  it('keeps waveform progress frameless across theme overrides', () => {
+    const appCss = readFileSync('src/renderer/styles/app.css', 'utf8');
+    const themeCss = readFileSync('src/renderer/styles/theme-presets.css', 'utf8');
 
-    expect(css).toMatch(
+    expect(appCss).toMatch(
+      /\.progress-track\[data-waveform="true"\] \.progress-thumb \{[\s\S]*?width: 2px;[\s\S]*?height: 28px;[\s\S]*?box-shadow: none;/,
+    );
+    expect(themeCss).toMatch(
       /\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.progress-track\[data-waveform="true"\] \{[\s\S]*?height: 24px;[\s\S]*?border: 0 !important;[\s\S]*?background: transparent !important;[\s\S]*?box-shadow: none !important;/,
     );
-    expect(css).toMatch(
-      /\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.progress-track\[data-waveform="true"\] \.progress-thumb \{[\s\S]*?width: 2px;[\s\S]*?height: 28px;[\s\S]*?border: 0 !important;/,
+    expect(themeCss).toMatch(
+      /html\[data-theme-preset\] \.app-shell\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.progress-track\[data-waveform="true"\] \.progress-thumb,[\s\S]*?\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.progress-track\[data-waveform="true"\] \.progress-thumb \{[\s\S]*?width: 0 !important;[\s\S]*?height: 0 !important;[\s\S]*?opacity: 0 !important;/,
     );
   });
 });

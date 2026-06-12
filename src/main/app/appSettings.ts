@@ -515,6 +515,9 @@ export const defaultSettings: AppSettings = {
   lyricsContextOpacityPercent: 49,
   lyricsColor: defaultLyricsColor,
   lyricsSmartReadableColorsEnabled: false,
+  lyricsImmersiveCoverStyleEnabled: false,
+  lyricsImmersiveCoverGlassEnabled: false,
+  lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -1608,6 +1611,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
   const lyricsContextOpacityPercent = Number(settings.lyricsContextOpacityPercent);
   const lyricsPlayerBarDrawerOpacityPercent = Number(settings.lyricsPlayerBarDrawerOpacityPercent);
   const lyricsCoverOpacityPercent = Number(settings.lyricsCoverOpacityPercent);
+  const lyricsImmersiveCoverGlassBlurPx = Number(settings.lyricsImmersiveCoverGlassBlurPx);
   const lyricsCoverBlurPx = Number(settings.lyricsCoverBlurPx);
   const lyricsCoverBrightnessPercent = Number(settings.lyricsCoverBrightnessPercent);
   const lyricsBackgroundScalePercent = Number(settings.lyricsBackgroundScalePercent);
@@ -1854,6 +1858,11 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
       : defaultSettings.lyricsContextOpacityPercent,
     lyricsColor: normalizeLyricsColor(settings.lyricsColor),
     lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
+    lyricsImmersiveCoverStyleEnabled: settings.lyricsImmersiveCoverStyleEnabled === true,
+    lyricsImmersiveCoverGlassEnabled: settings.lyricsImmersiveCoverGlassEnabled === true,
+    lyricsImmersiveCoverGlassBlurPx: Number.isFinite(lyricsImmersiveCoverGlassBlurPx)
+      ? Math.round(clamp(lyricsImmersiveCoverGlassBlurPx, 0, 32))
+      : defaultSettings.lyricsImmersiveCoverGlassBlurPx,
     lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
     lyricsBackgroundMode: normalizeLyricsBackgroundMode(settings.lyricsBackgroundMode),
     lyricsCustomWallpaperPath: normalizeLyricsWallpaperPath(settings.lyricsCustomWallpaperPath),

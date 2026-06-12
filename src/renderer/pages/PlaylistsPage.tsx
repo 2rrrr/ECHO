@@ -538,14 +538,6 @@ const favoriteToTrack = (item: StreamingFavoriteTrack, streamingQuality: Streami
   unavailable: !item.playable,
 });
 
-const playableTailFromTrack = (tracks: LibraryTrack[], track: LibraryTrack): LibraryTrack[] => {
-  const startIndex = tracks.findIndex((candidate) =>
-    (track.playlistItemId && candidate.playlistItemId === track.playlistItemId) || candidate.id === track.id,
-  );
-  const tail = (startIndex >= 0 ? tracks.slice(startIndex) : tracks).filter((candidate) => !candidate.unavailable);
-  return tail.length > 0 ? tail : track.unavailable ? [] : [track];
-};
-
 export const PlaylistsPage = (): JSX.Element => {
   const { t } = useI18n();
   const [playlistPanelView, setPlaylistPanelView] = useState<'local' | 'streamingFavorites'>('local');
@@ -2077,7 +2069,7 @@ export const PlaylistsPage = (): JSX.Element => {
         return;
       }
 
-      const sequenceTracks = playableTailFromTrack(favoriteDisplayTracks, track);
+      const sequenceTracks = favoriteDisplayTracks.filter((candidate) => !candidate.unavailable);
       try {
         await playPlaylistSequence(sequenceTracks, {
           label: queueSource.label,
@@ -2097,8 +2089,9 @@ export const PlaylistsPage = (): JSX.Element => {
     }
 
     try {
-      const playlistTracks = selectedPlaylist ? await loadPlaylistPlaybackTracks(selectedPlaylist) : displayTracks.filter((track) => !track.unavailable);
-      const sequenceTracks = playableTailFromTrack(playlistTracks, playableTrack);
+      const sequenceTracks = selectedPlaylist
+        ? await loadPlaylistPlaybackTracks(selectedPlaylist)
+        : displayTracks.filter((track) => !track.unavailable);
       await playPlaylistSequence(sequenceTracks, {
         label: selectedPlaylist?.name,
         playlistId: selectedPlaylist?.id,

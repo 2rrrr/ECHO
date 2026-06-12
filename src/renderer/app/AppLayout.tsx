@@ -347,8 +347,9 @@ const pendingRouteStorageKey = 'echo-next.pending-route';
 const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
 const proUnlockNoticeStoragePrefix = 'echo-next.pro-unlock-thanks';
 const settingsSectionNavigationEvent = 'app:navigate:settings-section';
-const lyricsMiniPlayerAutoHideDistancePx = 118;
-const lyricsMiniPlayerAutoHideDelayMs = 460;
+const lyricsMiniPlayerAutoHideDistancePx = 150;
+const lyricsMiniPlayerAutoHideRevealBandPx = 164;
+const lyricsMiniPlayerAutoHideDelayMs = 280;
 const temporarilyBlockedRouteIds = new Set<AppRouteId>(['streaming']);
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
@@ -1681,6 +1682,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     };
 
     const isNearMiniPlayer = (clientX: number, clientY: number): boolean => {
+      if (clientY >= window.innerHeight - lyricsMiniPlayerAutoHideRevealBandPx) {
+        return true;
+      }
+
       const host = lyricsMiniPlayerHostRef.current;
       const hostWidth = host?.offsetWidth ?? Math.min(820, Math.max(0, window.innerWidth - 96));
       const hostHeight = host?.offsetHeight ?? 72;
