@@ -765,9 +765,9 @@ export const readThemeMode = (): AppThemeMode => {
   }
 };
 
-export const readThemePreset = (): AppThemePreset => {
+export const readThemePreset = (options: ThemePresetOptions = {}): AppThemePreset => {
   try {
-    return normalizeThemePreset(window.localStorage.getItem(presetStorageKey));
+    return normalizeThemePreset(window.localStorage.getItem(presetStorageKey), options);
   } catch {
     return defaultThemePreset;
   }
@@ -1013,7 +1013,7 @@ export const applyThemeMode = (
 
 export const updateThemeMode = (mode: AppThemeMode, options: ThemeApplyOptions = {}): AppThemeMode => {
   const normalized = writeThemeMode(mode);
-  applyThemeMode(normalized, readThemePreset(), readThemePresetOverrides(), options);
+  applyThemeMode(normalized, readThemePreset(options), readThemePresetOverrides(), options);
   return normalized;
 };
 

@@ -21,6 +21,7 @@ import type {
 import type { AudioStatus } from '../../shared/types/audio';
 import type { LibraryAlbum, LibraryPage, LibraryPageQuery, LibraryTrack } from '../../shared/types/library';
 import type { TrackLyrics } from '../../shared/types/lyrics';
+import type { PersistedPlaybackSessionV1, PersistedQueueItem } from '../../shared/types/playback';
 import { getAudioSession } from '../audio/AudioSession';
 import { getLibraryService } from '../library/LibraryService';
 import { getLyricsService } from '../lyrics/LyricsService';
@@ -67,6 +68,7 @@ type EchoLinkServiceDependencies = {
   libraryService?: LibraryServiceLike;
   lyricsService?: LyricsServiceLike;
   dispatchPlaybackAction?: (action: 'nextTrack' | 'previousTrack') => void;
+  broadcastPlaybackQueueSession?: (session: PersistedPlaybackSessionV1) => void;
   createMdnsAdvertiser?: () => Pick<EchoLinkMdnsAdvertiser, 'start' | 'stop'>;
   getLanAddresses?: () => string[];
   now?: () => number;
@@ -232,6 +234,8 @@ const fileNameFromPath = (filePath: string | null | undefined): string | null =>
   return trimmed.split(/[\\/]/u).pop() ?? trimmed;
 };
 
+const comparablePath = (filePath: string | null | undefined): string | null => firstNonEmpty(filePath)?.replace(/\\/gu, '/').toLowerCase() ?? null;
+
 const webSafeArtworkUrl = (value: string | null | undefined): string | null => {
   const trimmed = firstNonEmpty(value);
   return trimmed && /^(https?:|data:)/iu.test(trimmed) ? trimmed : null;
@@ -364,7 +368,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       background: rgba(8, 10, 15, 0.7);
       box-shadow: 0 20px 54px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255,255,255,0.08);
       backdrop-filter: blur(22px);
-      opacity: 0.24;
+      opacity: 0.16;
       transition: opacity 160ms ease, transform 160ms ease;
     }
     .topbar:hover,
@@ -387,7 +391,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       align-items: center;
       padding: 8px 9px 8px 11px;
       border-color: rgba(255,255,255,0.08);
-      background: rgba(12, 10, 15, 0.48);
+      background: rgba(12, 10, 15, 0.34);
       transform: scale(0.92);
       transform-origin: top left;
     }
@@ -432,9 +436,10 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       user-select: none;
       perspective: 1400px;
       background:
-        linear-gradient(120deg, rgba(255, 140, 175, 0.28), transparent 42%),
-        linear-gradient(300deg, rgba(155, 232, 244, 0.18), transparent 46%),
-        linear-gradient(180deg, rgba(8, 7, 11, 0.08), rgba(8, 7, 11, 0.72));
+        linear-gradient(118deg, rgba(255, 128, 176, 0.34), transparent 38%),
+        linear-gradient(28deg, rgba(128, 224, 238, 0.24), transparent 48%),
+        linear-gradient(165deg, rgba(255, 215, 128, 0.12), transparent 36%),
+        linear-gradient(135deg, #2a1622 0%, #14131d 48%, #07181b 100%);
     }
     .stage::before {
       content: "";
@@ -443,9 +448,12 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       z-index: 1;
       pointer-events: none;
       background:
-        linear-gradient(180deg, rgba(255,255,255,0.1), transparent 20%, transparent 70%, rgba(0,0,0,0.45)),
-        linear-gradient(90deg, rgba(0,0,0,0.32), transparent 18%, transparent 82%, rgba(0,0,0,0.42));
-      opacity: 0.9;
+        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255,255,255,0.08), transparent 20%, transparent 70%, rgba(0,0,0,0.42)),
+        linear-gradient(90deg, rgba(0,0,0,0.22), transparent 18%, transparent 82%, rgba(0,0,0,0.34));
+      background-size: 88px 88px, 88px 88px, auto, auto;
+      opacity: 0.78;
     }
     .stage::after {
       content: "";
@@ -471,7 +479,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       padding: 8px;
       border-color: rgba(255,255,255,0.08);
       background: rgba(12, 10, 15, 0.52);
-      opacity: 0.2;
+      opacity: 0.14;
       transform: scale(0.74);
       transform-origin: bottom left;
     }
@@ -547,7 +555,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       max-width: min(92vw, 420px);
       padding: 8px 9px;
       border-color: rgba(255,255,255,0.08);
-      background: rgba(12, 10, 15, 0.46);
+      background: rgba(12, 10, 15, 0.34);
       transform: scale(0.9);
       transform-origin: top right;
     }
@@ -555,43 +563,23 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .sea-head small { color: var(--muted); font-weight: 680; }
     .album-mural {
       position: absolute;
-      inset: -8%;
+      inset: 0;
       z-index: 0;
       overflow: hidden;
       pointer-events: none;
-      filter: saturate(1.12);
+      background:
+        linear-gradient(112deg, rgba(255,255,255,0.08), transparent 24%, rgba(255,255,255,0.04) 46%, transparent 70%),
+        linear-gradient(42deg, transparent 0 24%, rgba(255, 140, 175, 0.18) 24% 34%, transparent 34% 100%),
+        linear-gradient(142deg, transparent 0 48%, rgba(155, 232, 244, 0.14) 48% 62%, transparent 62% 100%);
+      filter: saturate(1.05);
     }
     .album-mural::after {
       content: "";
       position: absolute;
-      inset: -2%;
-      background: rgba(8, 7, 11, 0.08);
-      backdrop-filter: blur(2px);
-    }
-    .album-mural-tile {
-      position: absolute;
-      left: var(--mural-x);
-      top: var(--mural-y);
-      width: var(--mural-w);
-      aspect-ratio: 0.72;
-      overflow: hidden;
-      border-radius: 12px;
-      opacity: var(--mural-opacity);
-      transform: rotate(var(--mural-rotate)) scale(var(--mural-scale));
-      filter: blur(var(--mural-blur));
-      box-shadow: 0 24px 70px rgba(0,0,0,0.4);
-    }
-    .album-mural-tile img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-    .album-mural-tile::after {
-      content: "";
-      position: absolute;
       inset: 0;
-      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.18) 42%, rgba(0,0,0,0.72));
+      background:
+        linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.42)),
+        linear-gradient(90deg, rgba(0,0,0,0.2), transparent 22%, transparent 78%, rgba(0,0,0,0.28));
     }
     .sea-viewport {
       position: absolute;
@@ -600,6 +588,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       overflow: hidden;
       cursor: grab;
       touch-action: none;
+      perspective: 1180px;
     }
     .album-sea {
       position: absolute;
@@ -609,6 +598,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       height: 2400px;
       transform: translate3d(var(--pan-x, -1800px), var(--pan-y, -1200px), 0);
       transform-origin: 0 0;
+      transform-style: preserve-3d;
       transition: none;
       will-change: transform;
     }
@@ -624,19 +614,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       min-width: 0;
       overflow: hidden;
       padding: 0;
-      border: 1px solid rgba(255,255,255,0.045);
+      border: 1px solid rgba(255,255,255,0.035);
       border-radius: 8px;
       background:
-        linear-gradient(180deg, rgba(255,255,255,0.13), rgba(255,255,255,0.04) 18%, rgba(13, 11, 17, 0.72) 64%, rgba(8, 7, 11, 0.9)),
+        linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.025) 18%, rgba(13, 11, 17, 0.7) 64%, rgba(8, 7, 11, 0.9)),
         var(--glass);
-      box-shadow: 0 18px 56px rgba(0,0,0,var(--card-shadow, 0.36)), inset 0 1px 0 rgba(255,255,255,0.08);
-      transform: translate3d(0, var(--depth-y, 0), 0) rotate(var(--tilt, 0deg)) scale(var(--card-scale, 1));
+      box-shadow: 0 15px 42px rgba(0,0,0,var(--card-shadow, 0.32)), inset 0 1px 0 rgba(255,255,255,0.045);
+      transform: translate3d(0, var(--depth-y, 0), var(--depth-z, 0px)) rotateX(var(--pitch, 0deg)) rotateY(var(--yaw, 0deg)) rotate(var(--tilt, 0deg)) scale(var(--card-scale, 1));
       opacity: var(--opacity, 1);
-      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1)) blur(var(--card-blur, 0px));
-      backdrop-filter: blur(18px) saturate(1.18);
+      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1));
       contain: layout paint style;
       transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
-      will-change: transform;
       backface-visibility: hidden;
     }
     .album-card::before {
@@ -647,7 +635,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       background:
         linear-gradient(135deg, rgba(255,255,255,0.18), transparent 22%),
         linear-gradient(315deg, rgba(255, 140, 175, 0.12), transparent 46%);
-      opacity: 0.72;
+      opacity: 0.54;
     }
     .album-card::after {
       content: "";
@@ -667,7 +655,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .album-card:hover {
       border-color: rgba(255,255,255,0.16);
       box-shadow: 0 30px 78px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08);
-      transform: translate3d(0, calc(var(--depth-y, 0) - 10px), 0) rotate(0deg) scale(1.025);
+      transform: translate3d(0, calc(var(--depth-y, 0) - 10px), 80px) rotateX(0deg) rotateY(0deg) rotate(0deg) scale(1.025);
       filter: saturate(1.08) brightness(1.04) blur(0);
       opacity: 1;
     }
@@ -746,8 +734,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       padding: 15px 10px 43px;
       border: 0;
       border-radius: 0;
-      background: linear-gradient(180deg, rgba(38,34,43,0.52), rgba(7,7,10,0.86));
-      backdrop-filter: blur(22px) saturate(1.28);
+      background: linear-gradient(180deg, rgba(38,34,43,0.58), rgba(7,7,10,0.9));
     }
     .album-copy strong, .album-copy span {
       display: -webkit-box;
@@ -809,8 +796,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       border: 0;
       border-radius: 999px;
       color: rgba(248, 245, 239, 0.78);
-      background: rgba(255,255,255,0.04);
-      backdrop-filter: blur(12px);
+      background: rgba(3,4,7,0.22);
       font-style: normal;
       font-size: 12px;
       font-weight: 900;
@@ -819,11 +805,11 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       width: 32px;
       max-width: 32px;
       height: 32px;
-      color: #071210;
+      color: rgba(248, 245, 239, 0.9);
       border-color: transparent;
-      background: linear-gradient(135deg, rgba(155, 232, 244, 0.98), rgba(255, 140, 175, 0.82));
+      background: rgba(255,255,255,0.12);
       pointer-events: auto;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
       font-size: 13px;
       transform: translateY(-1px);
     }
@@ -843,15 +829,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         rgba(155, 232, 244, 0.94);
     }
     .stage[data-dragging="true"] .album-card {
-      filter: saturate(1);
-      backdrop-filter: none;
       transition: none;
-      box-shadow: 0 18px 48px rgba(0,0,0,0.34);
-    }
-    .stage[data-dragging="true"] .album-copy,
-    .stage[data-dragging="true"] .album-mini-controls i,
-    .stage[data-dragging="true"] .album-mini-controls em {
-      backdrop-filter: none;
+      will-change: transform;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.3);
     }
     .stage[data-dragging="true"] .album-mural {
       filter: none;
@@ -1371,14 +1351,14 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const count = Math.max(1, Math.min(maxRenderedAlbums, state.albums.length));
       const wide = window.innerWidth >= 760;
       const aspect = Math.max(0.72, Math.min(2.2, window.innerWidth / Math.max(1, window.innerHeight)));
-      layout.cellW = wide ? 232 : 178;
-      layout.cellH = wide ? 310 : 252;
+      layout.cellW = wide ? 238 : 176;
+      layout.cellH = wide ? 312 : 248;
       layout.cols = wide
-        ? Math.max(8, Math.ceil(Math.sqrt(count * aspect * 0.82)))
-        : Math.max(5, Math.ceil(Math.sqrt(count * aspect * 0.42)));
+        ? Math.max(9, Math.ceil(Math.sqrt(count * aspect * 0.88)))
+        : Math.max(5, Math.ceil(Math.sqrt(count * aspect * 0.5)));
       layout.rows = Math.max(wide ? 6 : 7, Math.ceil(count / layout.cols));
-      world.width = Math.max(Math.ceil(window.innerWidth * 2.05), layout.cols * layout.cellW + 480);
-      world.height = Math.max(Math.ceil(window.innerHeight * 2.08), layout.rows * layout.cellH + 440);
+      world.width = Math.max(Math.ceil(window.innerWidth * 2.04), layout.cols * layout.cellW + 460);
+      world.height = Math.max(Math.ceil(window.innerHeight * 2.02), layout.rows * layout.cellH + 390);
       const sea = $('albumSea');
       sea.style.width = world.width + 'px';
       sea.style.height = world.height + 'px';
@@ -1387,96 +1367,97 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const raw = Math.sin((index + 1) * 9283.123 + state.randomSeed * 31 + salt * 97) * 10000;
       return raw - Math.floor(raw);
     };
-    const muralStyle = (index) => {
-      const wide = window.innerWidth >= 760;
-      const x = Math.round(-8 + seeded(index, 20) * 116);
-      const y = Math.round(-10 + seeded(index, 21) * 120);
-      const width = Math.round((wide ? 104 : 82) + seeded(index, 22) * (wide ? 210 : 108));
-      const scale = 0.78 + seeded(index, 23) * 0.74;
-      const rotate = (seeded(index, 24) - 0.5) * 18;
-      const opacity = 0.24 + seeded(index, 25) * 0.34;
-      const blur = 1.2 + seeded(index, 26) * (wide ? 4.2 : 3.1);
-      return '--mural-x:' + x + '%;--mural-y:' + y + '%;--mural-w:' + width + 'px;--mural-scale:' + scale.toFixed(3) + ';--mural-rotate:' + rotate.toFixed(2) + 'deg;--mural-opacity:' + opacity.toFixed(3) + ';--mural-blur:' + blur.toFixed(2) + 'px';
-    };
     const renderMural = () => {
       const mural = $('albumMural');
       if (!mural) {
         return;
       }
       mural.innerHTML = '';
-      const albums = state.albums.filter((album) => album.artworkUrl).slice(0, 72);
-      albums.forEach((album, index) => {
-        const tile = document.createElement('i');
-        tile.className = 'album-mural-tile';
-        tile.style.cssText = muralStyle(index);
-        const img = document.createElement('img');
-        img.alt = '';
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.src = album.artworkUrl;
-        img.addEventListener('error', () => tile.remove());
-        tile.appendChild(img);
-        mural.appendChild(tile);
-      });
     };
     const albumStyle = (index) => {
       const wide = window.innerWidth >= 760;
       const heroOffsets = [
-        [-315, -205],
-        [-105, -185],
-        [118, -178],
-        [342, -210],
-        [-444, -28],
-        [-220, 8],
-        [6, -12],
-        [248, 24],
-        [470, 4],
-        [-365, 178],
-        [-125, 172],
-        [126, 170],
-        [370, 190],
-        [-520, 316],
-        [-258, 328],
-        [18, 308],
-        [286, 338],
-        [540, 304],
-        [-78, -354],
-        [214, -352],
+        [-390, -252],
+        [-160, -250],
+        [72, -248],
+        [304, -250],
+        [-510, -62],
+        [-286, -48],
+        [-60, -38],
+        [166, -38],
+        [394, -50],
+        [592, -72],
+        [-442, 130],
+        [-220, 146],
+        [0, 132],
+        [224, 146],
+        [450, 130],
+        [642, 108],
+        [-346, 320],
+        [-120, 330],
+        [122, 330],
+        [362, 320],
+        [-562, 278],
+        [592, 272],
+        [-116, -430],
+        [174, -430],
+        [450, -420],
+        [-548, -302],
       ];
+      const mobileHeroOffsets = [
+        [-176, -214],
+        [-34, -218],
+        [112, -210],
+        [-226, -54],
+        [-78, -42],
+        [76, -44],
+        [218, -56],
+        [-172, 126],
+        [-20, 136],
+        [134, 128],
+        [-228, 304],
+        [-82, 296],
+        [78, 304],
+        [232, 286],
+      ];
+      const activeHeroOffsets = wide ? heroOffsets : mobileHeroOffsets;
       const depth = seeded(index, 10);
-      const hero = wide && index < heroOffsets.length;
-      const near = hero ? index < 9 : depth > 0.76;
-      const far = hero ? index >= 15 : depth < 0.3;
-      const baseSize = near ? (wide ? 148 : 124) : far ? (wide ? 90 : 78) : (wide ? 112 : 98);
-      const size = Math.round(baseSize + seeded(index, 1) * (near ? (wide ? 34 : 24) : far ? (wide ? 22 : 16) : (wide ? 30 : 20)));
+      const hero = index < activeHeroOffsets.length;
+      const primary = hero && index < 5;
+      const near = hero ? index < 17 : depth > 0.72;
+      const far = hero ? index >= 23 : depth < 0.28;
+      const baseSize = primary ? (wide ? 130 : 104) : near ? (wide ? 112 : 88) : far ? (wide ? 76 : 58) : (wide ? 92 : 72);
+      const size = Math.round(baseSize + seeded(index, 1) * (primary ? (wide ? 20 : 16) : near ? (wide ? 18 : 16) : far ? (wide ? 14 : 12) : (wide ? 18 : 14)));
       const slotCount = Math.max(1, layout.cols * layout.rows);
       const slot = (index * 37 + Math.floor(seeded(index, 15) * slotCount)) % slotCount;
       const col = slot % layout.cols;
       const row = Math.floor(slot / layout.cols);
       const originX = Math.round((world.width - layout.cols * layout.cellW) / 2 + (wide ? 22 : 12));
       const originY = Math.round((world.height - layout.rows * layout.cellH) / 2 + (wide ? 24 : 16));
-      const waveX = Math.sin(row * 1.42 + state.randomSeed * 0.09) * layout.cellW * 0.26;
-      const waveY = Math.cos(col * 1.18 + state.randomSeed * 0.07) * layout.cellH * 0.16;
-      const jitterX = (seeded(index, 2) - 0.5) * Math.min(116, layout.cellW * 0.36);
-      const jitterY = (seeded(index, 3) - 0.5) * Math.min(132, layout.cellH * 0.34);
-      const heroOffset = heroOffsets[index] || [0, 0];
+      const waveX = Math.sin(row * 1.42 + state.randomSeed * 0.09) * layout.cellW * 0.18;
+      const waveY = Math.cos(col * 1.18 + state.randomSeed * 0.07) * layout.cellH * 0.1;
+      const jitterX = (seeded(index, 2) - 0.5) * Math.min(92, layout.cellW * 0.28);
+      const jitterY = (seeded(index, 3) - 0.5) * Math.min(112, layout.cellH * 0.26);
+      const heroOffset = activeHeroOffsets[index] || [0, 0];
       const x = hero
         ? Math.round(world.width / 2 + heroOffset[0] + (seeded(index, 2) - 0.5) * 28)
         : Math.round(originX + col * layout.cellW + waveX + jitterX);
       const y = hero
         ? Math.round(world.height / 2 + heroOffset[1] + (seeded(index, 3) - 0.5) * 28)
         : Math.round(originY + row * layout.cellH + waveY + jitterY);
-      const tilt = (seeded(index, 4) - 0.5) * (near ? 3.2 : far ? 9.5 : 5.6);
-      const scale = near ? 0.98 + seeded(index, 6) * 0.18 : far ? 0.58 + seeded(index, 6) * 0.2 : 0.76 + seeded(index, 6) * 0.22;
-      const opacity = near ? 0.9 + seeded(index, 5) * 0.1 : far ? 0.28 + seeded(index, 5) * 0.24 : 0.56 + seeded(index, 5) * 0.26;
-      const depthY = Math.round((seeded(index, 7) - 0.5) * (near ? 12 : far ? 72 : 38));
-      const blur = near ? 0 : far ? 3.4 + seeded(index, 9) * 4.2 : seeded(index, 8) > 0.62 ? 1.0 + seeded(index, 9) * 1.8 : 0;
-      const z = near ? 40 + Math.round(seeded(index, 11) * 20) : far ? 1 + Math.round(seeded(index, 11) * 8) : 14 + Math.round(seeded(index, 11) * 18);
-      const bright = near ? 1.04 : far ? 0.76 : 0.92;
-      const sat = near ? 1.08 : far ? 0.82 : 0.98;
-      const shadow = near ? 0.48 : far ? 0.22 : 0.34;
-      const sparkle = near ? 0.72 + seeded(index, 12) * 0.5 : far ? 0.38 + seeded(index, 12) * 0.32 : 0.54 + seeded(index, 12) * 0.36;
-      return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--card-blur:' + blur.toFixed(2) + 'px;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
+      const tilt = (seeded(index, 4) - 0.5) * (primary ? 1.4 : near ? 3.4 : far ? 7.4 : 4.8);
+      const scale = primary ? 1 + seeded(index, 6) * 0.06 : near ? 0.82 + seeded(index, 6) * 0.16 : far ? 0.5 + seeded(index, 6) * 0.14 : 0.66 + seeded(index, 6) * 0.16;
+      const opacity = primary ? 0.98 : near ? 0.76 + seeded(index, 5) * 0.18 : far ? 0.18 + seeded(index, 5) * 0.18 : 0.46 + seeded(index, 5) * 0.22;
+      const depthY = Math.round((seeded(index, 7) - 0.5) * (primary ? 8 : near ? 18 : far ? 64 : 34));
+      const depthZ = primary ? 96 + Math.round(seeded(index, 13) * 36) : near ? 24 + Math.round(seeded(index, 13) * 48) : far ? -156 - Math.round(seeded(index, 13) * 150) : -42 - Math.round(seeded(index, 13) * 70);
+      const z = primary ? 80 + Math.round(seeded(index, 11) * 20) : near ? 44 + Math.round(seeded(index, 11) * 18) : far ? 4 + Math.round(seeded(index, 11) * 8) : 18 + Math.round(seeded(index, 11) * 18);
+      const bright = primary ? 1.07 : near ? 1.01 : far ? 0.76 : 0.9;
+      const sat = primary ? 1.1 : near ? 1.05 : far ? 0.82 : 0.95;
+      const shadow = primary ? 0.48 : near ? 0.38 : far ? 0.22 : 0.3;
+      const sparkle = primary ? 0.78 + seeded(index, 12) * 0.38 : near ? 0.56 + seeded(index, 12) * 0.34 : far ? 0.32 + seeded(index, 12) * 0.24 : 0.42 + seeded(index, 12) * 0.28;
+      const pitch = far ? (seeded(index, 14) - 0.5) * 5 : (seeded(index, 14) - 0.5) * 2;
+      const yaw = far ? (seeded(index, 16) - 0.5) * 7 : (seeded(index, 16) - 0.5) * 3;
+      return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
     };
     const renderAlbums = () => {
       updateLayout();
@@ -1903,6 +1884,7 @@ export class EchoLinkService {
   private readonly libraryService: LibraryServiceLike;
   private readonly lyricsService: LyricsServiceLike;
   private readonly dispatchPlaybackAction: (action: 'nextTrack' | 'previousTrack') => void;
+  private readonly broadcastPlaybackQueueSession: (session: PersistedPlaybackSessionV1) => void;
   private readonly createMdnsAdvertiser: () => Pick<EchoLinkMdnsAdvertiser, 'start' | 'stop'>;
   private readonly getLanAddresses: () => string[];
   private readonly now: () => number;
@@ -1919,6 +1901,13 @@ export class EchoLinkService {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
           window.webContents.send(IpcChannels.AppGlobalShortcutCommand, action);
+        }
+      }
+    });
+    this.broadcastPlaybackQueueSession = dependencies.broadcastPlaybackQueueSession ?? ((session) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IpcChannels.PlaybackQueueSessionChanged, session);
         }
       }
     });
@@ -2469,14 +2458,25 @@ export class EchoLinkService {
   }
 
   private createCurrentTrackPreview(audioStatus: AudioStatus, track: LibraryTrack | null, baseUrl: string): EchoLinkTrackPreview | null {
-    const id = firstNonEmpty(audioStatus.currentTrackId, track?.id, audioStatus.currentFilePath);
-    const title = firstNonEmpty(audioStatus.currentTrackTitle, track?.title, fileNameFromPath(audioStatus.currentFilePath), fileNameFromPath(track?.path));
+    const statusPath = comparablePath(audioStatus.currentFilePath);
+    const trackPath = comparablePath(track?.path);
+    const trackMatchesAudioPath = Boolean(track) && (!statusPath || !trackPath || statusPath === trackPath);
+    const fallbackTrack = trackMatchesAudioPath ? track : null;
+    const changedFileTitle = trackMatchesAudioPath ? null : fileNameFromPath(audioStatus.currentFilePath);
+    const id = firstNonEmpty(audioStatus.currentTrackId, fallbackTrack?.id, audioStatus.currentFilePath);
+    const title = firstNonEmpty(
+      audioStatus.currentTrackTitle,
+      fallbackTrack?.title,
+      changedFileTitle,
+      fileNameFromPath(fallbackTrack?.path),
+      fileNameFromPath(audioStatus.currentFilePath),
+    );
     if (!id && !title) {
       return null;
     }
-    const artist = firstNonEmpty(audioStatus.currentTrackArtist, audioStatus.currentTrackAlbumArtist, track?.artist, track?.albumArtist);
-    const album = firstNonEmpty(audioStatus.currentTrackAlbum, track?.album) ?? '';
-    const albumArtist = firstNonEmpty(audioStatus.currentTrackAlbumArtist, audioStatus.currentTrackArtist, track?.albumArtist, track?.artist);
+    const artist = firstNonEmpty(audioStatus.currentTrackArtist, audioStatus.currentTrackAlbumArtist, fallbackTrack?.artist, fallbackTrack?.albumArtist);
+    const album = firstNonEmpty(audioStatus.currentTrackAlbum, fallbackTrack?.album) ?? '';
+    const albumArtist = firstNonEmpty(audioStatus.currentTrackAlbumArtist, audioStatus.currentTrackArtist, fallbackTrack?.albumArtist, fallbackTrack?.artist);
     const statusDurationMs = Math.max(0, Math.round((audioStatus.durationSeconds ?? 0) * 1000));
     return {
       id: id ?? 'current',
@@ -2484,10 +2484,10 @@ export class EchoLinkService {
       artist: artist ?? 'Unknown Artist',
       album,
       albumArtist: albumArtist ?? artist ?? 'Unknown Artist',
-      artworkUrl: webSafeArtworkUrl(audioStatus.currentTrackCoverUrl) ?? (track ? this.createArtworkUrl(track.coverId, baseUrl) : null),
-      durationMs: statusDurationMs > 0 ? statusDurationMs : Math.max(0, Math.round((track?.duration ?? 0) * 1000)),
-      sourceLabel: track ? sourceLabelForTrack(track) : 'Current Playback',
-      canPlayOnPhone: track ? canPlayOnPhone(track) : Boolean(audioStatus.currentFilePath && existsSync(audioStatus.currentFilePath)),
+      artworkUrl: webSafeArtworkUrl(audioStatus.currentTrackCoverUrl) ?? (fallbackTrack ? this.createArtworkUrl(fallbackTrack.coverId, baseUrl) : null),
+      durationMs: statusDurationMs > 0 ? statusDurationMs : Math.max(0, Math.round((fallbackTrack?.duration ?? 0) * 1000)),
+      sourceLabel: fallbackTrack ? sourceLabelForTrack(fallbackTrack) : 'Current Playback',
+      canPlayOnPhone: fallbackTrack ? canPlayOnPhone(fallbackTrack) : Boolean(audioStatus.currentFilePath && existsSync(audioStatus.currentFilePath)),
     };
   }
 
@@ -2681,6 +2681,67 @@ export class EchoLinkService {
         coverUrl: track.coverThumb,
       },
     });
+    this.publishPlaybackQueueSession(positionMs);
+  }
+
+  private publishPlaybackQueueSession(positionMs = 0): void {
+    const session = this.createPlaybackQueueSession(positionMs);
+    if (session) {
+      this.broadcastPlaybackQueueSession(session);
+    }
+  }
+
+  private createPlaybackQueueSession(positionMs = 0): PersistedPlaybackSessionV1 | null {
+    const updatedAt = new Date(this.now()).toISOString();
+    const source = { type: 'manual' as const, label: 'ECHO Link' };
+    const items: PersistedQueueItem[] = [];
+
+    for (const [index, trackId] of this.queueTrackIds.entries()) {
+      const track = this.libraryService.getTrack(trackId);
+      if (!track) {
+        continue;
+      }
+      items.push({
+        queueId: `echo-link-${index + 1}-${track.id}`,
+        track,
+        source,
+        addedAt: updatedAt,
+      });
+    }
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    const currentItem = items.find((item) => item.track.id === this.currentQueueTrackId) ?? items[0];
+    const positionMsSafe = Math.max(0, Math.round(Number(positionMs) || 0));
+    const durationMs = Math.max(0, Math.round((currentItem.track.duration ?? 0) * 1000));
+
+    return {
+      version: 1,
+      items,
+      currentQueueId: currentItem.queueId,
+      currentTrackId: currentItem.track.id,
+      lastPlayedTrack: currentItem.track,
+      history: [],
+      mode: {
+        isShuffleEnabled: false,
+        repeatMode: 'off',
+        automixEnabled: false,
+        autoFillQueueEnabled: false,
+      },
+      resume: {
+        queueId: currentItem.queueId,
+        trackId: currentItem.track.id,
+        filePath: currentItem.track.path,
+        positionMs: positionMsSafe,
+        durationMs,
+        state: 'playing',
+        updatedAt,
+      },
+      updatedAt,
+      playlistPlayback: null,
+    };
   }
 
   private async serveArtworkToken(request: IncomingMessage, response: ServerResponse, token: string): Promise<void> {

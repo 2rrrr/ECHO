@@ -181,6 +181,25 @@ const removePathForWipe = async (
   }
 };
 
+const factoryResetExitDelayMs = 350;
+
+const scheduleFactoryResetRelaunch = (): Pick<LibraryAllUserDataDeleteResult, 'relaunchScheduled' | 'exitDelayMs'> => {
+  app.relaunch();
+  setTimeout(() => {
+    app.exit(0);
+  }, factoryResetExitDelayMs).unref?.();
+
+  return {
+    relaunchScheduled: true,
+    exitDelayMs: factoryResetExitDelayMs,
+  };
+};
+
+const skippedFactoryResetRelaunch = (): Pick<LibraryAllUserDataDeleteResult, 'relaunchScheduled' | 'exitDelayMs'> => ({
+  relaunchScheduled: false,
+  exitDelayMs: 0,
+});
+
 const resolveCoverCachePathForWipe = (): string | null => {
   try {
     return getLibraryService().getCoverCacheDir();
@@ -214,11 +233,14 @@ const deleteAllUserData = async (coverCachePath: string | null): Promise<Library
     await removePathForWipe(targetPath, removedPaths, failedPaths);
   }
 
+  const hasUserDataWipeFailure = failedPaths.some(({ path }) => isSameOrInside(userDataPath, path));
+
   return {
     userDataPath,
     coverCachePath,
     removedPaths,
     failedPaths,
+    ...(hasUserDataWipeFailure ? skippedFactoryResetRelaunch() : scheduleFactoryResetRelaunch()),
   };
 };
 

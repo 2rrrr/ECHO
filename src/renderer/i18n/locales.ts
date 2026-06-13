@@ -662,6 +662,19 @@ export type TranslationKey =
   | 'playerStatus.audioSpecifications'
   | 'playerStatus.ready'
   | 'playerStatus.streaming'
+  | 'playerDacArrival.close'
+  | 'playerDacArrival.detail.asio'
+  | 'playerDacArrival.detail.exclusive'
+  | 'playerDacArrival.eyebrow'
+  | 'playerDacArrival.issue.label'
+  | 'playerDacArrival.issue.none'
+  | 'playerDacArrival.native.label'
+  | 'playerDacArrival.native.pending'
+  | 'playerDacArrival.native.rate'
+  | 'playerDacArrival.rates.label'
+  | 'playerDacArrival.rates.pending'
+  | 'playerDacArrival.status.takeover'
+  | 'playerDacArrival.title'
   | 'playerSpeed.label'
   | 'playerSpeed.reset'
   | 'playerVolume.fixed.disable'
@@ -831,6 +844,32 @@ export type TranslationKey =
   | 'audioSignalPath.closeLabel'
   | 'audioSignalPath.closeTitle'
   | 'audioSignalPath.control.openLabel'
+  | 'audioSignalPath.atlas.eyebrow'
+  | 'audioSignalPath.atlas.collapse'
+  | 'audioSignalPath.atlas.expand'
+  | 'audioSignalPath.atlas.lastIssue'
+  | 'audioSignalPath.atlas.lastIssueDetail'
+  | 'audioSignalPath.atlas.lastIssueNone'
+  | 'audioSignalPath.atlas.lastIssueNoneDetail'
+  | 'audioSignalPath.atlas.modeAria'
+  | 'audioSignalPath.atlas.modeIssues'
+  | 'audioSignalPath.atlas.modeMixed'
+  | 'audioSignalPath.atlas.modeNative'
+  | 'audioSignalPath.atlas.modeStable'
+  | 'audioSignalPath.atlas.modeUnproven'
+  | 'audioSignalPath.atlas.nativeDetail'
+  | 'audioSignalPath.atlas.nativeNone'
+  | 'audioSignalPath.atlas.nativeNoneDetail'
+  | 'audioSignalPath.atlas.nativeProof'
+  | 'audioSignalPath.atlas.observedOnly'
+  | 'audioSignalPath.atlas.observedRates'
+  | 'audioSignalPath.atlas.pending'
+  | 'audioSignalPath.atlas.resample441To48'
+  | 'audioSignalPath.atlas.resampleDetail'
+  | 'audioSignalPath.atlas.resampleNone'
+  | 'audioSignalPath.atlas.resampleNoneDetail'
+  | 'audioSignalPath.atlas.resampleTendency'
+  | 'audioSignalPath.atlas.title'
   | 'audioSignalPath.decode.auto'
   | 'audioSignalPath.decode.keepRate'
   | 'audioSignalPath.decode.originalRate'
@@ -881,6 +920,7 @@ export type TranslationKey =
   | 'audioSignalPath.doctor.notBitPerfect.fallback'
   | 'audioSignalPath.doctor.notBitPerfect.title'
   | 'audioSignalPath.doctor.resampling.advice'
+  | 'audioSignalPath.doctor.resampling.atlasAdvice'
   | 'audioSignalPath.doctor.resampling.detail'
   | 'audioSignalPath.doctor.resampling.title'
   | 'audioSignalPath.doctor.sampleRateMismatch.advice'
@@ -4069,14 +4109,15 @@ const settingsAboutDangerZhCN = {
   'settings.danger.deleteDatabase.message.removedFiles': '已删除 {files}。',
   'settings.danger.deleteDatabase.message.noFiles': '没有需要删除的数据库文件。',
   'settings.danger.deleteDatabase.message.deleted': '曲库数据库已删除。{removed}{archived} 请重启 ECHO Next 后重新添加歌曲文件夹并扫描。',
-  'settings.danger.deleteAll.title': '删除所有 ECHO 本地内容',
-  'settings.danger.deleteAll.description': '清空设置、账号、插件、曲库数据库、缓存、日志、壁纸、保护快照和下载任务记录；不会主动删除音乐文件夹或下载输出目录。确认词：删除所有内容',
-  'settings.danger.deleteAll.action': '删除所有内容',
+  'settings.danger.deleteAll.title': '恢复为首次启动状态',
+  'settings.danger.deleteAll.description': '清空设置、账号、插件、曲库数据库、缓存、日志、壁纸、保护快照和下载任务记录，然后自动重启 ECHO；不会主动删除音乐文件夹或下载输出目录。确认词：删除所有内容',
+  'settings.danger.deleteAll.action': '恢复首次启动状态',
   'settings.danger.deleteAll.confirmWord': '删除所有内容',
-  'settings.danger.deleteAll.confirmMessage': '这会删除 ECHO Next 的设置、账号、插件、曲库数据库、播放记录、缓存、日志、壁纸和保护快照；音乐文件不会被删除。',
-  'settings.danger.deleteAll.confirm': '彻底删除所有 ECHO Next 本地内容？这会清空 ECHO 的 userData 和外部封面缓存目录，删除后需要重启应用；音乐文件夹和下载输出目录不会被主动删除。',
+  'settings.danger.deleteAll.confirmMessage': '这会删除 ECHO Next 的设置、账号、插件、曲库数据库、播放记录、缓存、日志、壁纸和保护快照，并自动重启为首次启动状态；音乐文件不会被删除。',
+  'settings.danger.deleteAll.confirm': '恢复为首次启动状态？这会清空 ECHO 的 userData 和外部封面缓存目录，然后自动重启应用；音乐文件夹和下载输出目录不会被主动删除。',
   'settings.danger.deleteAll.message.failed': ' 有 {failed} 个路径删除失败，请关闭 ECHO 后手动检查。',
-  'settings.danger.deleteAll.message.deleted': 'ECHO 本地内容已清理：删除 {removed} 个路径。{failedText}请立即重启 ECHO Next。',
+  'settings.danger.deleteAll.message.deleted': 'ECHO 本地内容已清理：删除 {removed} 个路径。{failedText}ECHO 将自动重启为首次启动状态。',
+  'settings.danger.deleteAll.message.notRestarted': 'ECHO 本地内容未能完全清理：已删除 {removed} 个路径，仍有 {failed} 个路径失败。请关闭 ECHO 后手动检查；应用不会自动重启。',
 } satisfies Partial<Record<FlexibleSettingsTranslationKey, string>>;
 
 const settingsAboutDangerEnUS = {
@@ -4184,14 +4225,15 @@ const settingsAboutDangerEnUS = {
   'settings.danger.deleteDatabase.message.removedFiles': 'Deleted {files}.',
   'settings.danger.deleteDatabase.message.noFiles': 'No database files needed deletion.',
   'settings.danger.deleteDatabase.message.deleted': 'Library database deleted. {removed}{archived} Restart ECHO Next, then add song folders again and rescan.',
-  'settings.danger.deleteAll.title': 'Delete All Local ECHO Content',
-  'settings.danger.deleteAll.description': 'Clear settings, accounts, plugins, library database, cache, logs, wallpapers, protection snapshots, and download task records. Music folders and download output directories are not deleted. Confirmation phrase: delete all content',
-  'settings.danger.deleteAll.action': 'Delete All Content',
+  'settings.danger.deleteAll.title': 'Restore First-Launch State',
+  'settings.danger.deleteAll.description': 'Clear settings, accounts, plugins, library database, cache, logs, wallpapers, protection snapshots, and download task records, then restart ECHO automatically. Music folders and download output directories are not deleted. Confirmation phrase: delete all content',
+  'settings.danger.deleteAll.action': 'Restore First-Launch State',
   'settings.danger.deleteAll.confirmWord': 'delete all content',
-  'settings.danger.deleteAll.confirmMessage': 'This deletes ECHO Next settings, accounts, plugins, library database, playback history, cache, logs, wallpapers, and protection snapshots. Music files will not be deleted.',
-  'settings.danger.deleteAll.confirm': 'Permanently delete all local ECHO Next content? This clears ECHO userData and the external cover cache directory, and requires restarting the app afterward. Music folders and download output directories are not actively deleted.',
+  'settings.danger.deleteAll.confirmMessage': 'This deletes ECHO Next settings, accounts, plugins, library database, playback history, cache, logs, wallpapers, and protection snapshots, then restarts into first-launch state. Music files will not be deleted.',
+  'settings.danger.deleteAll.confirm': 'Restore ECHO Next to first-launch state? This clears ECHO userData and the external cover cache directory, then restarts the app automatically. Music folders and download output directories are not actively deleted.',
   'settings.danger.deleteAll.message.failed': ' {failed} paths failed to delete; close ECHO and inspect them manually.',
-  'settings.danger.deleteAll.message.deleted': 'ECHO local content cleared: deleted {removed} paths.{failedText} Restart ECHO Next now.',
+  'settings.danger.deleteAll.message.deleted': 'ECHO local content cleared: deleted {removed} paths.{failedText} ECHO will restart into first-launch state.',
+  'settings.danger.deleteAll.message.notRestarted': 'ECHO local content was not fully cleared: deleted {removed} paths, with {failed} paths still failing. Close ECHO and inspect them manually; the app will not restart automatically.',
 } satisfies Partial<Record<FlexibleSettingsTranslationKey, string>>;
 
 const mediaLibraryZhTW = mediaLibraryZhCN;
@@ -4581,6 +4623,32 @@ const songsPageZhTW = songsPageZhCN;
 const songsPageJaJP = songsPageEnUS;
 
 const audioSignalPathExtrasZhCN = {
+  'audioSignalPath.atlas.eyebrow': '设备图谱',
+  'audioSignalPath.atlas.collapse': '收起 DAC 能力图谱',
+  'audioSignalPath.atlas.expand': '展开 DAC 能力图谱',
+  'audioSignalPath.atlas.lastIssue': '最近问题',
+  'audioSignalPath.atlas.lastIssueDetail': '最近发生在 {mode}',
+  'audioSignalPath.atlas.lastIssueNone': '暂无错误',
+  'audioSignalPath.atlas.lastIssueNoneDetail': 'ECHO 暂未记录到这台设备的输出错误',
+  'audioSignalPath.atlas.modeAria': '输出模式稳定度',
+  'audioSignalPath.atlas.modeIssues': '{count} 次问题',
+  'audioSignalPath.atlas.modeMixed': '{success} 次成功 / {issues} 次问题',
+  'audioSignalPath.atlas.modeNative': '{success} 次成功 / {native} 次原生',
+  'audioSignalPath.atlas.modeStable': '{count} 次成功',
+  'audioSignalPath.atlas.modeUnproven': '尚未观测',
+  'audioSignalPath.atlas.nativeDetail': '最近一次原生链路来自 {mode}',
+  'audioSignalPath.atlas.nativeNone': '待证明',
+  'audioSignalPath.atlas.nativeNoneDetail': '还没有记录到 source rate = device rate 的成功链路',
+  'audioSignalPath.atlas.nativeProof': '原生证明',
+  'audioSignalPath.atlas.observedOnly': '来自 ECHO 观察，不代表完整硬件规格',
+  'audioSignalPath.atlas.observedRates': '见过的输出',
+  'audioSignalPath.atlas.pending': '等待观察',
+  'audioSignalPath.atlas.resample441To48': '44.1 -> 48 x{count}',
+  'audioSignalPath.atlas.resampleDetail': '共记录 {count} 次采样率转换',
+  'audioSignalPath.atlas.resampleNone': '未发现',
+  'audioSignalPath.atlas.resampleNoneDetail': '暂未看到固定 44.1 -> 48 倾向',
+  'audioSignalPath.atlas.resampleTendency': '重采样倾向',
+  'audioSignalPath.atlas.title': 'DAC 能力图谱',
   'audioSignalPath.doctor.blocker.rateConversion': '采样率转换',
   'audioSignalPath.doctor.bitPerfect.advice': '想要透明播放时可以保留这个路径；Doctor 暂时没有紧急建议。',
   'audioSignalPath.doctor.bitPerfect.detail': '{mode}输出，未检测到活跃 DSP 阻塞项。',
@@ -4623,6 +4691,7 @@ const audioSignalPathExtrasZhCN = {
   'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO 现在不能把这条链路标记为透明 1:1 输出。',
   'audioSignalPath.doctor.notBitPerfect.title': '不是 bit-perfect',
   'audioSignalPath.doctor.outputError.title': '输出链路异常',
+  'audioSignalPath.doctor.resampling.atlasAdvice': 'Atlas 上次看到这台设备用 {mode} 以 {rate} 原生输出；想避开重采样可以优先试这条路。',
   'audioSignalPath.doctor.resampling.advice': '如果想要原生采样率播放，可以为这台 DAC 试试独占输出或 ASIO，而不是共享/系统输出。',
   'audioSignalPath.doctor.resampling.detail': '{path}；ECHO 正在跟随当前输出时钟/后端，所以不是 1:1 时钟链路。',
   'audioSignalPath.doctor.resampling.title': '正在进行采样率转换',
@@ -4664,6 +4733,32 @@ const audioSignalPathExtrasZhCN = {
 };
 
 const audioSignalPathExtrasZhTW = {
+  'audioSignalPath.atlas.eyebrow': '裝置圖譜',
+  'audioSignalPath.atlas.collapse': '收合 DAC 能力圖譜',
+  'audioSignalPath.atlas.expand': '展開 DAC 能力圖譜',
+  'audioSignalPath.atlas.lastIssue': '最近問題',
+  'audioSignalPath.atlas.lastIssueDetail': '最近發生在 {mode}',
+  'audioSignalPath.atlas.lastIssueNone': '暫無錯誤',
+  'audioSignalPath.atlas.lastIssueNoneDetail': 'ECHO 暫未記錄到這台裝置的輸出錯誤',
+  'audioSignalPath.atlas.modeAria': '輸出模式穩定度',
+  'audioSignalPath.atlas.modeIssues': '{count} 次問題',
+  'audioSignalPath.atlas.modeMixed': '{success} 次成功 / {issues} 次問題',
+  'audioSignalPath.atlas.modeNative': '{success} 次成功 / {native} 次原生',
+  'audioSignalPath.atlas.modeStable': '{count} 次成功',
+  'audioSignalPath.atlas.modeUnproven': '尚未觀測',
+  'audioSignalPath.atlas.nativeDetail': '最近一次原生鏈路來自 {mode}',
+  'audioSignalPath.atlas.nativeNone': '待證明',
+  'audioSignalPath.atlas.nativeNoneDetail': '還沒有記錄到 source rate = device rate 的成功鏈路',
+  'audioSignalPath.atlas.nativeProof': '原生證明',
+  'audioSignalPath.atlas.observedOnly': '來自 ECHO 觀察，不代表完整硬體規格',
+  'audioSignalPath.atlas.observedRates': '見過的輸出',
+  'audioSignalPath.atlas.pending': '等待觀察',
+  'audioSignalPath.atlas.resample441To48': '44.1 -> 48 x{count}',
+  'audioSignalPath.atlas.resampleDetail': '共記錄 {count} 次取樣率轉換',
+  'audioSignalPath.atlas.resampleNone': '未發現',
+  'audioSignalPath.atlas.resampleNoneDetail': '暫未看到固定 44.1 -> 48 傾向',
+  'audioSignalPath.atlas.resampleTendency': '重取樣傾向',
+  'audioSignalPath.atlas.title': 'DAC 能力圖譜',
   'audioSignalPath.doctor.blocker.rateConversion': '取樣率轉換',
   'audioSignalPath.doctor.bitPerfect.advice': '想要透明播放時可以保留這條路徑；Doctor 暫時沒有緊急建議。',
   'audioSignalPath.doctor.bitPerfect.detail': '{mode}輸出，未偵測到啟用中的 DSP 阻塞項。',
@@ -4706,6 +4801,7 @@ const audioSignalPathExtrasZhTW = {
   'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO 現在不能把這條鏈路標記為透明 1:1 輸出。',
   'audioSignalPath.doctor.notBitPerfect.title': '不是 bit-perfect',
   'audioSignalPath.doctor.outputError.title': '輸出鏈路異常',
+  'audioSignalPath.doctor.resampling.atlasAdvice': 'Atlas 上次看到這台裝置用 {mode} 以 {rate} 原生輸出；想避開重取樣可以優先試這條路。',
   'audioSignalPath.doctor.resampling.advice': '如果想要原生取樣率播放，可以為這台 DAC 試試獨占輸出或 ASIO，而不是共享/系統輸出。',
   'audioSignalPath.doctor.resampling.detail': '{path}；ECHO 正在跟隨目前輸出時鐘/後端，所以不是 1:1 時鐘鏈路。',
   'audioSignalPath.doctor.resampling.title': '正在進行取樣率轉換',
@@ -4747,6 +4843,32 @@ const audioSignalPathExtrasZhTW = {
 };
 
 const audioSignalPathExtrasJaJP = {
+  'audioSignalPath.atlas.eyebrow': 'デバイス図鑑',
+  'audioSignalPath.atlas.collapse': 'DAC Capability Atlas を閉じる',
+  'audioSignalPath.atlas.expand': 'DAC Capability Atlas を展開',
+  'audioSignalPath.atlas.lastIssue': '最近の問題',
+  'audioSignalPath.atlas.lastIssueDetail': '直近は {mode} で発生',
+  'audioSignalPath.atlas.lastIssueNone': 'エラーなし',
+  'audioSignalPath.atlas.lastIssueNoneDetail': 'このデバイスの出力エラーはまだ記録されていません',
+  'audioSignalPath.atlas.modeAria': '出力モードの安定度',
+  'audioSignalPath.atlas.modeIssues': '{count} 件の問題',
+  'audioSignalPath.atlas.modeMixed': '{success} 件成功 / {issues} 件問題',
+  'audioSignalPath.atlas.modeNative': '{success} 件成功 / {native} 件ネイティブ',
+  'audioSignalPath.atlas.modeStable': '{count} 件成功',
+  'audioSignalPath.atlas.modeUnproven': '未観測',
+  'audioSignalPath.atlas.nativeDetail': '直近のネイティブ経路は {mode}',
+  'audioSignalPath.atlas.nativeNone': '未証明',
+  'audioSignalPath.atlas.nativeNoneDetail': 'source rate = device rate の成功経路はまだ記録されていません',
+  'audioSignalPath.atlas.nativeProof': 'ネイティブ証明',
+  'audioSignalPath.atlas.observedOnly': 'ECHO の観測値であり、完全なハードウェア仕様ではありません',
+  'audioSignalPath.atlas.observedRates': '観測済み出力',
+  'audioSignalPath.atlas.pending': '観測待ち',
+  'audioSignalPath.atlas.resample441To48': '44.1 -> 48 x{count}',
+  'audioSignalPath.atlas.resampleDetail': 'サンプルレート変換を {count} 回記録',
+  'audioSignalPath.atlas.resampleNone': '未検出',
+  'audioSignalPath.atlas.resampleNoneDetail': '固定的な 44.1 -> 48 傾向はまだ見えていません',
+  'audioSignalPath.atlas.resampleTendency': 'リサンプル傾向',
+  'audioSignalPath.atlas.title': 'DAC Capability Atlas',
   'audioSignalPath.doctor.blocker.rateConversion': 'サンプルレート変換',
   'audioSignalPath.doctor.bitPerfect.advice': '透明な再生を狙うならこの経路を維持できます。Doctor から急ぎの提案はありません。',
   'audioSignalPath.doctor.bitPerfect.detail': '{mode}出力で、有効な DSP ブロッカーは検出されていません。',
@@ -4789,6 +4911,7 @@ const audioSignalPathExtrasJaJP = {
   'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO は現在、このチェーンを透明な 1:1 出力として扱えません。',
   'audioSignalPath.doctor.notBitPerfect.title': 'Bit-perfect ではありません',
   'audioSignalPath.doctor.outputError.title': '出力経路エラー',
+  'audioSignalPath.doctor.resampling.atlasAdvice': 'Atlas では、このデバイスは前回 {mode} で {rate} のネイティブ出力に成功しています。リサンプリングを避けたいなら、まずその経路を試してください。',
   'audioSignalPath.doctor.resampling.advice': 'ネイティブレート再生が目的なら、この DAC では共有/システム出力ではなく Exclusive 出力または ASIO を試してください。',
   'audioSignalPath.doctor.resampling.detail': '{path}。ECHO は現在の出力クロック/バックエンドに従っているため、1:1 クロック経路ではありません。',
   'audioSignalPath.doctor.resampling.title': 'サンプルレート変換中',
@@ -4830,6 +4953,32 @@ const audioSignalPathExtrasJaJP = {
 };
 
 const audioSignalPathExtrasEnUS = {
+  'audioSignalPath.atlas.eyebrow': 'Device atlas',
+  'audioSignalPath.atlas.collapse': 'Collapse DAC Capability Atlas',
+  'audioSignalPath.atlas.expand': 'Expand DAC Capability Atlas',
+  'audioSignalPath.atlas.lastIssue': 'Last issue',
+  'audioSignalPath.atlas.lastIssueDetail': 'Last seen on {mode}',
+  'audioSignalPath.atlas.lastIssueNone': 'No errors yet',
+  'audioSignalPath.atlas.lastIssueNoneDetail': 'ECHO has not recorded an output error for this device',
+  'audioSignalPath.atlas.modeAria': 'Output mode stability',
+  'audioSignalPath.atlas.modeIssues': '{count} issues',
+  'audioSignalPath.atlas.modeMixed': '{success} successes / {issues} issues',
+  'audioSignalPath.atlas.modeNative': '{success} successes / {native} native',
+  'audioSignalPath.atlas.modeStable': '{count} successes',
+  'audioSignalPath.atlas.modeUnproven': 'Not observed yet',
+  'audioSignalPath.atlas.nativeDetail': 'Last native chain used {mode}',
+  'audioSignalPath.atlas.nativeNone': 'Pending proof',
+  'audioSignalPath.atlas.nativeNoneDetail': 'No successful source rate = device rate chain has been recorded yet',
+  'audioSignalPath.atlas.nativeProof': 'Native proof',
+  'audioSignalPath.atlas.observedOnly': 'Observed by ECHO; not a full hardware specification',
+  'audioSignalPath.atlas.observedRates': 'Observed output',
+  'audioSignalPath.atlas.pending': 'Waiting to observe',
+  'audioSignalPath.atlas.resample441To48': '44.1 -> 48 x{count}',
+  'audioSignalPath.atlas.resampleDetail': '{count} rate conversions recorded',
+  'audioSignalPath.atlas.resampleNone': 'Not seen',
+  'audioSignalPath.atlas.resampleNoneDetail': 'No fixed 44.1 -> 48 tendency observed yet',
+  'audioSignalPath.atlas.resampleTendency': 'Resample tendency',
+  'audioSignalPath.atlas.title': 'DAC Capability Atlas',
   'audioSignalPath.doctor.blocker.rateConversion': 'rate conversion',
   'audioSignalPath.doctor.bitPerfect.advice': 'Keep this path when you want transparent playback; Doctor has nothing urgent to suggest here.',
   'audioSignalPath.doctor.bitPerfect.detail': '{mode} output with no active DSP blockers detected.',
@@ -4872,6 +5021,7 @@ const audioSignalPathExtrasEnUS = {
   'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO cannot mark this chain as a transparent 1:1 output right now.',
   'audioSignalPath.doctor.notBitPerfect.title': 'Not bit-perfect',
   'audioSignalPath.doctor.outputError.title': 'Output path error',
+  'audioSignalPath.doctor.resampling.atlasAdvice': 'Atlas last saw this device play native-rate via {mode} at {rate}; try that route first if you want to avoid resampling.',
   'audioSignalPath.doctor.resampling.advice': 'If you want native-rate playback, try Exclusive output or ASIO for this DAC instead of shared/system output.',
   'audioSignalPath.doctor.resampling.detail': '{path}; ECHO is following the active output clock/backend, so this is not a 1:1 clock path.',
   'audioSignalPath.doctor.resampling.title': 'Sample-rate conversion',
@@ -5242,6 +5392,19 @@ const zhCN: TranslationMap = {
   'playerStatus.audioSpecifications': '音频规格',
   'playerStatus.ready': '就绪',
   'playerStatus.streaming': '流媒体',
+  'playerDacArrival.close': '关闭 DAC 登场卡片',
+  'playerDacArrival.detail.asio': 'ECHO 正在通过 {mode} 驱动这台设备',
+  'playerDacArrival.detail.exclusive': 'ECHO 正在通过 {mode} 独占这台设备',
+  'playerDacArrival.eyebrow': 'DAC ARRIVAL',
+  'playerDacArrival.issue.label': '最近失败',
+  'playerDacArrival.issue.none': '暂无失败',
+  'playerDacArrival.native.label': '原生证明',
+  'playerDacArrival.native.pending': 'Native 待证明',
+  'playerDacArrival.native.rate': 'Native {rate}',
+  'playerDacArrival.rates.label': '见过的输出',
+  'playerDacArrival.rates.pending': '等待观察',
+  'playerDacArrival.status.takeover': '已接管',
+  'playerDacArrival.title': '{device} 已接管',
   'playerSpeed.label': '播放速度',
   'playerSpeed.reset': '重置播放速度',
   'playerVolume.fixed.disable': '关闭固定音量',
@@ -8518,6 +8681,19 @@ const zhTW: TranslationMap = {
   'playerStatus.audioSpecifications': '音訊規格',
   'playerStatus.ready': '就緒',
   'playerStatus.streaming': '串流媒體',
+  'playerDacArrival.close': '關閉 DAC 登場卡片',
+  'playerDacArrival.detail.asio': 'ECHO 正在透過 {mode} 驅動這台裝置',
+  'playerDacArrival.detail.exclusive': 'ECHO 正在透過 {mode} 獨佔這台裝置',
+  'playerDacArrival.eyebrow': 'DAC ARRIVAL',
+  'playerDacArrival.issue.label': '最近失敗',
+  'playerDacArrival.issue.none': '暫無失敗',
+  'playerDacArrival.native.label': '原生證明',
+  'playerDacArrival.native.pending': 'Native 待證明',
+  'playerDacArrival.native.rate': 'Native {rate}',
+  'playerDacArrival.rates.label': '見過的輸出',
+  'playerDacArrival.rates.pending': '等待觀測',
+  'playerDacArrival.status.takeover': '已接管',
+  'playerDacArrival.title': '{device} 已接管',
   'playerSpeed.label': '播放速度',
   'playerSpeed.reset': '重置播放速度',
   'playerVolume.fixed.disable': '關閉固定音量',
@@ -11540,6 +11716,19 @@ const jaJP: TranslationMap = {
   'playerStatus.audioSpecifications': 'オーディオ仕様',
   'playerStatus.ready': '準備完了',
   'playerStatus.streaming': 'ストリーミング',
+  'playerDacArrival.close': 'DAC 登場カードを閉じる',
+  'playerDacArrival.detail.asio': 'ECHO は {mode} でこのデバイスを駆動しています',
+  'playerDacArrival.detail.exclusive': 'ECHO は {mode} でこのデバイスを占有しています',
+  'playerDacArrival.eyebrow': 'DAC ARRIVAL',
+  'playerDacArrival.issue.label': '直近の失敗',
+  'playerDacArrival.issue.none': '失敗なし',
+  'playerDacArrival.native.label': 'ネイティブ証明',
+  'playerDacArrival.native.pending': 'Native 未証明',
+  'playerDacArrival.native.rate': 'Native {rate}',
+  'playerDacArrival.rates.label': '観測済み出力',
+  'playerDacArrival.rates.pending': '観測待ち',
+  'playerDacArrival.status.takeover': '引き継ぎ済み',
+  'playerDacArrival.title': '{device} が引き継ぎました',
   'playerSpeed.label': '再生速度',
   'playerSpeed.reset': '再生速度をリセット',
   'playerVolume.fixed.disable': '固定音量をオフ',
@@ -14642,6 +14831,19 @@ const enUS: TranslationMap = {
   'playerStatus.audioSpecifications': 'Audio specifications',
   'playerStatus.ready': 'Ready',
   'playerStatus.streaming': 'Streaming',
+  'playerDacArrival.close': 'Close DAC arrival card',
+  'playerDacArrival.detail.asio': 'ECHO is driving this device through {mode}',
+  'playerDacArrival.detail.exclusive': 'ECHO has exclusive control through {mode}',
+  'playerDacArrival.eyebrow': 'DAC ARRIVAL',
+  'playerDacArrival.issue.label': 'Last failure',
+  'playerDacArrival.issue.none': 'No recent failures',
+  'playerDacArrival.native.label': 'Native proof',
+  'playerDacArrival.native.pending': 'Native pending',
+  'playerDacArrival.native.rate': 'Native {rate}',
+  'playerDacArrival.rates.label': 'Observed output',
+  'playerDacArrival.rates.pending': 'Waiting to observe',
+  'playerDacArrival.status.takeover': 'Taken over',
+  'playerDacArrival.title': '{device} taken over',
   'playerSpeed.label': 'Playback speed',
   'playerSpeed.reset': 'Reset playback speed',
   'playerVolume.fixed.disable': 'Disable fixed volume',

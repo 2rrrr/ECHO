@@ -1035,6 +1035,173 @@
   background: var(--theme-danger-panel-bg);
 }
 
+.dac-arrival-ceremony {
+  position: fixed;
+  top: 52px;
+  left: 18px;
+  z-index: 48;
+  display: grid;
+  width: min(390px, calc(100vw - 36px));
+  min-width: 0;
+  grid-template-columns: 38px minmax(0, 1fr) 28px;
+  gap: 10px;
+  padding: 12px;
+  color: var(--theme-page-text);
+  border: 1px solid rgba(89, 154, 180, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(238, 250, 246, 0.86)),
+    var(--theme-panel-bg-strong);
+  box-shadow:
+    0 18px 42px rgba(44, 47, 75, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(20px) saturate(1.16);
+  animation: dac-arrival-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dac-arrival-ceremony[data-tone="watch"] {
+  border-color: rgba(207, 150, 62, 0.3);
+  background:
+    linear-gradient(135deg, rgba(255, 252, 244, 0.92), rgba(246, 250, 255, 0.86)),
+    var(--theme-panel-bg-strong);
+}
+
+.dac-arrival-ceremony__icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: #1d8d69;
+  border: 1px solid rgba(63, 167, 124, 0.26);
+  border-radius: 8px;
+  background: rgba(229, 249, 239, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+}
+
+.dac-arrival-ceremony__copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.dac-arrival-ceremony__copy span {
+  color: #4c7492;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.dac-arrival-ceremony__copy strong {
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dac-arrival-ceremony__copy em {
+  overflow: hidden;
+  color: var(--theme-muted-text);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dac-arrival-ceremony__close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  color: var(--theme-muted-text);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dac-arrival-ceremony__close:hover {
+  color: var(--theme-heading-text);
+  border-color: var(--theme-button-border);
+  background: var(--theme-control-bg);
+}
+
+.dac-arrival-ceremony__facts {
+  grid-column: 1 / -1;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dac-arrival-ceremony__facts span {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid rgba(89, 154, 180, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.dac-arrival-ceremony__facts span[data-tone="watch"] {
+  grid-template-columns: 15px minmax(0, 1fr);
+  border-color: rgba(207, 150, 62, 0.22);
+  background: rgba(255, 247, 231, 0.68);
+}
+
+.dac-arrival-ceremony__facts svg {
+  grid-row: 1 / 3;
+  align-self: center;
+  color: #b16e18;
+}
+
+.dac-arrival-ceremony__facts strong,
+.dac-arrival-ceremony__facts em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dac-arrival-ceremony__facts strong {
+  color: var(--theme-heading-text);
+  font-size: 11.5px;
+  font-weight: 860;
+  line-height: 1.18;
+}
+
+.dac-arrival-ceremony__facts em {
+  color: var(--theme-muted-text);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 720;
+  line-height: 1.15;
+}
+
+@keyframes dac-arrival-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-14px, -8px, 0) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dac-arrival-ceremony {
+    animation: none;
+  }
+}
+
 .drag-import-overlay {
   position: fixed;
   z-index: 90;
@@ -14061,6 +14228,57 @@ html[data-theme="dark"] .chrome-notice--audio-error small {
   color: var(--color-text);
 }
 
+html[data-theme="dark"] .dac-arrival-ceremony {
+  border-color: rgba(123, 214, 169, 0.22);
+  background:
+    linear-gradient(135deg, rgba(24, 47, 42, 0.9), rgba(20, 31, 46, 0.88)),
+    rgba(16, 20, 29, 0.92);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony[data-tone="watch"] {
+  border-color: rgba(255, 209, 125, 0.22);
+  background:
+    linear-gradient(135deg, rgba(61, 47, 25, 0.92), rgba(20, 31, 46, 0.88)),
+    rgba(16, 20, 29, 0.92);
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony__icon {
+  color: #9df2c3;
+  border-color: rgba(123, 214, 169, 0.2);
+  background: rgba(36, 88, 65, 0.38);
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony__copy span {
+  color: rgba(174, 220, 235, 0.78);
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony__copy strong,
+html[data-theme="dark"] .dac-arrival-ceremony__facts strong {
+  color: #f4f7fc;
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony__copy em,
+html[data-theme="dark"] .dac-arrival-ceremony__facts em {
+  color: #b8c4dc;
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony__facts span {
+  border-color: rgba(235, 220, 246, 0.09);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony__facts span[data-tone="watch"] {
+  border-color: rgba(255, 209, 125, 0.2);
+  background: rgba(155, 101, 27, 0.13);
+}
+
+html[data-theme="dark"] .dac-arrival-ceremony__facts svg {
+  color: #ffd17d;
+}
+
 html[data-theme="dark"] .audio-field input,
 html[data-theme="dark"] .audio-field select,
 html[data-theme="dark"] .audio-command-button,
@@ -17883,6 +18101,10 @@ html[data-theme="dark"] .history-play-count {
   border-color: color-mix(in srgb, var(--theme-warning-text) 34%, var(--color-border));
 }
 
+.connect-command-center[data-collapsed="true"] {
+  gap: 10px;
+}
+
 .connect-command-center__headline,
 .connect-command-center__actions,
 .connect-command-center__body,
@@ -20087,6 +20309,7 @@ html[data-theme="dark"] .history-play-count {
   padding: 20px;
 }
 
+.connect-echo-link-panel[data-collapsed="true"],
 .connect-radio-panel[data-collapsed="true"],
 .connect-hqplayer-panel[data-collapsed="true"],
 .connect-hqplayer-panel[data-section-collapsed="true"] {
@@ -20679,6 +20902,18 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
     top: 48px;
     left: 12px;
     width: calc(100vw - 24px);
+  }
+
+  .dac-arrival-ceremony {
+    top: 48px;
+    left: 12px;
+    width: calc(100vw - 24px);
+    grid-template-columns: 34px minmax(0, 1fr) 28px;
+  }
+
+  .dac-arrival-ceremony__icon {
+    width: 34px;
+    height: 34px;
   }
 
   .drag-import-overlay {
@@ -21926,6 +22161,217 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
   background: rgba(255, 240, 245, 0.72);
 }
 
+.signal-path-atlas {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(110, 96, 145, 0.12);
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.76), rgba(246, 250, 255, 0.82)),
+    rgba(255, 255, 255, 0.7);
+}
+
+.signal-path-atlas[data-tone="good"] {
+  border-color: rgba(76, 159, 116, 0.2);
+  background:
+    linear-gradient(135deg, rgba(248, 255, 251, 0.82), rgba(245, 250, 255, 0.84)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.signal-path-atlas[data-tone="warning"] {
+  border-color: rgba(177, 110, 24, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 250, 239, 0.86), rgba(247, 249, 255, 0.8)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.signal-path-atlas[data-tone="danger"] {
+  border-color: rgba(185, 52, 85, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 243, 247, 0.86), rgba(247, 249, 255, 0.8)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.signal-path-atlas__header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 42%) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.signal-path-atlas__header div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.signal-path-atlas__header span,
+.signal-path-atlas__fact span {
+  color: #7a628f;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.signal-path-atlas__header strong {
+  overflow: hidden;
+  color: #1d2433;
+  font-size: 14px;
+  font-weight: 860;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-path-atlas__header em {
+  overflow: hidden;
+  color: #5966c8;
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 780;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-path-atlas__header svg {
+  flex: 0 0 auto;
+  color: #7a628f;
+  transform: rotate(-90deg);
+  transition: transform 160ms ease;
+}
+
+.signal-path-atlas__header[aria-expanded="true"] svg {
+  transform: rotate(0deg);
+}
+
+.signal-path-atlas__header:hover strong {
+  color: #5966c8;
+}
+
+.signal-path-atlas__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.signal-path-atlas__fact {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid rgba(110, 96, 145, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.signal-path-atlas__fact strong {
+  overflow: hidden;
+  color: #202738;
+  font-size: 12px;
+  font-weight: 830;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-path-atlas__fact em {
+  overflow: hidden;
+  color: #69758a;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 620;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-path-atlas__fact[data-tone="good"] {
+  border-color: rgba(76, 159, 116, 0.17);
+}
+
+.signal-path-atlas__fact[data-tone="process"] {
+  border-color: rgba(89, 102, 200, 0.17);
+  background: rgba(238, 240, 255, 0.58);
+}
+
+.signal-path-atlas__fact[data-tone="warning"] {
+  border-color: rgba(177, 110, 24, 0.18);
+  background: rgba(255, 247, 232, 0.62);
+}
+
+.signal-path-atlas__modes {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.signal-path-atlas__mode {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 1px solid rgba(110, 96, 145, 0.11);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.signal-path-atlas__mode strong,
+.signal-path-atlas__mode em {
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-path-atlas__mode strong {
+  flex: 0 0 auto;
+  color: #28334a;
+  font-weight: 840;
+}
+
+.signal-path-atlas__mode em {
+  min-width: 0;
+  color: #69758a;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.signal-path-atlas__mode[data-tone="good"] {
+  border-color: rgba(76, 159, 116, 0.2);
+  background: rgba(238, 250, 244, 0.68);
+}
+
+.signal-path-atlas__mode[data-tone="process"] {
+  border-color: rgba(89, 102, 200, 0.18);
+  background: rgba(238, 240, 255, 0.62);
+}
+
+.signal-path-atlas__mode[data-tone="warning"] {
+  border-color: rgba(177, 110, 24, 0.18);
+  background: rgba(255, 247, 232, 0.64);
+}
+
+.signal-path-atlas__mode[data-tone="danger"] {
+  border-color: rgba(185, 52, 85, 0.2);
+  background: rgba(255, 240, 245, 0.66);
+}
+
 .signal-path-doctor {
   display: grid;
   gap: 7px;
@@ -22450,6 +22896,85 @@ html[data-theme="dark"] .signal-path-theater__meter-rail {
   background: rgba(220, 229, 243, 0.12);
 }
 
+html[data-theme="dark"] .signal-path-atlas {
+  border-color: rgba(235, 220, 246, 0.09);
+  background:
+    linear-gradient(135deg, rgba(34, 37, 54, 0.82), rgba(22, 34, 49, 0.78)),
+    rgba(18, 23, 35, 0.78);
+}
+
+html[data-theme="dark"] .signal-path-atlas[data-tone="good"] {
+  border-color: rgba(123, 214, 169, 0.18);
+  background:
+    linear-gradient(135deg, rgba(31, 57, 45, 0.58), rgba(22, 34, 49, 0.76)),
+    rgba(18, 23, 35, 0.78);
+}
+
+html[data-theme="dark"] .signal-path-atlas[data-tone="warning"] {
+  border-color: rgba(255, 209, 125, 0.18);
+  background:
+    linear-gradient(135deg, rgba(79, 58, 34, 0.62), rgba(22, 34, 49, 0.76)),
+    rgba(18, 23, 35, 0.78);
+}
+
+html[data-theme="dark"] .signal-path-atlas[data-tone="danger"] {
+  border-color: rgba(255, 155, 181, 0.2);
+  background:
+    linear-gradient(135deg, rgba(78, 35, 52, 0.62), rgba(22, 34, 49, 0.76)),
+    rgba(18, 23, 35, 0.78);
+}
+
+html[data-theme="dark"] .signal-path-atlas__header span,
+html[data-theme="dark"] .signal-path-atlas__fact span {
+  color: rgba(231, 224, 244, 0.7);
+}
+
+html[data-theme="dark"] .signal-path-atlas__header strong,
+html[data-theme="dark"] .signal-path-atlas__fact strong,
+html[data-theme="dark"] .signal-path-atlas__mode strong {
+  color: #f4f7fc;
+}
+
+html[data-theme="dark"] .signal-path-atlas__header em {
+  color: #aebaff;
+}
+
+html[data-theme="dark"] .signal-path-atlas__header svg {
+  color: rgba(231, 224, 244, 0.7);
+}
+
+html[data-theme="dark"] .signal-path-atlas__header:hover strong {
+  color: #aebaff;
+}
+
+html[data-theme="dark"] .signal-path-atlas__fact,
+html[data-theme="dark"] .signal-path-atlas__mode {
+  border-color: rgba(235, 220, 246, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"] .signal-path-atlas__fact em,
+html[data-theme="dark"] .signal-path-atlas__mode em {
+  color: #b8c4dc;
+}
+
+html[data-theme="dark"] .signal-path-atlas__fact[data-tone="process"],
+html[data-theme="dark"] .signal-path-atlas__mode[data-tone="process"] {
+  border-color: rgba(174, 186, 255, 0.18);
+  background: rgba(86, 98, 180, 0.12);
+}
+
+html[data-theme="dark"] .signal-path-atlas__fact[data-tone="warning"],
+html[data-theme="dark"] .signal-path-atlas__mode[data-tone="warning"] {
+  border-color: rgba(255, 209, 125, 0.18);
+  background: rgba(155, 101, 27, 0.12);
+}
+
+html[data-theme="dark"] .signal-path-atlas__mode[data-tone="danger"] {
+  border-color: rgba(255, 155, 181, 0.2);
+  background: rgba(158, 49, 83, 0.13);
+}
+
 html[data-theme="dark"] .signal-path-doctor__header span,
 html[data-theme="dark"] .signal-path-doctor__hint > span {
   color: rgba(231, 224, 244, 0.7);
@@ -22528,6 +23053,20 @@ html[data-theme="dark"] .signal-path-doctor__hint[data-tone="danger"] {
 
   .signal-path-theater__grid {
     grid-template-columns: 1fr;
+  }
+
+  .signal-path-atlas__header,
+  .signal-path-atlas__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .signal-path-atlas__header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .signal-path-atlas__header em {
+    grid-column: 1 / -1;
+    text-align: left;
   }
 
   .signal-path-doctor__hint {

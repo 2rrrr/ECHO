@@ -42,8 +42,16 @@ describe('PlayerProgress', () => {
     expect(css).toContain('html[data-theme-preset="darkSideMoon"] .settings-range-field input[type="range"]::-webkit-slider-runnable-track');
     expect(css).toContain('html[data-theme-preset="darkSideMoon"] .album-detail-page');
     expect(css).toContain('html[data-theme-preset="darkSideMoon"] .artist-detail-page');
-    expect(css).toContain('html[data-theme-preset="darkSideMoon"] .artist-stat-grid div');
+    expect(css).toContain('html[data-theme-preset="darkSideMoon"] .artist-detail-tabs');
+    expect(css).toContain('html[data-theme-preset="darkSideMoon"] .artists-page .artist-wall .artist-copy strong');
+    expect(css).toContain('html[data-theme-preset="darkSideMoon"] .artists-page .artist-wall .artist-copy small');
     expect(css).toContain('html[data-theme-preset="darkSideMoon"] .album-track-row[data-playing');
+    expect(css).toMatch(
+      /html\[data-theme-preset="darkSideMoon"\] \.player-bar \.progress-track\[data-waveform="true"\] \{[\s\S]*?height: 24px;[\s\S]*?overflow: visible;/,
+    );
+    expect(css).toMatch(
+      /html\[data-theme-preset="darkSideMoon"\] \.player-bar \.progress-track\[data-waveform="true"\] \.progress-thumb \{[\s\S]*?width: 28px;[\s\S]*?height: 25px;/,
+    );
     expect(css).toContain('#ed2f3b');
     expect(css).toContain('#ffd84f');
     expect(css).toContain('#28b8f0');
@@ -56,10 +64,22 @@ describe('PlayerProgress', () => {
     expect(css).toContain('--nyan-page-gradient:');
     expect(css).toContain('--nyan-surface-gradient:');
     expect(css).toContain('--nyan-player-gradient:');
-    expect(css).toContain('html[data-theme-preset="nyanCat"] .app-shell {\n  background: var(--echo-polish-app-bg-layer), var(--echo-polish-app-bg);');
-    expect(css).toContain('html[data-theme-preset="nyanCat"] .page-surface:not(:has(.lyrics-page)) {\n  background: var(--echo-polish-page-bg), var(--theme-app-bg);');
-    expect(css).toContain('html[data-theme-preset="nyanCat"] .player-bar {\n  background: var(--echo-polish-player-bg);');
+    expect(css).toMatch(
+      /html\[data-theme-preset="nyanCat"\] \.app-shell \{\r?\n  background: var\(--echo-polish-app-bg-layer\), var\(--echo-polish-app-bg\);/,
+    );
+    expect(css).toMatch(
+      /html\[data-theme-preset="nyanCat"\] \.page-surface:not\(:has\(\.lyrics-page\)\) \{\r?\n  background: var\(--echo-polish-page-bg\), var\(--theme-app-bg\);/,
+    );
+    expect(css).toMatch(
+      /html\[data-theme-preset="nyanCat"\] \.player-bar \{\r?\n  background: var\(--echo-polish-player-bg\);/,
+    );
     expect(css).toContain('animation: nyan-cat-gradient-flow 18s ease-in-out infinite alternate;');
+    expect(css).toMatch(
+      /html\[data-theme-preset="nyanCat"\] \.player-bar \.progress-track\[data-waveform="true"\] \{[\s\S]*?height: 26px;[\s\S]*?overflow: visible;/,
+    );
+    expect(css).toMatch(
+      /html\[data-theme-preset="nyanCat"\] \.player-bar \.progress-track\[data-waveform="true"\] \.progress-thumb \{[\s\S]*?width: 54px;[\s\S]*?height: 34px;/,
+    );
     expect(css).not.toContain('setInterval');
     expect(css).not.toContain('requestAnimationFrame');
   });

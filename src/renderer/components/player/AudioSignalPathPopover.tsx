@@ -1445,6 +1445,7 @@ export const AudioSignalPathPopover = ({
   const t = useOptionalI18n()?.t ?? fallbackT;
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isDoctorCollapsed, setIsDoctorCollapsed] = useState(true);
+  const [isAtlasCollapsed, setIsAtlasCollapsed] = useState(true);
   const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
   const [atlasProfile, setAtlasProfile] = useState<DacCapabilityAtlasProfile | null>(() => getDacCapabilityAtlasProfile(status));
   const closeTimerRef = useRef<number | null>(null);
@@ -1484,11 +1485,13 @@ export const AudioSignalPathPopover = ({
   useEffect(() => {
     setHqPlayerStatus(null);
     setIsDoctorCollapsed(true);
+    setIsAtlasCollapsed(true);
   }, [hqPlayerSessionKey]);
 
   useEffect(() => {
     if (isOpen) {
       setIsDoctorCollapsed(true);
+      setIsAtlasCollapsed(true);
     }
   }, [isOpen]);
 
@@ -1566,6 +1569,7 @@ export const AudioSignalPathPopover = ({
   const atlasDeviceName = atlasProfile?.deviceName ?? status?.outputDeviceName ?? t('audioSignalPath.output.systemDefaultDevice');
   const atlasFactRows = atlasFacts(atlasProfile, t);
   const atlasModes = atlasModeViews(atlasProfile, status, t);
+  const atlasToggleLabel = isAtlasCollapsed ? t('audioSignalPath.atlas.expand') : t('audioSignalPath.atlas.collapse');
   const doctorToggleLabel = isDoctorCollapsed ? t('audioSignalPath.doctor.expand') : t('audioSignalPath.doctor.collapse');
   const doctorHintCountLabel = t(
     theater.doctorInsights.length === 1 ? 'audioSignalPath.doctor.hintCount.one' : 'audioSignalPath.doctor.hintCount.many',
@@ -1680,6 +1684,52 @@ export const AudioSignalPathPopover = ({
           </div>
         ) : null}
       </div>
+
+      {showAtlas ? (
+        <section
+          className="signal-path-atlas"
+          data-collapsed={isAtlasCollapsed ? 'true' : undefined}
+          data-tone={atlasTone}
+          aria-label={t('audioSignalPath.atlas.title')}
+        >
+          <button
+            className="signal-path-atlas__header"
+            type="button"
+            aria-expanded={!isAtlasCollapsed}
+            aria-label={atlasToggleLabel}
+            title={atlasToggleLabel}
+            onClick={() => setIsAtlasCollapsed((current) => !current)}
+          >
+            <div>
+              <span>{t('audioSignalPath.atlas.eyebrow')}</span>
+              <strong>{t('audioSignalPath.atlas.title')}</strong>
+            </div>
+            <em title={atlasDeviceName}>{atlasDeviceName}</em>
+            <ChevronDown size={15} />
+          </button>
+          {!isAtlasCollapsed ? (
+            <>
+              <div className="signal-path-atlas__facts">
+                {atlasFactRows.map((fact) => (
+                  <article className="signal-path-atlas__fact" data-tone={fact.tone} key={fact.label}>
+                    <span>{fact.label}</span>
+                    <strong title={fact.value}>{fact.value}</strong>
+                    <em title={fact.detail}>{fact.detail}</em>
+                  </article>
+                ))}
+              </div>
+              <div className="signal-path-atlas__modes" aria-label={t('audioSignalPath.atlas.modeAria')}>
+                {atlasModes.map((modeView) => (
+                  <span className="signal-path-atlas__mode" data-tone={modeView.tone} key={modeView.mode} title={modeView.detail}>
+                    <strong>{modeView.label}</strong>
+                    <em>{modeView.detail}</em>
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   );
 };

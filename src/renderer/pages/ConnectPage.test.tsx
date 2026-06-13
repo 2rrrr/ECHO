@@ -502,6 +502,36 @@ describe('ConnectPage HQPlayer controls', () => {
     expect(screen.getByText('最近没有连接失败')).toBeTruthy();
   });
 
+  it('remembers the Command Center and Android ECHO Link collapsed states', async () => {
+    installEchoBridge(hqStatus('available'), hqSettings, dlnaConnectStatus, [dlnaDevice, hqPlayerDevice]);
+    const { container, unmount } = renderConnectPage();
+
+    const commandCenter = await screen.findByRole('region', { name: 'Connect Command Center' });
+    const echoLinkPanel = container.querySelector('.connect-echo-link-panel');
+    expect(commandCenter.getAttribute('data-collapsed')).toBeNull();
+    expect(echoLinkPanel?.getAttribute('data-collapsed')).toBeNull();
+
+    fireEvent.click(within(commandCenter).getByRole('button', { name: '折叠 Connect Command Center' }));
+    fireEvent.click(within(echoLinkPanel as HTMLElement).getByRole('button', { name: '折叠手机连接' }));
+
+    expect(commandCenter.getAttribute('data-collapsed')).toBe('true');
+    expect(echoLinkPanel?.getAttribute('data-collapsed')).toBe('true');
+    expect(window.localStorage.getItem('echo.connect.commandCenterCollapsed.v1')).toBe('true');
+    expect(window.localStorage.getItem('echo.connect.echoLinkPanelCollapsed.v1')).toBe('true');
+
+    unmount();
+    renderConnectPage();
+
+    const restoredCommandCenter = await screen.findByRole('region', { name: 'Connect Command Center' });
+    const restoredEchoLinkPanel = document.querySelector('.connect-echo-link-panel');
+    expect(restoredCommandCenter.getAttribute('data-collapsed')).toBe('true');
+    expect(restoredEchoLinkPanel?.getAttribute('data-collapsed')).toBe('true');
+    fireEvent.click(within(restoredCommandCenter).getByRole('button', { name: '展开 Connect Command Center' }));
+    fireEvent.click(within(restoredEchoLinkPanel as HTMLElement).getByRole('button', { name: '展开手机连接' }));
+    expect(restoredCommandCenter.getAttribute('data-collapsed')).toBeNull();
+    expect(restoredEchoLinkPanel?.getAttribute('data-collapsed')).toBeNull();
+  });
+
   it('renders the Listening Room map from live Connect bridge state', async () => {
     const bridge = installEchoBridge(hqStatus('available'), hqSettings, dlnaConnectStatus, [dlnaDevice, hqPlayerDevice]);
     bridge.connect.getReceiverStatus.mockResolvedValue({

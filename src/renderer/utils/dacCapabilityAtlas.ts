@@ -230,6 +230,11 @@ export const recordDacCapabilityObservation = (
   const sourceRate = sourceRateForStatus(status, track);
   const outputRate = outputRateForStatus(status);
   const failureReason = statusFailureReason(status);
+  const hasPlaybackIdentity = Boolean(status.currentTrackId || status.currentFilePath || status.state !== 'idle');
+  if (!hasPlaybackIdentity && !failureReason) {
+    return getDacCapabilityAtlasProfile(status);
+  }
+
   if (!sourceRate && !outputRate && !failureReason) {
     return getDacCapabilityAtlasProfile(status);
   }

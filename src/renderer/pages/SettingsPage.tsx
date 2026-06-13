@@ -6040,14 +6040,23 @@ export const SettingsPage = (): JSX.Element => {
 
   useEffect(() => {
     if (activeSection === 'appearance') {
+      const proThemeUnlocked = finalThemeUnlocked || appSettings?.finalThemeUnlockVersion === finalThemeUnlockVersion;
       const localThemes = readThemeCustomThemes();
-      const localCustomId = readThemeCustomId();
-      const localCustomTheme = localThemes.find((theme) => theme.id === localCustomId);
-      setThemeCustomThemes(localThemes);
-      setActiveThemeCustomId(localCustomId);
-      setSelectedThemePreset(localCustomTheme?.basePreset ?? readThemePreset());
+      const customThemes = normalizeThemeCustomThemes(appSettings?.appearanceCustomThemes ?? localThemes);
+      const customThemeId = normalizeThemeCustomId(appSettings?.appearanceThemeCustomId ?? readThemeCustomId(), customThemes);
+      const activeCustomTheme = customThemes.find((theme) => theme.id === customThemeId);
+      setThemeCustomThemes(customThemes);
+      setActiveThemeCustomId(customThemeId);
+      setSelectedThemePreset(activeCustomTheme?.basePreset ?? appSettings?.appearanceThemePreset ?? readThemePreset({ finalThemeUnlocked: proThemeUnlocked }));
     }
-  }, [activeSection]);
+  }, [
+    activeSection,
+    appSettings?.appearanceCustomThemes,
+    appSettings?.appearanceThemeCustomId,
+    appSettings?.appearanceThemePreset,
+    appSettings?.finalThemeUnlockVersion,
+    finalThemeUnlocked,
+  ]);
 
   const savedThemePresetOverrides = useMemo<AppThemePresetOverrides>(
     () => appSettings?.appearanceThemePresetOverrides ?? readThemePresetOverrides(),
@@ -10347,6 +10356,10 @@ export const SettingsPage = (): JSX.Element => {
       const result = await library.deleteAllUserData();
       const removed = result.removedPaths.length;
       const failed = result.failedPaths.length;
+      if (!result.relaunchScheduled) {
+        setDangerMessage(t('settings.danger.deleteAll.message.notRestarted', { removed, failed }));
+        return;
+      }
       const failedText = failed > 0 ? t('settings.danger.deleteAll.message.failed', { failed }) : '';
       setDangerMessage(t('settings.danger.deleteAll.message.deleted', { removed, failedText }));
       window.dispatchEvent(new Event('library:changed'));

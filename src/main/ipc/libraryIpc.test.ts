@@ -52,6 +52,7 @@ const closeDatabaseUserMocks = vi.hoisted(() => ({
 const appLifecycleMocks = vi.hoisted(() => ({
   relaunch: vi.fn(),
   quit: vi.fn(),
+  exit: vi.fn(),
 }));
 const databaseManagerMock = vi.hoisted(() => ({
   closeAllUsers: vi.fn(),
@@ -112,6 +113,7 @@ vi.mock('electron', () => ({
     getPath: vi.fn((name: string) => (name === 'downloads' ? 'D:\\Downloads' : 'D:\\UserData')),
     relaunch: appLifecycleMocks.relaunch,
     quit: appLifecycleMocks.quit,
+    exit: appLifecycleMocks.exit,
   },
   ipcMain: {
     handle: handleMock,
@@ -711,6 +713,7 @@ describe('library IPC', () => {
     Object.values(closeDatabaseUserMocks).forEach((mock) => mock.mockReset());
     appLifecycleMocks.relaunch.mockReset();
     appLifecycleMocks.quit.mockReset();
+    appLifecycleMocks.exit.mockReset();
     databaseManagerMock.closeAllUsers.mockReset();
     databaseManagerMock.getState.mockClear();
     databaseManagerMock.runExclusiveMaintenance.mockClear();
@@ -1709,36 +1712,47 @@ describe('library IPC', () => {
   });
 
   it('deletes all ECHO user data and external cover cache contents after closing database users', async () => {
-    const root = makeTempRoot();
-    const externalCoverCache = makeTempRoot();
-    const { app } = await import('electron');
-    vi.mocked(app.getPath).mockImplementation((name: string) => (name === 'downloads' ? 'D:\\Downloads' : root));
-    mkdirSync(join(root, 'plugins'), { recursive: true });
-    mkdirSync(join(root, 'cover-cache'), { recursive: true });
-    writeFileSync(join(root, 'echo-settings.json'), '{}\n', 'utf8');
-    writeFileSync(join(root, 'plugins', 'plugin-state.json'), '{}\n', 'utf8');
-    writeFileSync(join(root, 'cover-cache', 'cover.webp'), 'cover', 'utf8');
-    writeFileSync(join(externalCoverCache, 'external-cover.webp'), 'cover', 'utf8');
-    getLibraryServiceMock.mockReturnValue({
-      ...installLibraryService(),
-      getCoverCacheDir: () => externalCoverCache,
-    });
+    vi.useFakeTimers();
+    try {
+      const root = makeTempRoot();
+      const externalCoverCache = makeTempRoot();
+      const { app } = await import('electron');
+      vi.mocked(app.getPath).mockImplementation((name: string) => (name === 'downloads' ? 'D:\\Downloads' : root));
+      mkdirSync(join(root, 'plugins'), { recursive: true });
+      mkdirSync(join(root, 'cover-cache'), { recursive: true });
+      writeFileSync(join(root, 'echo-settings.json'), '{}\n', 'utf8');
+      writeFileSync(join(root, 'plugins', 'plugin-state.json'), '{}\n', 'utf8');
+      writeFileSync(join(root, 'cover-cache', 'cover.webp'), 'cover', 'utf8');
+      writeFileSync(join(externalCoverCache, 'external-cover.webp'), 'cover', 'utf8');
+      getLibraryServiceMock.mockReturnValue({
+        ...installLibraryService(),
+        getCoverCacheDir: () => externalCoverCache,
+      });
 
-    const result = await handlers[IpcChannels.LibraryDeleteAllUserData]!() as LibraryAllUserDataDeleteResult;
+      const result = await handlers[IpcChannels.LibraryDeleteAllUserData]!() as LibraryAllUserDataDeleteResult;
 
-    expect(result.userDataPath).toBe(root);
-    expect(result.coverCachePath).toBe(externalCoverCache);
-    expect(result.failedPaths).toEqual([]);
-    expect(existsSync(join(root, 'echo-settings.json'))).toBe(false);
-    expect(existsSync(join(root, 'plugins'))).toBe(false);
-    expect(existsSync(join(externalCoverCache, 'external-cover.webp'))).toBe(false);
-    expect(existsSync(externalCoverCache)).toBe(true);
-    expect(downloadServiceMock.dispose).toHaveBeenCalledTimes(1);
-    expect(closeDatabaseUserMocks.lyrics).toHaveBeenCalledTimes(1);
-    expect(closeDatabaseUserMocks.mv).toHaveBeenCalledTimes(1);
-    expect(closeDatabaseUserMocks.streaming).toHaveBeenCalledTimes(1);
-    expect(closeDatabaseUserMocks.remote).toHaveBeenCalledTimes(1);
-    expect(closeDatabaseUserMocks.library).toHaveBeenCalledTimes(1);
+      expect(result.userDataPath).toBe(root);
+      expect(result.coverCachePath).toBe(externalCoverCache);
+      expect(result.relaunchScheduled).toBe(true);
+      expect(result.exitDelayMs).toBeGreaterThan(0);
+      expect(result.failedPaths).toEqual([]);
+      expect(existsSync(join(root, 'echo-settings.json'))).toBe(false);
+      expect(existsSync(join(root, 'plugins'))).toBe(false);
+      expect(existsSync(join(externalCoverCache, 'external-cover.webp'))).toBe(false);
+      expect(existsSync(externalCoverCache)).toBe(true);
+      expect(appLifecycleMocks.relaunch).toHaveBeenCalledTimes(1);
+      expect(appLifecycleMocks.exit).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(result.exitDelayMs);
+      expect(appLifecycleMocks.exit).toHaveBeenCalledWith(0);
+      expect(downloadServiceMock.dispose).toHaveBeenCalledTimes(1);
+      expect(closeDatabaseUserMocks.lyrics).toHaveBeenCalledTimes(1);
+      expect(closeDatabaseUserMocks.mv).toHaveBeenCalledTimes(1);
+      expect(closeDatabaseUserMocks.streaming).toHaveBeenCalledTimes(1);
+      expect(closeDatabaseUserMocks.remote).toHaveBeenCalledTimes(1);
+      expect(closeDatabaseUserMocks.library).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('restores a healthy snapshot through IPC and closes database users first', async () => {

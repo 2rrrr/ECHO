@@ -1,8 +1,9 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Captions, Download, FileDown, Loader2, Monitor } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Cable, Captions, CircleAlert, Download, FileDown, Loader2, Monitor, X } from 'lucide-react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { audioExportFormats, type AudioExportFormat, type AudioStatus } from '../../../shared/types/audio';
+import { audioExportFormats, type AudioExportFormat, type AudioOutputMode, type AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverStatus, ConnectSessionStatus } from '../../../shared/types/connect';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
@@ -12,7 +13,8 @@ import type { PlaybackStatus } from '../../../shared/types/playback';
 import type { MiniPlayerState } from '../../../shared/types/miniPlayer';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
 import { likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
-import { translateFallback } from '../../i18n/I18nProvider';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 import {
   isSpotifyTrack,
   pauseSpotifyPlayback,
@@ -23,6 +25,7 @@ import {
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { beginPlaybackSeekSnapshot, getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
 import { isActiveConnectPlaybackStatus, isHqPlayerConnectStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
+import { getDacCapabilityAtlasProfile, recordDacCapabilityObservation, type DacCapabilityAtlasProfile } from '../../utils/dacCapabilityAtlas';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { logLyricsConsole } from '../../diagnostics/lyricsConsole';
 import { playerCoverLayoutId } from '../../ui/motion/layoutIds';
@@ -314,6 +317,21 @@ type PlayerDownloadNotice = {
   progress: number | null;
 };
 
+type DacArrivalCeremonyNotice = {
+  id: string;
+  tone: 'ready' | 'watch';
+  deviceName: string;
+  title: string;
+  detail: string;
+  modeLabel: string;
+  ratesLabel: string;
+  nativeLabel: string;
+  issueLabel: string;
+};
+
+type TranslateOptions = Record<string, string | number>;
+type Translate = (key: TranslationKey, options?: TranslateOptions) => string;
+
 type ReceiverPlaybackStatus = {
   state: ConnectReceiverStatus['state'] | AirPlayReceiverStatus['state'];
   metadata: ConnectMetadata | null;
@@ -386,6 +404,130 @@ const shouldUseDirectAudioDownload = (source: {
   (source.mimeType?.toLocaleLowerCase().startsWith('audio/') === true || Boolean(source.codec));
 
 const clampDownloadProgress = (progress: number): number => Math.max(0, Math.min(100, Math.round(progress)));
+
+const dacArrivalAutoHideMs = 6200;
+const dacArrivalOutputModes = new Set<AudioOutputMode>(['exclusive', 'asio']);
+
+const sanitizeDacArrivalText = (value: string | null | undefined): string | null => {
+  const text = value?.trim();
+  return text ? text : null;
+};
+
+const outputDeviceNameForDacArrival = (status: AudioStatus): string =>
+  sanitizeDacArrivalText(status.outputDeviceName)
+    ?? sanitizeDacArrivalText(status.outputDeviceId)
+    ?? sanitizeDacArrivalText(status.outputBackend)
+    ?? 'DAC';
+
+const outputRateForDacArrival = (status: AudioStatus): number | null => {
+  const value =
+    status.actualDeviceSampleRate
+    ?? status.sharedDeviceSampleRate
+    ?? status.requestedOutputSampleRate
+    ?? status.decoderOutputSampleRate
+    ?? status.fileSampleRate;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+};
+
+const formatDacArrivalRate = (rate: number | null | undefined): string | null => {
+  if (!rate || !Number.isFinite(rate) || rate <= 0) {
+    return null;
+  }
+
+  const khz = rate / 1000;
+  return `${Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1)}kHz`;
+};
+
+const formatDacArrivalRates = (
+  profile: DacCapabilityAtlasProfile | null,
+  status: AudioStatus,
+  t: Translate,
+): string => {
+  const rates = profile?.observedOutputRates?.length
+    ? profile.observedOutputRates
+    : [outputRateForDacArrival(status)].filter((rate): rate is number => Boolean(rate));
+  const formattedRates = rates
+    .map(formatDacArrivalRate)
+    .filter((rate): rate is string => Boolean(rate));
+
+  return formattedRates.length ? formattedRates.join(' / ') : t('playerDacArrival.rates.pending');
+};
+
+const formatDacArrivalIssue = (reason: string | null | undefined, t: Translate): string => {
+  const text = sanitizeDacArrivalText(reason);
+  if (!text) {
+    return t('playerDacArrival.issue.none');
+  }
+
+  return text.length > 42 ? `${text.slice(0, 42)}...` : text;
+};
+
+const dacArrivalModeLabel = (mode: AudioOutputMode, t: Translate): string => {
+  if (mode === 'asio') {
+    return t('settings.playback.outputMode.asio');
+  }
+
+  if (mode === 'exclusive') {
+    return t('settings.playback.outputMode.exclusive');
+  }
+
+  return mode.toUpperCase();
+};
+
+const dacArrivalRouteKey = (status: AudioStatus | null): string | null => {
+  if (!status) {
+    return null;
+  }
+
+  const device = sanitizeDacArrivalText(status.outputDeviceId)
+    ?? sanitizeDacArrivalText(status.outputDeviceName)
+    ?? sanitizeDacArrivalText(status.outputBackend)
+    ?? 'default';
+
+  return [
+    status.outputMode,
+    device.toLocaleLowerCase(),
+    status.outputBackend ?? '',
+    status.activeOutputBackendImpl ?? '',
+  ].join('|');
+};
+
+const isDacArrivalCandidateStatus = (status: AudioStatus | null): status is AudioStatus =>
+  Boolean(
+    status
+      && dacArrivalOutputModes.has(status.outputMode)
+      && status.host === 'ready'
+      && status.state !== 'error'
+      && !status.error,
+  );
+
+const buildDacArrivalCeremonyNotice = (
+  status: AudioStatus,
+  profile: DacCapabilityAtlasProfile | null,
+  t: Translate,
+): DacArrivalCeremonyNotice | null => {
+  if (!isDacArrivalCandidateStatus(status)) {
+    return null;
+  }
+
+  const routeKey = dacArrivalRouteKey(status);
+  const deviceName = outputDeviceNameForDacArrival(status);
+  const modeLabel = dacArrivalModeLabel(status.outputMode, t);
+  const nativeRate = formatDacArrivalRate(profile?.lastNativeRate);
+  const hasRecentIssue = Boolean(profile?.lastFailureReason);
+
+  return {
+    id: routeKey ?? `${status.outputMode}:${deviceName}`,
+    tone: hasRecentIssue ? 'watch' : 'ready',
+    deviceName,
+    title: t('playerDacArrival.title', { device: deviceName }),
+    detail: t(status.outputMode === 'asio' ? 'playerDacArrival.detail.asio' : 'playerDacArrival.detail.exclusive', { mode: modeLabel }),
+    modeLabel,
+    ratesLabel: formatDacArrivalRates(profile, status, t),
+    nativeLabel: nativeRate ? t('playerDacArrival.native.rate', { rate: nativeRate }) : t('playerDacArrival.native.pending'),
+    issueLabel: formatDacArrivalIssue(profile?.lastFailureReason, t),
+  };
+};
 
 const downloadNoticeFromJob = (job: DownloadJob, fallbackTitle: string | null): PlayerDownloadNotice => {
   const trackTitle = job.title ?? fallbackTitle ?? '当前流媒体';
@@ -626,6 +768,7 @@ export const PlayerBar = ({
   onToggleDesktopLyrics,
   onUnlockDesktopLyrics,
 }: PlayerBarProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const queue = usePlaybackQueue();
   const sharedPlaybackStatus = useSharedPlaybackStatus();
   const setQueueCurrentTrackId = queue.setCurrentTrackId;
@@ -633,6 +776,7 @@ export const PlayerBar = ({
   const updateTrackSnapshot = queue.updateTrackSnapshot;
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
+  const [outputRouteStatus, setOutputRouteStatus] = useState<AudioStatus | null>(null);
   const [connectStatus, setConnectStatus] = useState<ConnectSessionStatus | null>(null);
   const [hqPlayerOutputRate, setHqPlayerOutputRate] = useState<number | null>(null);
   const [receiverStatus, setReceiverStatus] = useState<ConnectReceiverStatus | null>(null);
@@ -656,6 +800,7 @@ export const PlayerBar = ({
   const [isMiniPlayerBusy, setIsMiniPlayerBusy] = useState(false);
   const [streamingDownloadJobId, setStreamingDownloadJobId] = useState<string | null>(null);
   const [streamingDownloadNotice, setStreamingDownloadNotice] = useState<PlayerDownloadNotice | null>(null);
+  const [dacArrivalNotice, setDacArrivalNotice] = useState<DacArrivalCeremonyNotice | null>(null);
   const [isStreamingDownloadResolving, setIsStreamingDownloadResolving] = useState(false);
   const signalPathAnchorRef = useRef<HTMLDivElement | null>(null);
   const handledEndedTrackRef = useRef<string | null>(null);
@@ -665,6 +810,8 @@ export const PlayerBar = ({
   const streamingBpmAnalysisTrackIdsRef = useRef(new Set<string>());
   const streamingDownloadTitleRef = useRef<string | null>(null);
   const streamingDownloadNoticeTimerRef = useRef<number | null>(null);
+  const dacArrivalNoticeTimerRef = useRef<number | null>(null);
+  const lastDacArrivalRouteRef = useRef<string | null>(null);
   const mvPreloadTrackRef = useRef<string | null>(null);
   const seekAnchorRef = useRef<{ positionSeconds: number; trackKey: string | null; updatedAtMs: number } | null>(null);
   const activeTrackIdRef = useRef<string | null>(null);
@@ -743,6 +890,7 @@ export const PlayerBar = ({
         return false;
       }
 
+      setOutputRouteStatus(nextAudioStatus);
       setAudioStatus(nextAudioStatus);
       if (nextAudioStatus.currentTrackId && shouldAdoptPlaybackIdentity(nextAudioStatus.currentTrackId)) {
         setQueueCurrentTrackId(resolveQueueTrackIdForPlaybackIdentity(nextAudioStatus.currentTrackId));
@@ -777,6 +925,7 @@ export const PlayerBar = ({
       }
 
       const snapshotAudioStatus = snapshot.audioStatus;
+      setOutputRouteStatus(snapshotAudioStatus);
       if (isSpotifyPlaybackStatus(snapshot.playbackStatus) && !snapshotAudioStatus) {
         setAudioStatus(null);
       }
@@ -828,6 +977,7 @@ export const PlayerBar = ({
       : audioStatusMatchesPlaybackStatus);
   const playbackAudioStatus = audioStatusMatchesCurrentTrack ? audioStatus : null;
   const baseState = playbackAudioStatus?.state ?? currentPlaybackStatus?.state ?? 'idle';
+
   const baseVisualState = getVisualPlaybackState({
     audioStatus: playbackAudioStatus,
     playbackStatus: currentPlaybackStatus,
@@ -1058,7 +1208,62 @@ export const PlayerBar = ({
     [clearStreamingDownloadNoticeTimer],
   );
 
+  const clearDacArrivalNoticeTimer = useCallback((): void => {
+    if (dacArrivalNoticeTimerRef.current !== null) {
+      window.clearTimeout(dacArrivalNoticeTimerRef.current);
+      dacArrivalNoticeTimerRef.current = null;
+    }
+  }, []);
+
+  const showDacArrivalNotice = useCallback(
+    (notice: DacArrivalCeremonyNotice): void => {
+      clearDacArrivalNoticeTimer();
+      setDacArrivalNotice(notice);
+      dacArrivalNoticeTimerRef.current = window.setTimeout(() => {
+        setDacArrivalNotice(null);
+        dacArrivalNoticeTimerRef.current = null;
+      }, dacArrivalAutoHideMs);
+    },
+    [clearDacArrivalNoticeTimer],
+  );
+
+  const dismissDacArrivalNotice = useCallback((): void => {
+    clearDacArrivalNoticeTimer();
+    setDacArrivalNotice(null);
+  }, [clearDacArrivalNoticeTimer]);
+
   useEffect(() => () => clearStreamingDownloadNoticeTimer(), [clearStreamingDownloadNoticeTimer]);
+  useEffect(() => () => clearDacArrivalNoticeTimer(), [clearDacArrivalNoticeTimer]);
+
+  useEffect(() => {
+    const ceremonyStatus = outputRouteStatus ?? audioStatus;
+    const profile = recordDacCapabilityObservation(ceremonyStatus, currentTrack) ?? getDacCapabilityAtlasProfile(ceremonyStatus);
+    const routeKey = dacArrivalRouteKey(ceremonyStatus);
+    if (!routeKey) {
+      lastDacArrivalRouteRef.current = null;
+      return;
+    }
+
+    if (!isDacArrivalCandidateStatus(ceremonyStatus)) {
+      lastDacArrivalRouteRef.current = routeKey;
+      return;
+    }
+
+    if (lastDacArrivalRouteRef.current === null) {
+      lastDacArrivalRouteRef.current = routeKey;
+      return;
+    }
+
+    if (lastDacArrivalRouteRef.current === routeKey) {
+      return;
+    }
+
+    lastDacArrivalRouteRef.current = routeKey;
+    const notice = buildDacArrivalCeremonyNotice(ceremonyStatus, profile, t);
+    if (notice) {
+      showDacArrivalNotice(notice);
+    }
+  }, [audioStatus, currentTrack, outputRouteStatus, showDacArrivalNotice, t]);
 
   useEffect(() => {
     const downloads = window.echo?.downloads;
@@ -2602,17 +2807,63 @@ export const PlayerBar = ({
     [applyConnectPlaybackStatus, currentTrack, durationSeconds, filePath, isSpotifyCurrentTrack, refreshStatus, trackId],
   );
 
+  const dacArrivalCeremony = dacArrivalNotice && typeof document !== 'undefined'
+    ? createPortal(
+        <div className="dac-arrival-ceremony" data-tone={dacArrivalNotice.tone} role="status" aria-live="polite">
+          <span className="dac-arrival-ceremony__icon" aria-hidden="true">
+            <Cable size={20} />
+          </span>
+          <div className="dac-arrival-ceremony__copy">
+            <span>{t('playerDacArrival.eyebrow')}</span>
+            <strong title={dacArrivalNotice.title}>{dacArrivalNotice.title}</strong>
+            <em title={dacArrivalNotice.detail}>{dacArrivalNotice.detail}</em>
+          </div>
+          <button
+            className="dac-arrival-ceremony__close"
+            type="button"
+            aria-label={t('playerDacArrival.close')}
+            title={t('playerDacArrival.close')}
+            onClick={dismissDacArrivalNotice}
+          >
+            <X size={15} />
+          </button>
+          <div className="dac-arrival-ceremony__facts">
+            <span>
+              <strong>{dacArrivalNotice.modeLabel}</strong>
+              <em>{t('playerDacArrival.status.takeover')}</em>
+            </span>
+            <span>
+              <strong>{dacArrivalNotice.ratesLabel}</strong>
+              <em>{t('playerDacArrival.rates.label')}</em>
+            </span>
+            <span data-tone={dacArrivalNotice.tone === 'watch' ? 'watch' : 'ready'}>
+              {dacArrivalNotice.tone === 'watch' ? <CircleAlert size={13} aria-hidden="true" /> : null}
+              <strong>{dacArrivalNotice.issueLabel}</strong>
+              <em>{t('playerDacArrival.issue.label')}</em>
+            </span>
+            <span>
+              <strong>{dacArrivalNotice.nativeLabel}</strong>
+              <em>{t('playerDacArrival.native.label')}</em>
+            </span>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
   return (
-    <motion.footer
-      className="player-bar"
-      data-low-load-playback={lowLoadPlaybackModeEnabled ? 'true' : undefined}
-      data-network-loading={isNetworkPlaybackLoading ? 'true' : undefined}
-      data-playback-state={visualState}
-      aria-busy={isNetworkPlaybackLoading}
-      aria-label="播放控制"
-      layout="position"
-      transition={miniPlayerTransition}
-    >
+    <>
+      {dacArrivalCeremony}
+      <motion.footer
+        className="player-bar"
+        data-low-load-playback={lowLoadPlaybackModeEnabled ? 'true' : undefined}
+        data-network-loading={isNetworkPlaybackLoading ? 'true' : undefined}
+        data-playback-state={visualState}
+        aria-busy={isNetworkPlaybackLoading}
+        aria-label="播放控制"
+        layout="position"
+        transition={miniPlayerTransition}
+      >
       {streamingDownloadNotice ? (
         <div className={`player-download-notice player-download-notice--${streamingDownloadNotice.tone}`} role="status" aria-live="polite">
           <div className="player-download-notice-copy">
@@ -2759,7 +3010,7 @@ export const PlayerBar = ({
           <PlayerVolumeControl
             status={audioStatus}
             fixedVolumeEnabled={fixedVolumeEnabled || dsdAutoVolumeLocked}
-            fixedVolumeAutoReason={dsdAutoVolumeLocked ? translateFallback('playerVolume.fixed.dsdAutoLocked') : null}
+            fixedVolumeAutoReason={dsdAutoVolumeLocked ? t('playerVolume.fixed.dsdAutoLocked') : null}
             isOpen={openPopover === 'volume'}
             onError={setError}
             onFixedVolumeChange={setFixedVolumeEnabled}
@@ -2814,6 +3065,7 @@ export const PlayerBar = ({
           </button>
         ) : null}
       </div>
-    </motion.footer>
+      </motion.footer>
+    </>
   );
 };

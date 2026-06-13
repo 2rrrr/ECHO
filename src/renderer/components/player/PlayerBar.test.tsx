@@ -703,6 +703,66 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.resampling.advice'));
   });
 
+  it('shows DAC Capability Atlas history and uses it in Doctor advice', async () => {
+    window.localStorage.setItem('echo-next.locale', 'en-US');
+    const track = makeTrack(39, { title: 'Atlas Signal Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
+    const nativeStatus = {
+      ...audioStatus(track),
+      outputDeviceName: 'TEAC USB DAC',
+      outputMode: 'exclusive' as const,
+      outputBackend: 'wasapi-exclusive',
+      decoderOutputSampleRate: 44100,
+      requestedOutputSampleRate: 44100,
+      actualDeviceSampleRate: 44100,
+      sharedDeviceSampleRate: null,
+      bitPerfectCandidate: true,
+      resampling: false,
+    };
+
+    const { unmount } = render(
+      <I18nProvider>
+        <AudioSignalPathPopover isOpen={true} status={nativeStatus} track={track} onClose={vi.fn()} />
+      </I18nProvider>,
+    );
+
+    const nativeDialog = await screen.findByRole('dialog', { name: 'Signal path' });
+    await waitFor(() => expect(nativeDialog.textContent).toContain('DAC Capability Atlas'));
+    expect(nativeDialog.textContent).not.toContain('Observed output');
+    const nativeAtlasToggle = screen.getByRole('button', { name: 'Expand DAC Capability Atlas' });
+    expect(nativeAtlasToggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(nativeAtlasToggle);
+    expect(nativeAtlasToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(nativeDialog.textContent).toContain('Observed output');
+    await waitFor(() => expect(nativeDialog.textContent).toContain('Last native chain used Exclusive'));
+    unmount();
+
+    const resampledStatus = {
+      ...audioStatus(track),
+      outputDeviceName: 'TEAC USB DAC',
+      outputMode: 'shared' as const,
+      outputBackend: 'wasapi-shared',
+      decoderOutputSampleRate: 48000,
+      requestedOutputSampleRate: 48000,
+      actualDeviceSampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      bitPerfectCandidate: false,
+      resampling: true,
+    };
+
+    render(
+      <I18nProvider>
+        <AudioSignalPathPopover isOpen={true} status={resampledStatus} track={track} onClose={vi.fn()} />
+      </I18nProvider>,
+    );
+
+    const resampledDialog = await screen.findByRole('dialog', { name: 'Signal path' });
+    expect(resampledDialog.textContent).not.toContain('44.1 -> 48 x1');
+    fireEvent.click(screen.getByRole('button', { name: 'Expand DAC Capability Atlas' }));
+    await waitFor(() => expect(resampledDialog.textContent).toContain('44.1 -> 48 x1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Signal Path Doctor' }));
+    expect(resampledDialog.textContent).toContain('Atlas last saw this device play native-rate via Exclusive at 44.1kHz');
+  });
+
   it('shows ECHO SRC as upsampling in the signal path', () => {
     const track = makeTrack(36, { title: 'Upsampled Signal Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
     const status = {
@@ -731,6 +791,96 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).toContain('ECHO SRC / 升频');
     expect(dialog.textContent).toContain('44.1kHz -> ECHO SRC 352.8kHz / SOXR Transparent');
     expect(dialog.textContent).not.toContain('96kHz -> 48kHz');
+  });
+
+  it('shows DAC arrival ceremony when ASIO takes over the output device while idle', async () => {
+    window.localStorage.setItem('echo-next.locale', 'en-US');
+    const track = makeTrack(40, { title: 'Arrival Track', sampleRate: 96000, bitDepth: 24 });
+    const statusHandlers: Array<(status: AudioStatus) => void> = [];
+    const sharedStatus = {
+      ...audioStatus(track),
+      state: 'idle' as const,
+      currentFilePath: null,
+      currentTrackId: null,
+      outputDeviceName: 'Speakers',
+      outputMode: 'shared' as const,
+      outputBackend: 'wasapi-shared',
+      actualDeviceSampleRate: 48000,
+      requestedOutputSampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+    };
+    const asioStatus = {
+      ...audioStatus(track),
+      state: 'idle' as const,
+      currentFilePath: null,
+      currentTrackId: null,
+      outputDeviceId: 'teac-asio',
+      outputDeviceName: 'TEAC USB DAC',
+      outputMode: 'asio' as const,
+      outputBackend: 'asio',
+      actualDeviceSampleRate: 96000,
+      requestedOutputSampleRate: 96000,
+      sharedDeviceSampleRate: null,
+      bitPerfectCandidate: true,
+    };
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 4000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(sharedStatus),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true, locale: 'en-US', appMemoryVersion: 1 }),
+        setSettings: vi.fn().mockResolvedValue({ smtcEnabled: true, locale: 'en-US', appMemoryVersion: 1 }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <I18nProvider>
+        <PlaybackQueueProvider>
+          <QueueSeed tracks={[track]} />
+        </PlaybackQueueProvider>
+      </I18nProvider>,
+    );
+
+    await screen.findByText('Arrival Track');
+    await waitFor(() => expect(statusHandlers.length).toBeGreaterThan(0));
+    expect(screen.queryByText('TEAC USB DAC taken over')).toBeNull();
+
+    act(() => {
+      emitAudioStatus(statusHandlers, asioStatus);
+    });
+
+    const arrivalTitle = await screen.findByText('TEAC USB DAC taken over');
+    expect(arrivalTitle.closest('.dac-arrival-ceremony')).toBeTruthy();
+    expect(arrivalTitle.closest('.player-bar')).toBeNull();
+    expect(screen.getByText('ASIO')).toBeTruthy();
+    expect(screen.getByText('96kHz')).toBeTruthy();
+    expect(screen.getByText('No recent failures')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close DAC arrival card' }));
+    expect(screen.queryByText('TEAC USB DAC taken over')).toBeNull();
   });
 
   it('routes global play/pause to the active DLNA Connect session instead of local playback', async () => {

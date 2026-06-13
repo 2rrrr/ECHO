@@ -236,6 +236,8 @@ const defaultHqPlayerSettings: HqPlayerSettings = {
 const hqPlayerLocalHost = '127.0.0.1';
 const hqPlayerDefaultPort = 4321;
 const hiddenConnectDevicesStorageKey = 'echo.connect.hiddenDevices.v1';
+const connectCommandCenterCollapsedStorageKey = 'echo.connect.commandCenterCollapsed.v1';
+const connectEchoLinkPanelCollapsedStorageKey = 'echo.connect.echoLinkPanelCollapsed.v1';
 const connectDeviceSectionCollapsedStorageKey = 'echo.connect.deviceSectionCollapsed.v1';
 const connectRadioPanelCollapsedStorageKey = 'echo.connect.radioPanelCollapsed.v1';
 const connectHqPlayerPanelCollapsedStorageKey = 'echo.connect.hqPlayerPanelCollapsed.v1';
@@ -1020,6 +1022,12 @@ export const ConnectPage = (): JSX.Element => {
   const [hqPlayerBusy, setHqPlayerBusy] = useState<'settings' | 'test' | null>(null);
   const [shouldRenderHqPlayerDetails, setShouldRenderHqPlayerDetails] = useState(defaultHqPlayerSettings.enabled);
   const [hiddenDeviceIds, setHiddenDeviceIds] = useState<Set<string>>(() => readStoredStringSet(hiddenConnectDevicesStorageKey));
+  const [isCommandCenterCollapsed, setIsCommandCenterCollapsed] = useState(() =>
+    readStoredBoolean(connectCommandCenterCollapsedStorageKey, false),
+  );
+  const [isEchoLinkPanelCollapsed, setIsEchoLinkPanelCollapsed] = useState(() =>
+    readStoredBoolean(connectEchoLinkPanelCollapsedStorageKey, false),
+  );
   const [isDeviceSectionCollapsed, setIsDeviceSectionCollapsed] = useState(() =>
     readStoredBoolean(connectDeviceSectionCollapsedStorageKey, false),
   );
@@ -2057,6 +2065,22 @@ export const ConnectPage = (): JSX.Element => {
     });
   }, []);
 
+  const toggleCommandCenterCollapsed = useCallback((): void => {
+    setIsCommandCenterCollapsed((current) => {
+      const next = !current;
+      writeStoredBoolean(connectCommandCenterCollapsedStorageKey, next);
+      return next;
+    });
+  }, []);
+
+  const toggleEchoLinkPanelCollapsed = useCallback((): void => {
+    setIsEchoLinkPanelCollapsed((current) => {
+      const next = !current;
+      writeStoredBoolean(connectEchoLinkPanelCollapsedStorageKey, next);
+      return next;
+    });
+  }, []);
+
   const toggleRadioPanelCollapsed = useCallback((): void => {
     setIsRadioPanelCollapsed((current) => {
       const next = !current;
@@ -2187,7 +2211,12 @@ export const ConnectPage = (): JSX.Element => {
         </div>
       ) : null}
 
-      <section className="connect-command-center" data-state={commandCenterHealth} aria-label="Connect Command Center">
+      <section
+        className="connect-command-center"
+        data-state={commandCenterHealth}
+        data-collapsed={isCommandCenterCollapsed ? 'true' : undefined}
+        aria-label="Connect Command Center"
+      >
         <div className="connect-command-center__headline">
           <div className="connect-command-center__title">
             <span className="connect-command-center__badge" data-state={commandCenterHealth}>{commandCenterHealthLabel}</span>
@@ -2208,9 +2237,21 @@ export const ConnectPage = (): JSX.Element => {
               {isRefreshing ? <Loader2 className="spinning-icon" size={15} /> : <RefreshCw size={15} />}
               全局刷新
             </button>
+            <button
+              className="icon-button connect-collapse-button"
+              type="button"
+              aria-label={isCommandCenterCollapsed ? '展开 Connect Command Center' : '折叠 Connect Command Center'}
+              title={isCommandCenterCollapsed ? '展开 Connect Command Center' : '折叠 Connect Command Center'}
+              aria-expanded={!isCommandCenterCollapsed}
+              onClick={toggleCommandCenterCollapsed}
+            >
+              <ChevronDown size={16} />
+            </button>
           </div>
         </div>
 
+        <div className="connect-collapsible-content" data-expanded={!isCommandCenterCollapsed}>
+          <div className="connect-collapsible-content__inner">
         <div className="connect-command-center__body">
           <div className="connect-command-center__qr-card">
             <div className="connect-command-center__qr" data-empty={echoLinkQrDataUrl ? 'false' : 'true'}>
@@ -2330,6 +2371,8 @@ export const ConnectPage = (): JSX.Element => {
           <strong>{commandCenterErrorLabel}</strong>
           {commandCenterIssues.length > 1 ? <small>另有 {commandCenterIssues.length - 1} 条连接事件</small> : null}
         </div>
+          </div>
+        </div>
       </section>
 
       <section className="connect-stage" aria-label={t('connectPage.stage.aria')}>
@@ -2405,7 +2448,11 @@ export const ConnectPage = (): JSX.Element => {
           </div>
         </details>
 
-        <section className="connect-echo-link-panel" aria-label="Android ECHO Link">
+        <section
+          className="connect-echo-link-panel"
+          aria-label="Android ECHO Link"
+          data-collapsed={isEchoLinkPanelCollapsed ? 'true' : undefined}
+        >
           <div className="connect-section-title">
             <div>
               <span>Android ECHO Link</span>
@@ -2427,8 +2474,20 @@ export const ConnectPage = (): JSX.Element => {
                 <RefreshCw size={15} />
                 轮换 Token
               </button>
+              <button
+                className="icon-button connect-collapse-button"
+                type="button"
+                aria-label={isEchoLinkPanelCollapsed ? '展开手机连接' : '折叠手机连接'}
+                title={isEchoLinkPanelCollapsed ? '展开手机连接' : '折叠手机连接'}
+                aria-expanded={!isEchoLinkPanelCollapsed}
+                onClick={toggleEchoLinkPanelCollapsed}
+              >
+                <ChevronDown size={16} />
+              </button>
             </div>
           </div>
+          <div className="connect-collapsible-content" data-expanded={!isEchoLinkPanelCollapsed}>
+            <div className="connect-collapsible-content__inner">
           <div className="connect-echo-link-grid">
             <span>
               <em>地址</em>
@@ -2535,6 +2594,8 @@ export const ConnectPage = (): JSX.Element => {
               </div>
             </details>
           ) : null}
+            </div>
+          </div>
         </section>
 
         <section className="connect-device-section connect-device-section--stage" aria-label={t('connectPage.devices.aria')}>

@@ -4695,6 +4695,38 @@ html[data-theme-preset="nyanCat"] .player-bar .progress-track:focus-within .prog
   transform: translate(-50%, -61%) scale(1.08);
 }
 
+html[data-theme-preset="nyanCat"] .player-bar .progress-track[data-waveform="true"] {
+  height: 26px;
+  overflow: visible;
+}
+
+html[data-theme-preset="nyanCat"] .player-bar .progress-track[data-waveform="true"] .progress-waveform {
+  inset: 3px 0;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+html[data-theme-preset="nyanCat"] .player-bar .progress-track[data-waveform="true"] .progress-waveform i {
+  background: color-mix(in srgb, var(--preset-muted) 28%, transparent);
+}
+
+html[data-theme-preset="nyanCat"] .player-bar .progress-track[data-waveform="true"] .progress-waveform i[data-played="true"] {
+  background: var(--nyan-rainbow);
+  box-shadow: 0 0 10px rgb(255 95 147 / 0.22);
+}
+
+html[data-theme-preset="nyanCat"] .player-bar .progress-track[data-waveform="true"] .progress-thumb {
+  z-index: 2;
+  width: 54px;
+  height: 34px;
+  transform: translate(-50%, -58%) scale(1);
+}
+
+html[data-theme-preset="nyanCat"] .player-bar .progress-track[data-waveform="true"]:hover .progress-thumb,
+html[data-theme-preset="nyanCat"] .player-bar .progress-track[data-waveform="true"]:focus-within .progress-thumb {
+  transform: translate(-50%, -58%) scale(1.06);
+}
+
 @keyframes nyan-cat-gradient-flow {
   0% {
     background-position: 0% 50%;
@@ -4787,6 +4819,23 @@ html[data-theme-preset="darkSideMoon"] .artist-detail-empty,
 html[data-theme-preset="darkSideMoon"] .artist-detail-loading,
 html[data-theme-preset="darkSideMoon"] .artist-detail-status {
   color: var(--theme-muted-text);
+}
+
+html[data-theme-preset="darkSideMoon"] .artists-page .artist-wall .artist-copy strong {
+  color: color-mix(in srgb, var(--theme-heading-text) 94%, white);
+  text-shadow:
+    0 1px 2px rgb(2 4 12 / 0.78),
+    0 0 14px rgb(246 240 216 / 0.12);
+}
+
+html[data-theme-preset="darkSideMoon"] .artists-page .artist-wall .artist-copy small {
+  color: color-mix(in srgb, var(--theme-muted-text) 82%, white);
+  text-shadow: 0 1px 2px rgb(2 4 12 / 0.72);
+}
+
+html[data-theme-preset="darkSideMoon"] .artists-page .artist-wall > .artist-card:hover .artist-copy strong,
+html[data-theme-preset="darkSideMoon"] .artists-page .artist-wall > .artist-card:focus-visible .artist-copy strong {
+  color: var(--theme-heading-text);
 }
 
 html[data-theme-preset="darkSideMoon"] .album-detail-facts {
@@ -5488,6 +5537,47 @@ html[data-theme-preset="darkSideMoon"] .player-bar .progress-thumb::after {
 html[data-theme-preset="darkSideMoon"] .player-bar .progress-track:hover .progress-thumb,
 html[data-theme-preset="darkSideMoon"] .player-bar .progress-track:focus-within .progress-thumb {
   transform: translate(-50%, -50%) scale(1.08);
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"] {
+  height: 24px;
+  overflow: visible;
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"]::before {
+  display: none;
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"]::after {
+  z-index: 1;
+  height: 6px;
+  opacity: 0.62;
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"] .progress-waveform {
+  z-index: 2;
+  inset: 3px 0;
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"] .progress-waveform i {
+  background: rgb(246 240 216 / 0.28);
+  box-shadow: none;
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"] .progress-waveform i[data-played="true"] {
+  background: color-mix(in srgb, var(--theme-heading-text) 86%, var(--preset-secondary));
+  box-shadow: 0 0 8px rgb(246 240 216 / 0.22);
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"] .progress-thumb {
+  width: 28px;
+  height: 25px;
+  transform: translate(-50%, -49%) scale(1);
+}
+
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"]:hover .progress-thumb,
+html[data-theme-preset="darkSideMoon"] .player-bar .progress-track[data-waveform="true"]:focus-within .progress-thumb {
+  transform: translate(-50%, -49%) scale(1.06);
 }
 
 @media (max-width: 760px) {

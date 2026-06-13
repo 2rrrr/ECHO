@@ -2064,6 +2064,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
     await waitFor(() => expect(getDonatorUnlockStatusMock).toHaveBeenCalled());
 
     expect(setSettingsMock).not.toHaveBeenCalledWith({ appearanceThemePreset: 'classic', appearanceThemeCustomId: null, finalThemeUnlockVersion: null });

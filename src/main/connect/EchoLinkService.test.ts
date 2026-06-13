@@ -213,6 +213,7 @@ describe('EchoLinkService', () => {
   let lyricsService: FakeLyricsService;
   let service: EchoLinkService;
   let dispatchPlaybackAction: ReturnType<typeof vi.fn<(action: 'nextTrack' | 'previousTrack') => void>>;
+  let broadcastPlaybackQueueSession: ReturnType<typeof vi.fn<(session: unknown) => void>>;
   let mdnsStarts: unknown[];
   let now: number;
 
@@ -234,12 +235,14 @@ describe('EchoLinkService', () => {
     ]);
     lyricsService = new FakeLyricsService();
     dispatchPlaybackAction = vi.fn();
+    broadcastPlaybackQueueSession = vi.fn();
     mdnsStarts = [];
     service = new EchoLinkService({
       audioSession,
       libraryService,
       lyricsService,
       dispatchPlaybackAction,
+      broadcastPlaybackQueueSession,
       getLanAddresses: () => ['127.0.0.1'],
       createMdnsAdvertiser: () => ({
         start: vi.fn(async (advertisement: unknown) => {
@@ -330,6 +333,31 @@ describe('EchoLinkService', () => {
         albumArtist: 'Live Album Artist',
         artworkUrl: 'https://example.test/live-cover.jpg',
       },
+    });
+  });
+
+  it('does not reuse stale library metadata when the audio file path has changed', async () => {
+    const nextAudioPath = join(tempRoot, 'next-song.flac');
+    writeFileSync(nextAudioPath, Buffer.from('ghijkl', 'utf8'));
+    audioSession.status = makeAudioStatus({
+      state: 'playing',
+      currentTrackId: 'track-1',
+      currentFilePath: nextAudioPath,
+      durationSeconds: 88,
+    });
+
+    const response = await fetch(`${baseUrl()}/echo-link/v1/status`, { headers: authHeaders() });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.playback.track).toMatchObject({
+      id: 'track-1',
+      title: 'next-song.flac',
+      artist: 'Unknown Artist',
+      sourceLabel: 'Current Playback',
+      artworkUrl: null,
+      durationMs: 88000,
+      canPlayOnPhone: true,
     });
   });
 
@@ -468,6 +496,24 @@ describe('EchoLinkService', () => {
     expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ filePath: audioPath, trackId: 'track-1' }));
     expect(audioSession.seek).toHaveBeenCalledWith(42);
     expect(audioSession.setOutput).toHaveBeenCalledWith({ volume: 0.5 });
+  });
+
+  it('broadcasts a desktop queue session when web playback starts', async () => {
+    const response = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'queueReplace', trackIds: ['track-1', 'track-2'], startTrackId: 'track-2', output: 'pc' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(broadcastPlaybackQueueSession).toHaveBeenCalledWith(expect.objectContaining({
+      currentTrackId: 'track-2',
+      lastPlayedTrack: expect.objectContaining({ id: 'track-2' }),
+      mode: expect.objectContaining({ isShuffleEnabled: false, repeatMode: 'off' }),
+      resume: expect.objectContaining({ trackId: 'track-2', state: 'playing' }),
+    }));
+    const session = broadcastPlaybackQueueSession.mock.calls.at(-1)?.[0] as { items?: Array<{ track?: { id?: string } }> };
+    expect(session.items?.map((item) => item.track?.id)).toEqual(['track-1', 'track-2']);
   });
 
   it('handles handoff with start position', async () => {

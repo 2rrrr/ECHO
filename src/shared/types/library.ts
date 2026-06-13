@@ -48,6 +48,8 @@ export type LibraryAllUserDataDeleteResult = {
   coverCachePath: string | null;
   removedPaths: string[];
   failedPaths: Array<{ path: string; error: string }>;
+  relaunchScheduled: boolean;
+  exitDelayMs: number;
 };
 
 export type LibraryDatabaseHealthStatus = 'ok' | 'corrupt' | 'unreadable';

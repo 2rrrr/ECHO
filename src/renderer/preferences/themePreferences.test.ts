@@ -80,9 +80,10 @@ describe('theme preferences', () => {
     expect(readThemePreset()).toBe('shibuyaNight');
     expect(document.documentElement.dataset.themePreset).toBe('shibuyaNight');
 
-    updateThemePreset('darkSideMoon');
+    updateThemePreset('darkSideMoon', { finalThemeUnlocked: true });
 
-    expect(readThemePreset()).toBe('darkSideMoon');
+    expect(readThemePreset()).toBe('classic');
+    expect(readThemePreset({ finalThemeUnlocked: true })).toBe('darkSideMoon');
     expect(document.documentElement.dataset.themePreset).toBe('darkSideMoon');
   });
 
