@@ -453,6 +453,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isFirstRunWizardOpen, setIsFirstRunWizardOpen] = useState(false);
   const [downloadsFeatureUnlocked, setDownloadsFeatureUnlocked] = useState(false);
   const [connectDonatorUnlocked, setConnectDonatorUnlocked] = useState(false);
+  const [listeningRoomEnabled, setListeningRoomEnabled] = useState(false);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
   const [lyricsDrawerCurrentTrackTools, setLyricsDrawerCurrentTrackTools] = useState<ReactNode | null>(null);
@@ -916,6 +917,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         setFeatureCommentsHidden(settings.featureCommentsHidden === true);
       }
 
+      if (Object.prototype.hasOwnProperty.call(settings, 'listeningRoomEnabled')) {
+        setListeningRoomEnabled(settings.listeningRoomEnabled === true);
+      }
+
       const hasSidebarRouteOrder = Object.prototype.hasOwnProperty.call(settings, 'sidebarRouteOrder');
       const hasSidebarHiddenRouteIds = Object.prototype.hasOwnProperty.call(settings, 'sidebarHiddenRouteIds');
       const hasSidebarAutoHideEnabled = Object.prototype.hasOwnProperty.call(settings, 'sidebarAutoHideEnabled');
@@ -1262,6 +1267,17 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       const nextRouteId = isTemporarilyBlockedRouteId(routeId) ? readFallbackRouteId(routes) : routeId;
       const nextTrigger = nextRouteId === routeId ? trigger : `${trigger}:blocked`;
 
+      if (nextRouteId === 'listening-room' && !listeningRoomEnabled) {
+        logRouteSwitchDiagnostic('start', {
+          from: activeRouteId,
+          to: nextRouteId,
+          trigger: `${nextTrigger}:disabled`,
+          result: 'disabled',
+          ...getRouteSwitchPlaybackDetails(),
+        });
+        return;
+      }
+
       if (nextRouteId === activeRouteId) {
         logRouteSwitchDiagnostic('start', {
           from: activeRouteId,
@@ -1284,7 +1300,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       beginRouteSwitchTrace(nextRouteId, nextTrigger);
       setActiveRouteId(nextRouteId);
     },
-    [activeRouteId, beginRouteSwitchTrace, getRouteSwitchPlaybackDetails, routes],
+    [activeRouteId, beginRouteSwitchTrace, getRouteSwitchPlaybackDetails, listeningRoomEnabled, routes],
   );
 
   useEffect(() => {
@@ -1324,6 +1340,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       navigateRoute('songs', 'downloads-locked');
     }
   }, [activeRouteId, downloadsFeatureUnlocked, navigateRoute]);
+
+  useEffect(() => {
+    if (!listeningRoomEnabled && activeRouteId === 'listening-room') {
+      navigateRoute('queue', 'listening-room-disabled');
+    }
+  }, [activeRouteId, listeningRoomEnabled, navigateRoute]);
 
   useEffect(() => {
     if (isTemporarilyBlockedRouteId(activeRouteId)) {
@@ -1924,6 +1946,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigateNowPlaying = (): void => {
       navigateRoute('queue');
     };
+    const handleNavigateListeningRoom = (): void => {
+      navigateRoute('listening-room');
+    };
     const handleNavigateLyrics = (event: Event): void => {
       const detail = event instanceof CustomEvent ? (event.detail as LyricsNavigationDetail | null) : null;
       if (isLyricsViewMode(detail?.mode)) {
@@ -1968,6 +1993,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     window.addEventListener('app:navigate:dsp', handleNavigateDsp);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
     window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
+    window.addEventListener('app:navigate:listening-room', handleNavigateListeningRoom);
     window.addEventListener('app:navigate:lyrics', handleNavigateLyrics);
     window.addEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
     window.addEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
@@ -1982,6 +2008,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener('app:navigate:dsp', handleNavigateDsp);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
       window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
+      window.removeEventListener('app:navigate:listening-room', handleNavigateListeningRoom);
       window.removeEventListener('app:navigate:lyrics', handleNavigateLyrics);
       window.removeEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
       window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);

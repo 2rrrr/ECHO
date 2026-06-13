@@ -9,6 +9,7 @@ import { HistoryPage } from '../pages/HistoryPage';
 import { HomePage } from '../pages/HomePage';
 import { ImportFolderPage } from '../pages/ImportFolderPage';
 import { InboxPage } from '../pages/InboxPage';
+import { ListeningRoomPage } from '../pages/ListeningRoomPage';
 import { PlaylistsPage } from '../pages/PlaylistsPage';
 import { PluginsPage } from '../pages/PluginsPage';
 import { QueuePage } from '../pages/QueuePage';
@@ -30,6 +31,7 @@ import {
   EchoHomeIcon,
   EchoImportFileIcon,
   EchoImportFolderIcon,
+  EchoListeningRoomIcon,
   EchoLikedIcon,
   EchoLyricsSettingsIcon,
   EchoPlaylistsIcon,
@@ -44,7 +46,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import type { TranslationKey } from '../i18n/locales';
 import type { SidebarRouteId } from '../../shared/types/sidebar';
 
-export type AppRouteId = SidebarRouteId | 'lyrics';
+export type AppRouteId = SidebarRouteId | 'lyrics' | 'listening-room';
 
 export type AppRoute = {
   id: AppRouteId;
@@ -93,6 +95,17 @@ export const appRoutes: AppRoute[] = [
     icon: EchoSongsIcon,
     placement: 'main',
     element: <SongsPage />,
+  },
+  {
+    id: 'listening-room',
+    label: 'Listening Room',
+    labelKey: 'route.listeningRoom.label',
+    description: 'Immersive playback stage.',
+    descriptionKey: 'route.listeningRoom.description',
+    icon: EchoListeningRoomIcon,
+    placement: 'main',
+    hideFromSidebar: true,
+    element: <ListeningRoomPage />,
   },
   {
     id: 'downloads',

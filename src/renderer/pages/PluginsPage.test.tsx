@@ -203,7 +203,7 @@ describe('PluginsPage', () => {
   it('routes sandbox panel bridge requests to the selected plugin only', async () => {
     render(<PluginsPage />);
 
-    const iframe = await screen.findByTitle('播放状态面板 panel') as HTMLIFrameElement;
+    const iframe = await screen.findByTitle('播放状态面板 面板') as HTMLIFrameElement;
     expect(iframe.contentWindow).toBeTruthy();
     const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
 

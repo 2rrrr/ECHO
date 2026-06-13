@@ -4396,7 +4396,12 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-receiver-panel,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-outgoing-debug,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugins-list,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-detail,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-detail-head,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-security-panel,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-activity-panel,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-command-list,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-panel-preview,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-log-list,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-example-card {
   border-color: var(--theme-panel-border);
   background: var(--theme-panel-bg);

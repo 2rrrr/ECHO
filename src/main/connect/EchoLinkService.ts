@@ -404,9 +404,26 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       text-transform: uppercase;
     }
     .brand strong {
-      display: block;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       font-size: clamp(18px, 2vw, 24px);
       line-height: 1.02;
+    }
+    .beta-badge {
+      display: inline-grid;
+      min-height: 20px;
+      place-items: center;
+      padding: 0 8px;
+      border: 1px solid rgba(255, 190, 220, 0.28);
+      border-radius: 999px;
+      color: rgba(255, 232, 244, 0.92);
+      background: linear-gradient(135deg, rgba(255, 140, 190, 0.24), rgba(155, 232, 244, 0.12));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+      font-size: 11px;
+      font-weight: 820;
+      line-height: 1;
+      white-space: nowrap;
     }
     .controls {
       display: flex;
@@ -436,10 +453,10 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       user-select: none;
       perspective: 1400px;
       background:
-        linear-gradient(118deg, rgba(255, 128, 176, 0.34), transparent 38%),
-        linear-gradient(28deg, rgba(128, 224, 238, 0.24), transparent 48%),
-        linear-gradient(165deg, rgba(255, 215, 128, 0.12), transparent 36%),
-        linear-gradient(135deg, #2a1622 0%, #14131d 48%, #07181b 100%);
+        linear-gradient(118deg, rgba(255, 132, 184, 0.42), transparent 42%),
+        linear-gradient(28deg, rgba(123, 222, 236, 0.32), transparent 52%),
+        linear-gradient(165deg, rgba(255, 215, 128, 0.18), transparent 38%),
+        linear-gradient(135deg, #3a192b 0%, #1b1525 47%, #06191d 100%);
     }
     .stage::before {
       content: "";
@@ -448,12 +465,12 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       z-index: 1;
       pointer-events: none;
       background:
-        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(255,255,255,0.08), transparent 20%, transparent 70%, rgba(0,0,0,0.42)),
-        linear-gradient(90deg, rgba(0,0,0,0.22), transparent 18%, transparent 82%, rgba(0,0,0,0.34));
-      background-size: 88px 88px, 88px 88px, auto, auto;
-      opacity: 0.78;
+        linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.024) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255,255,255,0.08), transparent 24%, transparent 72%, rgba(0,0,0,0.32)),
+        linear-gradient(90deg, rgba(0,0,0,0.18), transparent 20%, transparent 80%, rgba(0,0,0,0.24));
+      background-size: 96px 96px, 96px 96px, auto, auto;
+      opacity: 0.56;
     }
     .stage::after {
       content: "";
@@ -462,8 +479,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       z-index: 3;
       pointer-events: none;
       background:
-        linear-gradient(180deg, rgba(0,0,0,0.08), transparent 18%, transparent 74%, rgba(0,0,0,0.4)),
-        linear-gradient(90deg, rgba(0,0,0,0.3), transparent 22%, transparent 78%, rgba(0,0,0,0.32));
+        linear-gradient(180deg, rgba(0,0,0,0.04), transparent 18%, transparent 74%, rgba(0,0,0,0.32)),
+        linear-gradient(90deg, rgba(0,0,0,0.22), transparent 22%, transparent 78%, rgba(0,0,0,0.24));
     }
     .stage[data-dragging="true"] {
       cursor: grabbing;
@@ -568,10 +585,10 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       overflow: hidden;
       pointer-events: none;
       background:
-        linear-gradient(112deg, rgba(255,255,255,0.08), transparent 24%, rgba(255,255,255,0.04) 46%, transparent 70%),
-        linear-gradient(42deg, transparent 0 24%, rgba(255, 140, 175, 0.18) 24% 34%, transparent 34% 100%),
-        linear-gradient(142deg, transparent 0 48%, rgba(155, 232, 244, 0.14) 48% 62%, transparent 62% 100%);
-      filter: saturate(1.05);
+        linear-gradient(116deg, transparent 0 17%, rgba(255, 179, 214, 0.13) 17% 28%, transparent 28% 100%),
+        linear-gradient(42deg, transparent 0 54%, rgba(154, 232, 244, 0.1) 54% 64%, transparent 64% 100%),
+        linear-gradient(155deg, rgba(255,255,255,0.06), transparent 30%, rgba(255,255,255,0.035) 60%, transparent 78%);
+      filter: saturate(1.12);
     }
     .album-mural::after {
       content: "";
@@ -611,18 +628,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       top: var(--card-y);
       width: var(--card-w, 142px);
       z-index: var(--card-z, 1);
+      height: calc(var(--card-w, 142px) * var(--card-ratio, 1.42));
       min-width: 0;
       overflow: hidden;
       padding: 0;
       border: 0;
-      border-radius: 8px;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.025) 18%, rgba(13, 11, 17, 0.7) 64%, rgba(8, 7, 11, 0.9)),
-        var(--glass);
-      box-shadow: 0 15px 42px rgba(0,0,0,var(--card-shadow, 0.32)), inset 0 1px 0 rgba(255,255,255,0.045);
+      border-radius: 18px;
+      background: rgba(0,0,0,0.1);
+      box-shadow: 0 15px 42px rgba(0,0,0,var(--card-shadow, 0.32));
       transform: translate3d(0, var(--depth-y, 0), var(--depth-z, 0px)) rotateX(var(--pitch, 0deg)) rotateY(var(--yaw, 0deg)) rotate(var(--tilt, 0deg)) scale(var(--card-scale, 1));
       opacity: var(--opacity, 1);
-      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1));
+      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1)) blur(var(--card-blur, 0px));
       contain: layout paint style;
       transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
       backface-visibility: hidden;
@@ -633,9 +649,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       inset: 0;
       pointer-events: none;
       background:
-        linear-gradient(135deg, rgba(255,255,255,0.18), transparent 22%),
-        linear-gradient(315deg, rgba(255, 140, 175, 0.12), transparent 46%);
-      opacity: 0.54;
+        linear-gradient(135deg, rgba(255,255,255,0.18), transparent 25%),
+        linear-gradient(315deg, rgba(255,255,255,0.08), transparent 48%);
+      opacity: 0.42;
     }
     .album-card::after {
       content: "";
@@ -649,7 +665,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       background:
         linear-gradient(90deg, transparent 45%, rgba(255,255,255,0.72) 49%, transparent 53%),
         linear-gradient(180deg, transparent 45%, rgba(255,255,255,0.72) 49%, transparent 53%);
-      opacity: 0.22;
+      opacity: 0.18;
       transform: rotate(18deg) scale(var(--spark-scale, 1));
     }
     .album-card:hover {
@@ -675,22 +691,23 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     }
     .album-card[data-layer="back"] {
       pointer-events: none;
-      filter: saturate(calc(var(--card-sat, 1) * 0.82)) brightness(calc(var(--card-bright, 1) * 0.78));
+      filter: saturate(calc(var(--card-sat, 1) * 0.82)) brightness(calc(var(--card-bright, 1) * 0.78)) blur(var(--card-blur, 1.4px));
     }
     .album-card[data-layer="back"] .album-copy {
       opacity: 0.62;
     }
     .album-card[data-layer="back"] .album-mini-controls {
-      opacity: 0.18;
+      opacity: 0;
     }
     .album-card button {
       position: relative;
       z-index: 1;
       display: block;
       width: 100%;
+      height: 100%;
       padding: 0;
       border: 0;
-      border-radius: 0;
+      border-radius: inherit;
       color: inherit;
       text-align: left;
       background: transparent;
@@ -700,13 +717,14 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       outline-offset: -2px;
     }
     .album-cover {
-      position: relative;
+      position: absolute;
+      inset: 0;
       width: 100%;
-      aspect-ratio: 1;
+      height: 100%;
       margin: 0;
       overflow: hidden;
       border: 0;
-      border-radius: 0;
+      border-radius: inherit;
       background:
         linear-gradient(135deg, rgba(169, 140, 255, 0.78), rgba(255, 140, 175, 0.72) 46%, rgba(155, 232, 244, 0.58)),
         linear-gradient(45deg, rgba(255,255,255,0.14) 0 10%, transparent 10% 20%, rgba(255,255,255,0.12) 20% 30%, transparent 30% 100%),
@@ -731,20 +749,26 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       z-index: 3;
       pointer-events: none;
       border-radius: inherit;
+      background: linear-gradient(180deg, transparent 44%, rgba(0,0,0,0.72) 100%);
     }
     .album-cover img {
       position: relative;
       z-index: 1;
     }
     .album-copy {
-      position: relative;
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
       z-index: 2;
-      min-height: 98px;
-      margin: -1px 0 0;
-      padding: 15px 10px 43px;
+      min-height: 84px;
+      margin: 0;
+      padding: 14px 12px 42px;
       border: 0;
       border-radius: 0;
-      background: linear-gradient(180deg, rgba(38,34,43,0.58), rgba(7,7,10,0.9));
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(14px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
     }
     .album-copy strong, .album-copy span {
       display: -webkit-box;
@@ -755,15 +779,15 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       -webkit-line-clamp: 2;
       padding-right: 28px;
       color: var(--text);
-      font-size: 13.5px;
-      line-height: 1.22;
+      font-size: 13px;
+      line-height: 1.18;
       text-shadow: 0 2px 12px rgba(0,0,0,0.5);
     }
     .album-copy span {
       margin-top: 5px;
       -webkit-line-clamp: 1;
       color: var(--muted);
-      font-size: 12.5px;
+      font-size: 11.5px;
     }
     .album-more {
       position: absolute;
@@ -789,6 +813,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       left: 9px;
       right: 9px;
       bottom: 9px;
+      z-index: 4;
       display: grid;
       grid-template-columns: 1fr 1.18fr 1fr 1fr;
       align-items: center;
@@ -806,7 +831,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       border: 0;
       border-radius: 999px;
       color: rgba(248, 245, 239, 0.78);
-      background: rgba(3,4,7,0.22);
+      background: transparent;
       font-style: normal;
       font-size: 12px;
       font-weight: 900;
@@ -817,9 +842,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       height: 32px;
       color: rgba(248, 245, 239, 0.9);
       border-color: transparent;
-      background: rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.14);
       pointer-events: auto;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.09);
       font-size: 13px;
       transform: translateY(-1px);
     }
@@ -967,6 +992,11 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         white-space: nowrap;
         text-overflow: ellipsis;
       }
+      .beta-badge {
+        min-height: 18px;
+        padding: 0 7px;
+        font-size: 10px;
+      }
       .controls {
         flex-wrap: nowrap;
         justify-content: flex-end;
@@ -1030,9 +1060,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         width: var(--card-w, 132px);
       }
       .album-copy {
-        min-height: 82px;
-        margin: 0;
-        padding: 11px 9px 38px;
+        min-height: 78px;
+        padding: 11px 10px 38px;
       }
       .album-copy strong {
         font-size: 13px;
@@ -1068,7 +1097,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     <header class="topbar">
       <div class="brand">
         <small>ECHO Web Control</small>
-        <strong>Album Sea</strong>
+        <strong>Album Sea <span class="beta-badge">测试版</span></strong>
       </div>
       <div class="controls" aria-label="Playback controls">
         <button id="prevBtn" type="button" aria-label="上一首" title="上一首">&#9198;</button>
@@ -1385,28 +1414,29 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const safeTop = wide ? 112 : 94;
       const safeBottom = wide ? 42 : 112;
       const baseW = wide ? clamp(Math.round(viewportW / 8.9), 118, 150) : clamp(Math.round(viewportW / 3.8), 88, 112);
-      const copyH = wide ? 98 : 82;
+      const cardRatio = wide ? 1.42 : 1.46;
       const desktop = [
-        [0.52, 0.50, 1.06, 1.00], [0.39, 0.53, 0.98, 0.96], [0.46, 0.32, 0.90, 0.86],
-        [0.64, 0.42, 0.88, 0.80], [0.66, 0.64, 0.76, 0.68], [0.29, 0.35, 0.70, 0.58],
-        [0.28, 0.69, 0.70, 0.56], [0.52, 0.76, 0.66, 0.48], [0.76, 0.30, 0.62, 0.40],
-        [0.18, 0.49, 0.58, 0.36], [0.84, 0.56, 0.58, 0.34], [0.16, 0.25, 0.52, 0.28],
-        [0.83, 0.80, 0.52, 0.28], [0.34, 0.86, 0.52, 0.26], [0.06, 0.70, 0.48, 0.22],
-        [0.94, 0.22, 0.48, 0.22],
+        [0.52, 0.51, 1.02, 1.00], [0.37, 0.56, 0.94, 0.94], [0.45, 0.31, 0.86, 0.82],
+        [0.65, 0.42, 0.84, 0.76], [0.68, 0.67, 0.70, 0.62], [0.27, 0.35, 0.66, 0.52],
+        [0.25, 0.72, 0.64, 0.50], [0.50, 0.80, 0.60, 0.42], [0.77, 0.28, 0.58, 0.36],
+        [0.20, 0.50, 0.56, 0.29], [0.85, 0.56, 0.52, 0.29], [0.14, 0.23, 0.48, 0.24],
+        [0.84, 0.83, 0.48, 0.24], [0.34, 0.88, 0.48, 0.22], [0.06, 0.70, 0.44, 0.18],
+        [0.94, 0.22, 0.44, 0.18],
       ];
       const mobile = [
         [0.50, 0.42, 1.06, 1.00], [0.30, 0.56, 0.88, 0.74], [0.71, 0.57, 0.86, 0.72],
         [0.50, 0.74, 0.80, 0.60], [0.24, 0.28, 0.66, 0.38], [0.76, 0.30, 0.66, 0.38],
         [0.50, 0.17, 0.58, 0.30],
       ];
-      return (wide ? desktop : mobile).map((slot, index) => {
+      return (wide ? desktop : mobile).filter((slot) => slot[3] >= 0.3).map((slot, index) => {
         const size = Math.round(baseW * slot[2] + (seeded(index, 1) - 0.5) * (wide ? 12 : 8));
-        const cardH = size + copyH;
+        const ratio = cardRatio - (slot[3] < 0.55 ? 0.04 : 0);
+        const cardH = size * ratio;
         const jitterX = (seeded(index, 2) - 0.5) * (wide ? 22 : 12);
         const jitterY = (seeded(index, 3) - 0.5) * (wide ? 18 : 10);
         const x = clamp(slot[0] * viewportW - size / 2 + jitterX, wide ? -size * 0.22 : 8, viewportW - size - (wide ? -size * 0.2 : 8));
         const y = clamp(slot[1] * viewportH - cardH / 2 + jitterY, safeTop, viewportH - safeBottom - cardH);
-        return { x, y, size, opacity: slot[3], primary: index < 5, viewportW, viewportH };
+        return { x, y, centerY: slot[1] * viewportH, size, ratio, opacity: slot[3], primary: index < 5, viewportW, viewportH };
       });
     };
     const frontAlbumCount = () => {
@@ -1428,19 +1458,21 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         const x = Math.round(world.width / 2 + slot.x - slot.viewportW / 2);
         const y = Math.round(world.height / 2 + slot.y - slot.viewportH / 2);
         const size = slot.size;
+        const ratio = slot.ratio;
         const tilt = (seeded(index, 4) - 0.5) * (slot.primary ? 2.2 : 4.6);
         const scale = slot.primary ? 1 + seeded(index, 6) * 0.04 : 0.96 + seeded(index, 6) * 0.08;
         const opacity = clamp(slot.opacity + seeded(index, 5) * 0.04, 0.2, 1);
         const depthY = Math.round((seeded(index, 7) - 0.5) * (slot.primary ? 10 : 24));
         const depthZ = slot.primary ? 86 + Math.round(seeded(index, 13) * 42) : -18 + Math.round(seeded(index, 13) * 58);
-        const z = slot.primary ? 120 + Math.round(seeded(index, 11) * 20) : 44 + Math.round(slot.opacity * 52) + Math.round(seeded(index, 11) * 12);
+        const z = 70 + Math.round((slot.centerY / slot.viewportH) * 92) + (slot.primary ? 10 : 0) + Math.round(seeded(index, 11) * 10);
         const bright = slot.primary ? 1.04 : 0.9 + slot.opacity * 0.13;
         const sat = slot.primary ? 1.1 : 0.92 + slot.opacity * 0.12;
         const shadow = slot.primary ? 0.48 : 0.24 + slot.opacity * 0.14;
         const sparkle = slot.primary ? 0.76 + seeded(index, 14) * 0.34 : 0.34 + seeded(index, 14) * 0.3;
         const pitch = (seeded(index, 15) - 0.5) * (slot.primary ? 1.5 : 3.4);
         const yaw = (seeded(index, 16) - 0.5) * (slot.primary ? 2.2 : 5);
-        return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
+        const blur = slot.primary ? 0 : 0.35;
+        return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--card-ratio:' + ratio.toFixed(2) + ';--card-blur:' + blur + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
       }
 
       const frontCount = frontAlbumCount();
@@ -1472,7 +1504,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const sparkle = far ? 0.28 + seeded(index, 12) * 0.22 : 0.38 + seeded(index, 12) * 0.26;
       const pitch = far ? (seeded(index, 14) - 0.5) * 5 : (seeded(index, 14) - 0.5) * 2;
       const yaw = far ? (seeded(index, 16) - 0.5) * 7 : (seeded(index, 16) - 0.5) * 3;
-      return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
+      const ratio = far ? 1.38 : 1.42;
+      const blur = far ? 2.2 : 1.2;
+      return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--card-ratio:' + ratio.toFixed(2) + ';--card-blur:' + blur + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
     };
     const renderAlbums = () => {
       updateLayout();

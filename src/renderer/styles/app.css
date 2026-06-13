@@ -4682,6 +4682,7 @@
 
 .plugins-page {
   gap: 18px;
+  padding-bottom: 128px;
   position: relative;
 }
 
@@ -4781,14 +4782,14 @@
 }
 
 .plugins-layout {
+  align-items: start;
   display: grid;
   gap: 16px;
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   min-height: 0;
 }
 
-.plugins-list,
-.plugin-detail {
+.plugins-list {
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(122, 143, 166, 0.22);
   border-radius: 8px;
@@ -4859,15 +4860,20 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
   min-width: 0;
-  padding: 16px;
+  padding: 0;
 }
 
 .plugin-detail-head {
   align-items: flex-start;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(122, 143, 166, 0.22);
+  border-radius: 8px;
   display: flex;
   gap: 12px;
   justify-content: space-between;
+  padding: 14px;
 }
 
 .plugin-detail-head h2 {
@@ -4912,11 +4918,13 @@
 
 .plugin-security-panel,
 .plugin-activity-panel {
-  border-top: 1px solid rgba(122, 143, 166, 0.22);
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(122, 143, 166, 0.22);
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 14px;
+  padding: 14px;
 }
 
 .plugin-security-panel header,
@@ -4931,7 +4939,7 @@
 .plugin-activity-grid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .plugin-security-grid span,
@@ -4944,6 +4952,7 @@
   gap: 8px;
   min-height: 42px;
   min-width: 0;
+  overflow-wrap: anywhere;
   padding: 9px 10px;
 }
 
@@ -5006,11 +5015,13 @@
 .plugin-command-list,
 .plugin-panel-preview,
 .plugin-log-list {
-  border-top: 1px solid rgba(122, 143, 166, 0.22);
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(122, 143, 166, 0.22);
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 14px;
+  padding: 14px;
 }
 
 .plugin-command-list header,

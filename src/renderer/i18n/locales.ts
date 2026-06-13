@@ -1621,6 +1621,8 @@ export type TranslationKey =
   | 'nowPlaying.title'
   | 'route.liked.description'
   | 'route.liked.label'
+  | 'route.listeningRoom.description'
+  | 'route.listeningRoom.label'
   | 'route.lyrics.description'
   | 'route.lyrics.label'
   | 'route.lyricsSettings.description'
@@ -6663,6 +6665,8 @@ const zhCN: TranslationMap = {
   'nowPlaying.title': '正在播放',
   'route.liked.description': '收藏曲目。',
   'route.liked.label': '喜欢',
+  'route.listeningRoom.description': 'ECHO 的沉浸播放主舞台。',
+  'route.listeningRoom.label': '播放室',
   'route.lyrics.description': '歌词与沉浸播放。',
   'route.lyrics.label': '歌词',
   'route.lyricsSettings.description': '歌词偏好设置。',
@@ -8498,6 +8502,8 @@ const zhTW: TranslationMap = {
   ...settingsAboutDangerZhTW,
   ...settingsIntegrationsExtraZhTW,
   ...songsPageZhTW,
+  'route.listeningRoom.description': 'ECHO 的沉浸播放主舞台。',
+  'route.listeningRoom.label': '播放室',
   'app.window.restore': '還原',
   'app.window.fullscreen': '全螢幕',
   'app.window.exitFullscreen': '退出全螢幕',
@@ -11535,6 +11541,8 @@ const jaJP: TranslationMap = {
   ...settingsAboutDangerJaJP,
   ...settingsIntegrationsExtraJaJP,
   ...songsPageJaJP,
+  'route.listeningRoom.description': 'ECHO の没入型再生ステージ。',
+  'route.listeningRoom.label': 'リスニングルーム',
   'albumTagEditor.action.applyToForm': 'フォームに適用',
   'albumTagEditor.action.cancel': 'キャンセル',
   'albumTagEditor.action.chooseCover': 'カバーを選択',
@@ -14650,6 +14658,8 @@ const enUS: TranslationMap = {
   ...settingsAboutDangerEnUS,
   ...settingsIntegrationsExtraEnUS,
   ...songsPageEnUS,
+  'route.listeningRoom.description': 'ECHO immersive playback stage.',
+  'route.listeningRoom.label': 'Listening Room',
   'albumTagEditor.action.applyToForm': 'Apply to form',
   'albumTagEditor.action.cancel': 'Cancel',
   'albumTagEditor.action.chooseCover': 'Choose cover',

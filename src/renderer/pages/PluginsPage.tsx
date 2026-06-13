@@ -8,6 +8,8 @@ import type {
   PluginPanelBridgeRequest,
   PluginPanelBridgeResponse,
   PluginPermission,
+  PluginPermissionAvailability,
+  PluginPermissionRisk,
   PluginSettingsPatch,
   PluginSummary,
 } from '../../shared/types/plugins';
@@ -47,6 +49,7 @@ const pluginPageTextZhCN = {
   'empty.noSelection.title': '选择插件',
   'empty.unavailable.description': '请在 ECHO Next 桌面端打开插件管理。',
   'empty.unavailable.title': '插件系统不可用',
+  'error.disabledByHost': '这个插件连续启动失败，ECHO 已自动隔离。修复插件文件后可手动重新启用。',
   'example.command.description': '注册一个手动执行的工具命令。',
   'example.command.label': '命令工具',
   'example.library.description': '读取曲库摘要，适合整理类脚本起步。',
@@ -63,17 +66,18 @@ const pluginPageTextZhCN = {
   'header.title': '插件',
   'label.api': 'API v{version}',
   'label.apiWithMin': 'API v{version} / 最低 ECHO {minVersion}',
-  'label.coverProviders': '封面 provider',
-  'label.lyricsProviders': '歌词 provider',
-  'label.metadataProviders': '元数据 provider',
-  'label.networkOff': 'Network API 关闭',
-  'label.networkOn': 'Network API 已开启',
+  'label.coverProviders': '封面提供器',
+  'label.lyricsProviders': '歌词提供器',
+  'label.metadataProviders': '元数据提供器',
+  'label.networkOff': '网络 API 关闭',
+  'label.networkOn': '网络 API 已开启',
   'label.noLogs': '暂无日志。',
   'label.none': '暂无',
   'label.panelSandboxed': '面板沙盒隔离',
   'label.noPanelScript': '无面板脚本',
   'label.pluginSettings': '插件设置',
-  'label.sourceProviders': '音源 provider',
+  'label.panelTitle': '{name} 面板',
+  'label.sourceProviders': '音源提供器',
   'label.themePresets': '主题预设',
   'message.cancelledExport': '已取消导出。',
   'message.cancelledImport': '已取消导入。',
@@ -125,17 +129,17 @@ const pluginPageTextZhCN = {
   'section.pluginList': '插件列表',
   'section.security': '安全边界',
   'security.commandCount': '{count} 个命令',
-  'security.coverAndLyricsProviders': '{lyrics} 个歌词 / {cover} 个封面 provider',
+  'security.coverAndLyricsProviders': '{lyrics} 个歌词 / {cover} 个封面提供器',
   'security.highRisk.none': '无高风险权限',
   'security.highRisk.some': '{count} 个高风险权限',
   'security.limited.none': '无受限权限',
   'security.limited.some': '{count} 个受限权限',
-  'security.metadataProviders': '{count} 个元数据 provider',
+  'security.metadataProviders': '{count} 个元数据提供器',
   'security.permissionTrust': '{trusted}/{requested} 权限已信任',
   'security.pluginSettings': '{count} 个插件设置',
   'security.reserved.none': '无预留权限',
   'security.reserved.some': '{count} 个预留权限',
-  'security.sourceProviders': '{count} 个音源 provider',
+  'security.sourceProviders': '{count} 个音源提供器',
   'security.themePresets': '{count} 个主题预设',
   'status.disabled': '未启用',
   'status.error': '异常',
@@ -180,6 +184,7 @@ const pluginPageTextEnUS: Record<PluginPageTextKey, string> = {
   'empty.noSelection.title': 'Select a plugin',
   'empty.unavailable.description': 'Open plugin management in the ECHO Next desktop app.',
   'empty.unavailable.title': 'Plugin system unavailable',
+  'error.disabledByHost': 'This plugin failed to start repeatedly, so ECHO isolated it automatically. Fix the plugin files, then enable it again manually.',
   'example.command.description': 'Register a manually executed tool command.',
   'example.command.label': 'Command tool',
   'example.library.description': 'Read library summaries, useful for organizer scripts.',
@@ -206,6 +211,7 @@ const pluginPageTextEnUS: Record<PluginPageTextKey, string> = {
   'label.panelSandboxed': 'Panel sandboxed',
   'label.noPanelScript': 'No panel script',
   'label.pluginSettings': 'Plugin settings',
+  'label.panelTitle': '{name} panel',
   'label.sourceProviders': 'source providers',
   'label.themePresets': 'theme presets',
   'message.cancelledExport': 'Export cancelled.',
@@ -341,16 +347,23 @@ const hasFileDrag = (dataTransfer: DataTransfer): boolean =>
 const firstEchoPackageFile = (files: FileList | null | undefined): File | null =>
   Array.from(files ?? []).find((file) => file.name.toLowerCase().endsWith(echoPackageExtension)) ?? null;
 
-const getPermissionLabel = (permission: PluginPermission): string => pluginPermissionDescriptors[permission]?.label ?? permission;
-
-const formatPermissionForConfirm = (permission: PluginPermission): string => {
+const getPermissionCopy = (permission: PluginPermission, t: PluginPageTranslate): { label: string; description: string } => {
+  const keys = permissionTextKeys[permission];
   const descriptor = pluginPermissionDescriptors[permission];
+  return keys
+    ? { label: t(keys.labelKey), description: t(keys.descriptionKey) }
+    : { label: descriptor?.label ?? permission, description: descriptor?.description ?? permission };
+};
+
+const formatPermissionForConfirm = (permission: PluginPermission, t: PluginPageTranslate): string => {
+  const descriptor = pluginPermissionDescriptors[permission];
+  const permissionCopy = getPermissionCopy(permission, t);
   return descriptor
-    ? `- ${descriptor.label}（${permissionRiskLabels[descriptor.risk]}，${permissionAvailabilityLabels[descriptor.availability]}）：${descriptor.description}`
+    ? `- ${permissionCopy.label} (${t(permissionRiskLabelKeys[descriptor.risk])}, ${t(permissionAvailabilityLabelKeys[descriptor.availability])}): ${permissionCopy.description}`
     : `- ${permission}`;
 };
 
-const formatPluginTime = (value: string | null): string => (value ? new Date(value).toLocaleString() : '暂无');
+const formatPluginTime = (value: string | null, t: PluginPageTranslate): string => (value ? new Date(value).toLocaleString() : t('time.none'));
 
 const pluginPanelActionSet = new Set<PluginPanelBridgeAction>(pluginPanelBridgeActions);
 
@@ -385,23 +398,32 @@ const postPanelResponse = (target: Window, response: PluginPanelBridgeResponse):
   target.postMessage(response, '*');
 };
 
-const StatusPill = ({ plugin }: { plugin: PluginSummary }): JSX.Element => {
-  const label = plugin.disabledByHost ? '已隔离' : plugin.error ? '异常' : plugin.status === 'running' ? '运行中' : plugin.enabled ? '已启用' : '未启用';
+const StatusPill = ({ plugin, t }: { plugin: PluginSummary; t: PluginPageTranslate }): JSX.Element => {
+  const label = plugin.disabledByHost
+    ? t('status.isolated')
+    : plugin.error
+      ? t('status.error')
+      : plugin.status === 'running'
+        ? t('status.running')
+        : plugin.enabled
+          ? t('status.enabled')
+          : t('status.disabled');
   return <span className="plugin-status-pill" data-status={plugin.disabledByHost ? 'isolated' : plugin.error ? 'error' : plugin.status}>{label}</span>;
 };
 
-const PermissionList = ({ plugin }: { plugin: PluginSummary }): JSX.Element => (
+const PermissionList = ({ plugin, t }: { plugin: PluginSummary; t: PluginPageTranslate }): JSX.Element => (
   <div className="plugin-permissions">
     {plugin.permissions.length === 0 ? (
-      <span>无需额外权限</span>
+      <span>{t('permissions.none')}</span>
     ) : (
       plugin.permissions.map((permission) => {
         const descriptor = pluginPermissionDescriptors[permission];
         const trusted = plugin.trustedPermissions.includes(permission);
+        const permissionCopy = getPermissionCopy(permission, t);
         return (
-          <span key={permission} data-risk={descriptor?.risk ?? 'medium'} title={descriptor?.description ?? permission}>
-            {getPermissionLabel(permission)}
-            <em>{descriptor ? permissionAvailabilityLabels[descriptor.availability] : trusted ? '已信任' : '未信任'} · {trusted ? '已信任' : '未信任'}</em>
+          <span key={permission} data-risk={descriptor?.risk ?? 'medium'} title={permissionCopy.description}>
+            {permissionCopy.label}
+            <em>{descriptor ? t(permissionAvailabilityLabelKeys[descriptor.availability]) : trusted ? t('permissions.trusted') : t('permissions.untrusted')} · {trusted ? t('permissions.trusted') : t('permissions.untrusted')}</em>
           </span>
         );
       })
@@ -409,7 +431,7 @@ const PermissionList = ({ plugin }: { plugin: PluginSummary }): JSX.Element => (
   </div>
 );
 
-const SecurityOverview = ({ plugin }: { plugin: PluginSummary }): JSX.Element => {
+const SecurityOverview = ({ plugin, t }: { plugin: PluginSummary; t: PluginPageTranslate }): JSX.Element => {
   const highRiskCount = plugin.security.highRiskPermissions.length;
   const reservedCount = plugin.security.reservedPermissions.length;
   const limitedCount = plugin.security.limitedPermissions.length;
@@ -417,104 +439,111 @@ const SecurityOverview = ({ plugin }: { plugin: PluginSummary }): JSX.Element =>
     <section className="plugin-security-panel">
       <header>
         <ShieldCheck size={17} />
-        <strong>安全边界</strong>
+        <strong>{t('section.security')}</strong>
       </header>
       <div className="plugin-security-grid">
         <span>
           <LockKeyhole size={16} />
-          {plugin.security.trustedPermissionCount}/{plugin.security.requestedPermissionCount} 权限已信任
+          {t('security.permissionTrust', { trusted: plugin.security.trustedPermissionCount, requested: plugin.security.requestedPermissionCount })}
         </span>
         <span data-risk={highRiskCount > 0 ? 'high' : 'low'}>
           <AlertTriangle size={16} />
-          {highRiskCount > 0 ? `${highRiskCount} 个高风险权限` : '无高风险权限'}
+          {highRiskCount > 0 ? t('security.highRisk.some', { count: highRiskCount }) : t('security.highRisk.none')}
         </span>
         <span data-risk={reservedCount > 0 ? 'medium' : 'low'}>
           <LockKeyhole size={16} />
-          {reservedCount > 0 ? `${reservedCount} 个预留权限` : '无预留权限'}
+          {reservedCount > 0 ? t('security.reserved.some', { count: reservedCount }) : t('security.reserved.none')}
         </span>
         <span data-risk={limitedCount > 0 ? 'medium' : 'low'}>
           <ShieldCheck size={16} />
-          {limitedCount > 0 ? `${limitedCount} 个受限权限` : '无受限权限'}
+          {limitedCount > 0 ? t('security.limited.some', { count: limitedCount }) : t('security.limited.none')}
         </span>
         <span>
           <Eye size={16} />
-          {plugin.security.sandboxedPanel ? '面板沙盒隔离' : '无面板脚本'}
+          {plugin.security.sandboxedPanel ? t('label.panelSandboxed') : t('label.noPanelScript')}
         </span>
         <span>
           <TerminalSquare size={16} />
-          {plugin.security.commandCount} 个命令
+          {t('security.commandCount', { count: plugin.security.commandCount })}
         </span>
         <span>
           <Code2 size={16} />
-          {plugin.security.metadataProviderCount} 个元数据 provider
+          {t('security.metadataProviders', { count: plugin.security.metadataProviderCount })}
         </span>
         <span>
           <Code2 size={16} />
-          {plugin.security.sourceProviderCount} 个音源 provider
+          {t('security.sourceProviders', { count: plugin.security.sourceProviderCount })}
         </span>
         <span>
           <Code2 size={16} />
-          API v{plugin.apiVersion}{plugin.compatibility.minEchoVersion ? ` / min ${plugin.compatibility.minEchoVersion}` : ''}
+          {plugin.compatibility.minEchoVersion
+            ? t('label.apiWithMin', { version: plugin.apiVersion, minVersion: plugin.compatibility.minEchoVersion })
+            : t('label.api', { version: plugin.apiVersion })}
         </span>
         <span data-risk={plugin.security.networkEnabled ? 'high' : 'low'}>
           <LockKeyhole size={16} />
-          {plugin.security.networkEnabled ? 'Network API enabled' : 'Network API off'}
+          {plugin.security.networkEnabled ? t('label.networkOn') : t('label.networkOff')}
         </span>
         <span>
           <Code2 size={16} />
-          {plugin.security.lyricsProviderCount} lyrics / {plugin.security.coverProviderCount} cover providers
+          {t('security.coverAndLyricsProviders', { lyrics: plugin.security.lyricsProviderCount, cover: plugin.security.coverProviderCount })}
         </span>
         <span>
           <Code2 size={16} />
-          {plugin.security.themePresetCount} theme presets
+          {t('security.themePresets', { count: plugin.security.themePresetCount })}
         </span>
         <span>
           <Code2 size={16} />
-          {plugin.security.settingCount} plugin settings
+          {t('security.pluginSettings', { count: plugin.security.settingCount })}
         </span>
       </div>
-      <PermissionList plugin={plugin} />
+      <PermissionList plugin={plugin} t={t} />
     </section>
   );
 };
 
-const ActivityOverview = ({ plugin }: { plugin: PluginSummary }): JSX.Element => (
+const ActivityOverview = ({ plugin, t }: { plugin: PluginSummary; t: PluginPageTranslate }): JSX.Element => (
   <section className="plugin-activity-panel">
     <header>
       <Activity size={17} />
-      <strong>这个插件干了什么</strong>
+      <strong>{t('section.activity')}</strong>
     </header>
     <div className="plugin-activity-grid">
       <span>
         <strong>{plugin.activity.commandRunCount}</strong>
-        命令执行
-        <em>{formatPluginTime(plugin.activity.lastCommandAt)}</em>
+        {t('activity.command')}
+        <em>{formatPluginTime(plugin.activity.lastCommandAt, t)}</em>
       </span>
       <span>
         <strong>{plugin.activity.eventDispatchCount}</strong>
-        事件接收
-        <em>{formatPluginTime(plugin.activity.lastEventAt)}</em>
+        {t('activity.event')}
+        <em>{formatPluginTime(plugin.activity.lastEventAt, t)}</em>
       </span>
       <span>
         <strong>{plugin.activity.storageWriteCount}</strong>
-        插件存储写入
-        <em>{formatPluginTime(plugin.activity.lastStorageWriteAt)}</em>
+        {t('activity.storageWrite')}
+        <em>{formatPluginTime(plugin.activity.lastStorageWriteAt, t)}</em>
       </span>
       <span>
         <strong>{plugin.activity.settingsWriteCount}</strong>
-        设置写入
-        <em>{formatPluginTime(plugin.activity.lastSettingsWriteAt)}</em>
+        {t('activity.settingsWrite')}
+        <em>{formatPluginTime(plugin.activity.lastSettingsWriteAt, t)}</em>
       </span>
       <span data-risk={plugin.activity.errorCount > 0 ? 'high' : 'low'}>
         <strong>{plugin.activity.errorCount}</strong>
-        错误
-        <em>{formatPluginTime(plugin.activity.lastErrorAt)}</em>
+        {t('activity.error')}
+        <em>{formatPluginTime(plugin.activity.lastErrorAt, t)}</em>
       </span>
     </div>
   </section>
 );
 
 export const PluginsPage = (): JSX.Element => {
+  const i18n = useOptionalI18n();
+  const localText = pluginPageTexts[i18n?.locale ?? 'zh-CN'] ?? pluginPageTextZhCN;
+  const t = useCallback((key: PluginPageTextKey, options?: PluginPageTranslateOptions): string => {
+    return interpolatePluginText(localText[key], options);
+  }, [localText]);
   const pluginsApi = getPluginsBridge();
   const panelFrameRef = useRef<HTMLIFrameElement | null>(null);
   const [plugins, setPlugins] = useState<PluginSummary[]>([]);
@@ -549,8 +578,8 @@ export const PluginsPage = (): JSX.Element => {
   }, [pluginsApi]);
 
   useEffect(() => {
-    void refresh().catch((error) => setMessage(formatError(error)));
-  }, [refresh]);
+    void refresh().catch((error) => setMessage(formatError(error, t('fallback.error'))));
+  }, [refresh, t]);
 
   useEffect(() => {
     void refreshLogs(selectedPlugin?.id).catch(() => undefined);
@@ -578,12 +607,12 @@ export const PluginsPage = (): JSX.Element => {
         window.dispatchEvent(new Event('plugins:changed'));
         await refreshLogs(selectedPlugin?.id);
       } catch (error) {
-        setMessage(formatError(error));
+        setMessage(formatError(error, t('fallback.error')));
       } finally {
         setBusyAction(null);
       }
     },
-    [refresh, refreshLogs, selectedPlugin?.id],
+    [refresh, refreshLogs, selectedPlugin?.id, t],
   );
 
   const importPackage = useCallback((source?: File): void => {
@@ -596,21 +625,21 @@ export const PluginsPage = (): JSX.Element => {
         setMessage(null);
         const result = await pluginsApi.importPackage(source);
         if (!result) {
-          setMessage('已取消导入。');
+          setMessage(t('message.cancelledImport'));
           return;
         }
         setSelectedPluginId(result.pluginId);
-        setMessage(`已导入插件包：${result.pluginId}`);
+        setMessage(t('message.imported', { pluginId: result.pluginId }));
         await refresh();
         window.dispatchEvent(new Event('plugins:changed'));
         await refreshLogs(result.pluginId);
       } catch (error) {
-        setMessage(formatError(error));
+        setMessage(formatError(error, t('fallback.error')));
       } finally {
         setBusyAction(null);
       }
     })();
-  }, [pluginsApi, refresh, refreshLogs]);
+  }, [pluginsApi, refresh, refreshLogs, t]);
 
   const handleImportPackage = (): void => {
     importPackage();
@@ -650,12 +679,12 @@ export const PluginsPage = (): JSX.Element => {
 
     const file = firstEchoPackageFile(event.dataTransfer.files);
     if (!file) {
-      setMessage('请拖入 .echo 插件包。');
+      setMessage(t('message.invalidDrop'));
       return;
     }
 
     importPackage(file);
-  }, [busyAction, importPackage]);
+  }, [busyAction, importPackage, t]);
 
   const handleExportPackage = (plugin: PluginSummary): void => {
     if (!pluginsApi) {
@@ -666,10 +695,10 @@ export const PluginsPage = (): JSX.Element => {
         setBusyAction(`export:${plugin.id}`);
         setMessage(null);
         const target = await pluginsApi.exportPackage(plugin.id);
-        setMessage(target ? `已导出插件包：${target}` : '已取消导出。');
+        setMessage(target ? t('message.exported', { target }) : t('message.cancelledExport'));
         await refreshLogs(plugin.id);
       } catch (error) {
-        setMessage(formatError(error));
+        setMessage(formatError(error, t('fallback.error')));
       } finally {
         setBusyAction(null);
       }
@@ -680,14 +709,14 @@ export const PluginsPage = (): JSX.Element => {
     if (!pluginsApi?.delete) {
       return;
     }
-    const confirmed = window.confirm(`删除插件“${plugin.name}”？\n\n这会停用插件并删除插件目录：\n${plugin.directory}\n\n此操作不会删除音乐文件。`);
+    const confirmed = window.confirm(t('confirm.delete', { name: plugin.name, directory: plugin.directory }));
     if (!confirmed) {
       return;
     }
     void runAction(
       `delete:${plugin.id}`,
       () => pluginsApi.delete(plugin.id),
-      `已删除插件 ${plugin.name}`,
+      t('message.deleted', { name: plugin.name }),
     );
   };
 
@@ -696,22 +725,22 @@ export const PluginsPage = (): JSX.Element => {
       return;
     }
     const permissionText = plugin.permissions.length
-      ? plugin.permissions.map(formatPermissionForConfirm).join('\n')
-      : '无需额外权限';
+      ? plugin.permissions.map((permission) => formatPermissionForConfirm(permission, t)).join('\n')
+      : t('permissions.none');
     const highRiskText = plugin.security.highRiskPermissions.length > 0
-      ? '\n\n包含高风险权限，请确认插件来源可信。'
+      ? t('confirm.enable.highRisk')
       : '';
     const reservedText = plugin.security.reservedPermissions.length > 0 || plugin.security.limitedPermissions.length > 0
-      ? '\n\n部分权限在 v1 只是预留或受限能力，启用不会额外开放 Node、Electron、SQLite、主界面 DOM 或音频热路径。'
+      ? t('confirm.enable.reserved')
       : '';
-    const confirmed = window.confirm(`启用插件「${plugin.name}」？\n\n请求权限：\n${permissionText}${highRiskText}${reservedText}\n\n插件会在主进程受控沙盒和面板 iframe 沙盒中运行，连续启动失败会自动隔离。`);
+    const confirmed = window.confirm(t('confirm.enable', { name: plugin.name, permissions: permissionText, highRisk: highRiskText, reserved: reservedText }));
     if (!confirmed) {
       return;
     }
     void runAction(
       `enable:${plugin.id}`,
       () => pluginsApi.enable({ pluginId: plugin.id, trustedPermissions: plugin.permissions }),
-      `已启用 ${plugin.name}`,
+      t('message.enabled', { name: plugin.name }),
     );
   };
 
@@ -719,7 +748,7 @@ export const PluginsPage = (): JSX.Element => {
     if (!pluginsApi) {
       return;
     }
-    void runAction(`example:${kind}`, () => pluginsApi.createExample(kind), '已创建示例插件，可打开目录编辑。');
+    void runAction(`example:${kind}`, () => pluginsApi.createExample(kind), t('message.createdExample'));
   };
 
   const handleRunCommand = (plugin: PluginSummary, commandId: string): void => {
@@ -729,7 +758,7 @@ export const PluginsPage = (): JSX.Element => {
     void runAction(
       `command:${plugin.id}:${commandId}`,
       () => pluginsApi.runCommand({ pluginId: plugin.id, commandId }),
-      '命令已执行，详情可查看日志。',
+      t('message.commandRan'),
     );
   };
 
@@ -743,7 +772,7 @@ export const PluginsPage = (): JSX.Element => {
         const result = await pluginsApi.setSettings(plugin.id, settingsDraft);
         setSettingsDraft(result.values);
       },
-      '插件设置已保存。',
+      t('message.settingsSaved'),
     );
   };
 
@@ -806,7 +835,7 @@ export const PluginsPage = (): JSX.Element => {
             requestId: request.requestId,
             pluginId: selectedPlugin.id,
             ok: false,
-            error: formatError(error),
+            error: formatError(error, t('fallback.error')),
           });
         }
       };
@@ -816,12 +845,12 @@ export const PluginsPage = (): JSX.Element => {
 
     window.addEventListener('message', handlePanelMessage);
     return () => window.removeEventListener('message', handlePanelMessage);
-  }, [pluginsApi, refresh, refreshLogs, selectedPlugin]);
+  }, [pluginsApi, refresh, refreshLogs, selectedPlugin, t]);
 
   if (!pluginsApi) {
     return (
       <div className="page-stack plugins-page">
-        <EmptyState icon={Code2} title="插件系统不可用" description="请在 ECHO Next 桌面端打开插件管理。" />
+        <EmptyState icon={Code2} title={t('empty.unavailable.title')} description={t('empty.unavailable.description')} />
       </div>
     );
   }
@@ -836,23 +865,23 @@ export const PluginsPage = (): JSX.Element => {
     >
       <header className="plain-page-header plugins-header">
         <div>
-          <span className="section-kicker">本地插件</span>
-          <h1>插件</h1>
-          <p>插件默认关闭。启用后只通过受控 API 读取播放、曲库和设置，不会进入音频热路径。</p>
+          <span className="section-kicker">{t('header.kicker')}</span>
+          <h1>{t('header.title')}</h1>
+          <p>{t('header.description')}</p>
           {pluginDirectory ? <small title={pluginDirectory}>{pluginDirectory}</small> : null}
         </div>
         <div className="plugins-header-actions">
           <button className="settings-action-button" type="button" onClick={() => void pluginsApi.openDirectory()}>
             <FolderOpen size={16} />
-            打开插件目录
+            {t('action.openPluginDirectory')}
           </button>
           <button className="settings-action-button" type="button" disabled={busyAction === 'import-package'} onClick={handleImportPackage}>
             <Upload size={16} />
-            导入插件包
+            {t('action.importPackage')}
           </button>
-          <button className="settings-action-button" type="button" disabled={busyAction === 'refresh'} onClick={() => void runAction('refresh', refresh, '插件列表已刷新。')}>
+          <button className="settings-action-button" type="button" disabled={busyAction === 'refresh'} onClick={() => void runAction('refresh', refresh, t('message.refreshed'))}>
             <RefreshCw size={16} />
-            刷新
+            {t('action.refresh')}
           </button>
         </div>
       </header>
@@ -860,20 +889,20 @@ export const PluginsPage = (): JSX.Element => {
       {isPackageDragging ? (
         <div className="plugins-drop-overlay" aria-hidden="true">
           <Upload size={26} />
-          <strong>释放导入 .echo 插件包</strong>
+          <strong>{t('overlay.dropPackage')}</strong>
         </div>
       ) : null}
 
-      <section className="plugin-example-grid" aria-label="示例插件">
-        {exampleLabels.map((example) => (
+      <section className="plugin-example-grid" aria-label={t('section.examples')}>
+        {exampleTextKeys.map((example) => (
           <article className="plugin-example-card" key={example.kind}>
             <PackagePlus size={18} />
             <div>
-              <strong>{example.label}</strong>
-              <span>{example.description}</span>
+              <strong>{t(example.labelKey)}</strong>
+              <span>{t(example.descriptionKey)}</span>
             </div>
             <button className="settings-action-button" type="button" disabled={busyAction === `example:${example.kind}`} onClick={() => handleCreateExample(example.kind)}>
-              新建
+              {t('action.create')}
             </button>
           </article>
         ))}
@@ -882,9 +911,9 @@ export const PluginsPage = (): JSX.Element => {
       {message ? <p className="plugins-message">{message}</p> : null}
 
       <main className="plugins-layout">
-        <section className="plugins-list" aria-label="插件列表">
+        <section className="plugins-list" aria-label={t('section.pluginList')}>
           {plugins.length === 0 ? (
-            <EmptyState icon={Code2} title="还没有插件" description="新建一个示例插件，或把插件文件夹放进插件目录。" />
+            <EmptyState icon={Code2} title={t('empty.noPlugins.title')} description={t('empty.noPlugins.description')} />
           ) : (
             plugins.map((plugin) => (
               <button
@@ -898,13 +927,13 @@ export const PluginsPage = (): JSX.Element => {
                   <strong>{plugin.name}</strong>
                   <em>{plugin.id}</em>
                 </span>
-                <StatusPill plugin={plugin} />
+                <StatusPill plugin={plugin} t={t} />
               </button>
             ))
           )}
         </section>
 
-        <section className="plugin-detail" aria-label="插件详情">
+        <section className="plugin-detail" aria-label={t('section.pluginDetail')}>
           {selectedPlugin ? (
             <>
               <div className="plugin-detail-head">
@@ -912,22 +941,22 @@ export const PluginsPage = (): JSX.Element => {
                   <h2>{selectedPlugin.name}</h2>
                   <p>{selectedPlugin.id} · v{selectedPlugin.version}</p>
                 </div>
-                <StatusPill plugin={selectedPlugin} />
+                <StatusPill plugin={selectedPlugin} t={t} />
               </div>
 
               {selectedPlugin.error ? <p className="plugins-message plugins-message--error">{selectedPlugin.error}</p> : null}
               {selectedPlugin.disabledByHost ? (
-                <p className="plugins-message plugins-message--error">这个插件连续启动失败，ECHO 已自动隔离。修复插件文件后可手动重新启用。</p>
+                <p className="plugins-message plugins-message--error">{t('error.disabledByHost')}</p>
               ) : null}
 
-              <SecurityOverview plugin={selectedPlugin} />
-              <ActivityOverview plugin={selectedPlugin} />
+              <SecurityOverview plugin={selectedPlugin} t={t} />
+              <ActivityOverview plugin={selectedPlugin} t={t} />
 
               {selectedPlugin.contributes.settings && selectedPlugin.contributes.settings.length > 0 ? (
                 <section className="plugin-activity-panel">
                   <header>
                     <Code2 size={17} />
-                    <strong>Plugin settings</strong>
+                    <strong>{t('label.pluginSettings')}</strong>
                   </header>
                   <div className="plugin-settings-list">
                     {selectedPlugin.contributes.settings.map((setting) => {
@@ -971,48 +1000,48 @@ export const PluginsPage = (): JSX.Element => {
                     })}
                   </div>
                   <button className="settings-action-button" type="button" disabled={busyAction === `settings:${selectedPlugin.id}`} onClick={() => handleSavePluginSettings(selectedPlugin)}>
-                    Save settings
+                    {t('action.saveSettings')}
                   </button>
                 </section>
               ) : null}
 
               <div className="plugin-actions">
                 {selectedPlugin.enabled ? (
-                  <button className="settings-action-button" type="button" disabled={busyAction === `disable:${selectedPlugin.id}`} onClick={() => void runAction(`disable:${selectedPlugin.id}`, () => pluginsApi.disable(selectedPlugin.id), `已停用 ${selectedPlugin.name}`)}>
+                  <button className="settings-action-button" type="button" disabled={busyAction === `disable:${selectedPlugin.id}`} onClick={() => void runAction(`disable:${selectedPlugin.id}`, () => pluginsApi.disable(selectedPlugin.id), t('message.disabled', { name: selectedPlugin.name }))}>
                     <Power size={16} />
-                    停用
+                    {t('action.disable')}
                   </button>
                 ) : (
                   <button className="settings-action-button" type="button" disabled={Boolean(selectedPlugin.error && !selectedPlugin.disabledByHost) || busyAction === `enable:${selectedPlugin.id}`} onClick={() => handleEnable(selectedPlugin)}>
                     <Power size={16} />
-                    启用
+                    {t('action.enable')}
                   </button>
                 )}
-                <button className="settings-action-button" type="button" disabled={busyAction === `reload:${selectedPlugin.id}`} onClick={() => void runAction(`reload:${selectedPlugin.id}`, () => pluginsApi.reload(selectedPlugin.id), `已重载 ${selectedPlugin.name}`)}>
+                <button className="settings-action-button" type="button" disabled={busyAction === `reload:${selectedPlugin.id}`} onClick={() => void runAction(`reload:${selectedPlugin.id}`, () => pluginsApi.reload(selectedPlugin.id), t('message.reloaded', { name: selectedPlugin.name }))}>
                   <RefreshCw size={16} />
-                  重载
+                  {t('action.reload')}
                 </button>
                 <button className="settings-action-button" type="button" onClick={() => void pluginsApi.openDirectory(selectedPlugin.id)}>
                   <FolderOpen size={16} />
-                  打开目录
+                  {t('action.openDirectory')}
                 </button>
                 <button className="settings-action-button" type="button" disabled={busyAction === `export:${selectedPlugin.id}`} onClick={() => handleExportPackage(selectedPlugin)}>
                   <Download size={16} />
-                  导出插件包
+                  {t('action.exportPackage')}
                 </button>
                 <button className="settings-danger-button" type="button" disabled={busyAction === `delete:${selectedPlugin.id}`} onClick={() => handleDeletePlugin(selectedPlugin)}>
                   <Trash2 size={16} />
-                  删除插件
+                  {t('action.delete')}
                 </button>
               </div>
 
               <div className="plugin-command-list">
                 <header>
                   <TerminalSquare size={17} />
-                  <strong>命令</strong>
+                  <strong>{t('section.commands')}</strong>
                 </header>
                 {selectedPlugin.commands.length === 0 ? (
-                  <span>这个插件还没有注册命令。</span>
+                  <span>{t('section.commands.empty')}</span>
                 ) : (
                   selectedPlugin.commands.map((command) => (
                     <button
@@ -1036,12 +1065,12 @@ export const PluginsPage = (): JSX.Element => {
                 <div className="plugin-panel-preview">
                   <header>
                     <Code2 size={17} />
-                    <strong>面板预览</strong>
+                    <strong>{t('section.panelPreview')}</strong>
                   </header>
                   <iframe
                     ref={panelFrameRef}
                     key={`${selectedPlugin.id}:${selectedPlugin.panel}`}
-                    title={`${selectedPlugin.name} panel`}
+                    title={t('label.panelTitle', { name: selectedPlugin.name })}
                     sandbox="allow-scripts"
                     src={fileUrlFromPath(selectedPlugin.panel)}
                   />
@@ -1051,13 +1080,13 @@ export const PluginsPage = (): JSX.Element => {
               <div className="plugin-log-list">
                 <header>
                   <ScrollText size={17} />
-                  <strong>日志</strong>
+                  <strong>{t('section.logs')}</strong>
                   <button className="settings-action-button" type="button" onClick={() => void refreshLogs(selectedPlugin.id)}>
-                    刷新日志
+                    {t('action.refreshLogs')}
                   </button>
                 </header>
                 {logs.length === 0 ? (
-                  <span>暂无日志。</span>
+                  <span>{t('label.noLogs')}</span>
                 ) : (
                   logs.map((log) => (
                     <p key={log.id} data-level={log.level}>
@@ -1070,7 +1099,7 @@ export const PluginsPage = (): JSX.Element => {
               </div>
             </>
           ) : (
-            <EmptyState icon={Code2} title="选择插件" description="选择左侧插件查看权限、命令、日志和面板。" />
+            <EmptyState icon={Code2} title={t('empty.noSelection.title')} description={t('empty.noSelection.description')} />
           )}
         </section>
       </main>

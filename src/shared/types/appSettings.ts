@@ -393,6 +393,7 @@ export type AppSettings = {
   lowLoadPlaybackEnhancementsEnabled?: boolean;
   homeRandomHeroTitleEnabled?: boolean;
   playerWaveformProgressEnabled?: boolean;
+  listeningRoomEnabled?: boolean;
   signalPathControlEnabled?: boolean;
   fixedVolumeEnabled?: boolean;
   gaplessPlaybackEnabled?: boolean;
