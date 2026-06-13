@@ -386,6 +386,13 @@ const installEchoBridge = (
       setAirPlayReceiverEnabled: vi.fn(),
       stopAirPlayReceiverPlayback: vi.fn(),
       onAirPlayReceiverStatus: vi.fn(() => () => undefined),
+      getWallpaperEngineBridgeStatus: vi.fn().mockResolvedValue({
+        running: true,
+        host: '127.0.0.1',
+        port: 47668,
+        url: 'http://127.0.0.1:47668',
+        eventClients: 2,
+      }),
       getEchoLinkStatus: vi.fn().mockResolvedValue(echoLinkServerStatus),
       setEchoLinkEnabled: vi.fn().mockResolvedValue(echoLinkServerStatus),
       rotateEchoLinkToken: vi.fn().mockResolvedValue({
@@ -478,6 +485,7 @@ describe('ConnectPage HQPlayer controls', () => {
     expect(bridge.connect.listDevices).not.toHaveBeenCalled();
     expect(bridge.connect.refresh).not.toHaveBeenCalled();
     expect(bridge.connect.getEchoLinkStatus).not.toHaveBeenCalled();
+    expect(bridge.connect.getWallpaperEngineBridgeStatus).not.toHaveBeenCalled();
   });
 
   it('surfaces ECHO Link pairing, web remote, and protocol health in the Command Center', async () => {
@@ -492,6 +500,52 @@ describe('ConnectPage HQPlayer controls', () => {
     expect(screen.getAllByText('192.168.1.20:26789').length).toBeGreaterThan(0);
     expect(screen.getByText('1 DLNA / 0 AirPlay / 1 HQPlayer')).toBeTruthy();
     expect(screen.getByText('最近没有连接失败')).toBeTruthy();
+  });
+
+  it('renders the Listening Room map from live Connect bridge state', async () => {
+    const bridge = installEchoBridge(hqStatus('available'), hqSettings, dlnaConnectStatus, [dlnaDevice, hqPlayerDevice]);
+    bridge.connect.getReceiverStatus.mockResolvedValue({
+      enabled: true,
+      state: 'playing',
+      advertisedName: 'ECHO Next',
+      addresses: ['192.168.1.20'],
+      currentClient: {
+        address: '192.168.1.44',
+        userAgent: 'BubbleUPnP',
+        lastSeenAt: '2026-05-21T01:02:00.000Z',
+      },
+      currentUri: 'http://192.168.1.44/song.flac',
+      metadata: null,
+      positionSeconds: 12,
+      durationSeconds: 180,
+      volume: 100,
+      error: null,
+      debugEvents: [],
+      updatedAt: '2026-05-21T01:02:00.000Z',
+    });
+
+    renderConnectPage();
+
+    const room = await screen.findByRole('region', { name: 'Listening Room map' });
+    await waitFor(() => expect(bridge.connect.getWallpaperEngineBridgeStatus).toHaveBeenCalled());
+
+    expect(room.getAttribute('data-collapsed')).toBe('true');
+    expect(within(room).queryByText('ECHO Hub')).toBeNull();
+
+    const expandButton = within(room).getByRole('button', { name: 'Expand Listening Room map' });
+    expect(expandButton.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(expandButton);
+
+    expect(expandButton.getAttribute('aria-expanded')).toBe('true');
+    expect(within(room).getByText('ECHO Hub')).toBeTruthy();
+    expect(within(room).getByText('Phone remote')).toBeTruthy();
+    expect(within(room).getByText('DLNA receiver')).toBeTruthy();
+    expect(within(room).getByText('HQPlayer')).toBeTruthy();
+    expect(within(room).getByText('Wallpaper Engine')).toBeTruthy();
+    expect(within(room).getByText('2 live visual client')).toBeTruthy();
+    expect(room.querySelector('[data-node="wallpaper"]')?.getAttribute('data-state')).toBe('active');
+    expect(room.querySelector('[data-node="outputs"]')?.getAttribute('data-state')).toBe('active');
+    expect(room.querySelector('[data-node="dlna"]')?.getAttribute('data-state')).toBe('active');
   });
 
   it('shows HQPlayer as a Connect output device and routes connection through Connect', async () => {

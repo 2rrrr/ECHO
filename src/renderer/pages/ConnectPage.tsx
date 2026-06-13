@@ -137,6 +137,34 @@ const defaultEchoLinkStatus: EchoLinkServerStatus = {
   updatedAt: new Date(0).toISOString(),
 };
 
+type WallpaperEngineBridgeStatus = {
+  running: boolean;
+  host: string;
+  port: number | null;
+  url: string | null;
+  eventClients: number;
+};
+
+type ListeningRoomNodeState = 'active' | 'online' | 'warning' | 'idle';
+
+type ListeningRoomNode = {
+  id: string;
+  state: ListeningRoomNodeState;
+  eyebrow: string;
+  title: string;
+  detail: string;
+  metric: string;
+  icon: JSX.Element;
+};
+
+const defaultWallpaperEngineBridgeStatus: WallpaperEngineBridgeStatus = {
+  running: false,
+  host: '127.0.0.1',
+  port: null,
+  url: null,
+  eventClients: 0,
+};
+
 const defaultDonatorUnlockStatus: ConnectDonatorUnlockStatus = {
   featureId: 'connect',
   pluginId: connectDonatorUnlockPluginId,
@@ -211,6 +239,7 @@ const hiddenConnectDevicesStorageKey = 'echo.connect.hiddenDevices.v1';
 const connectDeviceSectionCollapsedStorageKey = 'echo.connect.deviceSectionCollapsed.v1';
 const connectRadioPanelCollapsedStorageKey = 'echo.connect.radioPanelCollapsed.v1';
 const connectHqPlayerPanelCollapsedStorageKey = 'echo.connect.hqPlayerPanelCollapsed.v1';
+const connectListeningRoomCollapsedStorageKey = 'echo.connect.listeningRoomCollapsed.v1';
 const legacyRadioStationsStorageKey = 'echo.connect.radioStations.v1';
 const radioStationsStorageKey = 'echo.connect.radioStations.v2';
 const maxStoredRadioStations = 40;
@@ -968,6 +997,7 @@ export const ConnectPage = (): JSX.Element => {
   const [showEchoLinkToken, setShowEchoLinkToken] = useState(false);
   const [selectedEchoLinkHost, setSelectedEchoLinkHost] = useState<string | null>(null);
   const [echoLinkQrDataUrl, setEchoLinkQrDataUrl] = useState<string | null>(null);
+  const [wallpaperEngineBridgeStatus, setWallpaperEngineBridgeStatus] = useState<WallpaperEngineBridgeStatus>(defaultWallpaperEngineBridgeStatus);
   const [copiedAirPlayDebug, setCopiedAirPlayDebug] = useState(false);
   const [isAutoStartBusy, setIsAutoStartBusy] = useState(false);
   const [autoStartReceiversEnabled, setAutoStartReceiversEnabled] = useState(false);
@@ -998,6 +1028,9 @@ export const ConnectPage = (): JSX.Element => {
   );
   const [isHqPlayerPanelCollapsed, setIsHqPlayerPanelCollapsed] = useState(() =>
     readStoredBoolean(connectHqPlayerPanelCollapsedStorageKey, false),
+  );
+  const [isListeningRoomCollapsed, setIsListeningRoomCollapsed] = useState(() =>
+    readStoredBoolean(connectListeningRoomCollapsedStorageKey, true),
   );
 
   const activeDevice = useMemo(
@@ -1174,6 +1207,117 @@ export const ConnectPage = (): JSX.Element => {
     ? `${commandCenterIssues[0].source}: ${commandCenterIssues[0].detail}`
     : '最近没有连接失败';
 
+  const echoLinkRoomState: ListeningRoomNodeState = echoLinkStatus.error
+    ? 'warning'
+    : echoLinkStatus.activeMediaTokens > 0
+      ? 'active'
+      : echoLinkStatus.running
+        ? 'online'
+        : 'idle';
+  const dlnaReceiverRoomState: ListeningRoomNodeState = receiverStatus.error
+    ? 'warning'
+    : receiverStatus.state === 'playing' || receiverStatus.state === 'loading'
+      ? 'active'
+      : receiverStatus.enabled
+        ? 'online'
+        : 'idle';
+  const airPlayRoomState: ListeningRoomNodeState = airPlayReceiverStatus.error
+    ? 'warning'
+    : airPlayReceiverStatus.state === 'playing' || airPlayReceiverStatus.state === 'starting'
+      ? 'active'
+      : airPlayReceiverStatus.enabled
+        ? 'online'
+        : 'idle';
+  const hqPlayerRoomState: ListeningRoomNodeState = hqPlayerStatus?.lastError
+    ? 'warning'
+    : hqPlayerPlaybackStatus?.state === 'playing'
+      ? 'active'
+      : hqPlayerState === 'available'
+        ? 'online'
+        : hqPlayerState === 'unavailable' || hqPlayerState === 'not-configured'
+          ? 'warning'
+          : 'idle';
+  const outputRoomState: ListeningRoomNodeState = status.error
+    ? 'warning'
+    : status.deviceId
+      ? 'active'
+      : visibleDevices.length > 0
+        ? 'online'
+        : 'idle';
+  const wallpaperRoomState: ListeningRoomNodeState = wallpaperEngineBridgeStatus.eventClients > 0
+    ? 'active'
+    : wallpaperEngineBridgeStatus.running
+      ? 'online'
+      : 'idle';
+  const wallpaperEndpointLabel = wallpaperEngineBridgeStatus.url ??
+    (wallpaperEngineBridgeStatus.port === null
+      ? '127.0.0.1:47668'
+      : `${wallpaperEngineBridgeStatus.host}:${wallpaperEngineBridgeStatus.port}`);
+  const listeningRoomNodes: ListeningRoomNode[] = [
+    {
+      id: 'echo-link',
+      state: echoLinkRoomState,
+      eyebrow: 'Mobile',
+      title: 'Phone remote',
+      detail: echoLinkStatus.running ? 'Remote control available' : 'Pairing server offline',
+      metric: echoLinkStatus.diagnostics.lastPhoneConnectionAt
+        ? `Last phone ${new Date(echoLinkStatus.diagnostics.lastPhoneConnectionAt).toLocaleTimeString()}`
+        : echoLinkAddressLabel,
+      icon: <Smartphone size={19} />,
+    },
+    {
+      id: 'outputs',
+      state: outputRoomState,
+      eyebrow: 'Outputs',
+      title: status.deviceId ? 'Current output' : 'Available renderers',
+      detail: status.deviceId ? t(stateLabel[status.state]) : `${visibleDevices.length} discovered`,
+      metric: status.deviceId
+        ? `Target: ${activeTargetLabel}`
+        : `Outputs: ${lanStreamerCount} DLNA / ${airPlayOutputCount} AirPlay / ${hqPlayerOutputCount} HQPlayer`,
+      icon: <SlidersHorizontal size={19} />,
+    },
+    {
+      id: 'dlna',
+      state: dlnaReceiverRoomState,
+      eyebrow: 'Inbound',
+      title: 'DLNA receiver',
+      detail: receiverCommandLabel,
+      metric: receiverStatus.currentClient?.address ?? `${receiverStatus.addresses.length} LAN address`,
+      icon: <Radio size={19} />,
+    },
+    {
+      id: 'hqplayer',
+      state: hqPlayerRoomState,
+      eyebrow: 'External DSP',
+      title: 'HQPlayer',
+      detail: t(hqPlayerStateLabel[hqPlayerState]),
+      metric: hqPlayerPlaybackStatus?.state ? `Remote ${hqPlayerPlaybackStatus.state}` : hqPlayerEndpointLabel,
+      icon: <Cable size={19} />,
+    },
+    {
+      id: 'airplay',
+      state: airPlayRoomState,
+      eyebrow: 'Inbound',
+      title: 'AirPlay receiver',
+      detail: airPlayCommandLabel,
+      metric: airPlayReceiverStatus.currentClient?.address ?? (airPlayReceiverProtocol === 'airplay2' ? 'AirPlay 2 experimental' : 'AirPlay 1 / RAOP'),
+      icon: <Cast size={19} />,
+    },
+    {
+      id: 'wallpaper',
+      state: wallpaperRoomState,
+      eyebrow: 'Visual layer',
+      title: 'Wallpaper Engine',
+      detail: wallpaperEngineBridgeStatus.eventClients > 0
+        ? `${wallpaperEngineBridgeStatus.eventClients} live visual client`
+        : wallpaperEngineBridgeStatus.running
+          ? 'SSE bridge ready'
+          : 'Bridge offline',
+      metric: wallpaperEndpointLabel,
+      icon: <Volume2 size={19} />,
+    },
+  ];
+
   const refreshDonatorUnlockStatus = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     setIsDonatorUnlockLoading(true);
@@ -1197,6 +1341,19 @@ export const ConnectPage = (): JSX.Element => {
       setEchoLinkStatus(await connect.getEchoLinkStatus());
     } catch {
       // Keep the rest of Connect usable when running against an older bridge.
+    }
+  }, []);
+
+  const refreshWallpaperEngineBridge = useCallback(async (): Promise<void> => {
+    const getStatus = window.echo?.connect?.getWallpaperEngineBridgeStatus;
+    if (!getStatus) {
+      return;
+    }
+
+    try {
+      setWallpaperEngineBridgeStatus(await getStatus());
+    } catch {
+      // Older preload bridges simply omit the Wallpaper Engine node status.
     }
   }, []);
 
@@ -1241,6 +1398,13 @@ export const ConnectPage = (): JSX.Element => {
       // Keep Connect usable when running against an older preload bridge.
     }
   }, []);
+
+  const refreshCommandCenter = useCallback((): void => {
+    void refreshDevices();
+    void refreshEchoLink();
+    void refreshWallpaperEngineBridge();
+    void refreshHqPlayer();
+  }, [refreshDevices, refreshEchoLink, refreshHqPlayer, refreshWallpaperEngineBridge]);
 
   useEffect(() => {
     if (!selectedEchoLinkHost || echoLinkHosts.includes(selectedEchoLinkHost)) {
@@ -1331,9 +1495,7 @@ export const ConnectPage = (): JSX.Element => {
         setAirPlayReceiverProtocol(settings.airPlayReceiverProtocol === 'airplay2' ? 'airplay2' : 'airplay1');
       }
     }).catch(() => undefined);
-    void refreshDevices();
-    void refreshEchoLink();
-    void refreshHqPlayer();
+    refreshCommandCenter();
     const unsubscribe = connect.onStatus((nextStatus) => {
       setStatus(nextStatus);
       if (nextStatus.error) {
@@ -1362,7 +1524,7 @@ export const ConnectPage = (): JSX.Element => {
       unsubscribeReceiver();
       unsubscribeAirPlayReceiver();
     };
-  }, [donatorUnlockStatus.unlocked, refreshDevices, refreshEchoLink, refreshHqPlayer]);
+  }, [donatorUnlockStatus.unlocked, refreshCommandCenter]);
 
   useEffect(() => {
     if (isHqPlayerExpanded) {
@@ -1911,6 +2073,14 @@ export const ConnectPage = (): JSX.Element => {
     });
   }, []);
 
+  const toggleListeningRoomCollapsed = useCallback((): void => {
+    setIsListeningRoomCollapsed((current) => {
+      const next = !current;
+      writeStoredBoolean(connectListeningRoomCollapsedStorageKey, next);
+      return next;
+    });
+  }, []);
+
   const openPluginsForUnlock = useCallback((): void => {
     window.dispatchEvent(new Event('app:navigate:plugins'));
   }, []);
@@ -2003,7 +2173,7 @@ export const ConnectPage = (): JSX.Element => {
               <span />
             </button>
           </div>
-          <button className="settings-action-button" type="button" onClick={() => void refreshDevices()} disabled={isRefreshing}>
+          <button className="settings-action-button" type="button" onClick={refreshCommandCenter} disabled={isRefreshing}>
             {isRefreshing ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
             {t('connectPage.header.refresh')}
           </button>
@@ -2034,7 +2204,7 @@ export const ConnectPage = (): JSX.Element => {
               {copiedEchoLinkPairing ? <Check size={15} /> : <Copy size={15} />}
               手机配对
             </button>
-            <button className="settings-action-button" type="button" onClick={() => void refreshDevices()} disabled={isRefreshing}>
+            <button className="settings-action-button" type="button" onClick={refreshCommandCenter} disabled={isRefreshing}>
               {isRefreshing ? <Loader2 className="spinning-icon" size={15} /> : <RefreshCw size={15} />}
               全局刷新
             </button>
@@ -2098,6 +2268,61 @@ export const ConnectPage = (): JSX.Element => {
           <strong>{previewTitle}</strong>
           <span>{status.deviceId ? `Output / ${activeTargetLabel}` : 'No output'}</span>
           <strong>{status.state === 'idle' ? 'Standby' : t(stateLabel[status.state])}</strong>
+        </div>
+
+        <div
+          className="connect-listening-room"
+          role="region"
+          aria-label="Listening Room map"
+          data-collapsed={isListeningRoomCollapsed ? 'true' : undefined}
+        >
+          <div className="connect-listening-room__header">
+            <div>
+              <span>LISTENING ROOM</span>
+              <strong>局域网听音室地图</strong>
+            </div>
+            <div className="connect-listening-room__header-actions">
+              <small>{commandCenterRouteLabel}</small>
+              <button
+                className="connect-listening-room__toggle"
+                type="button"
+                aria-expanded={!isListeningRoomCollapsed}
+                aria-label={isListeningRoomCollapsed ? 'Expand Listening Room map' : 'Collapse Listening Room map'}
+                title={isListeningRoomCollapsed ? 'Expand Listening Room map' : 'Collapse Listening Room map'}
+                onClick={toggleListeningRoomCollapsed}
+              >
+                <ChevronDown size={16} />
+              </button>
+            </div>
+          </div>
+          {!isListeningRoomCollapsed ? (
+            <div className="connect-listening-room__canvas" data-state={commandCenterHealth}>
+              <div className="connect-listening-room__mesh" aria-hidden="true" />
+              <article className="connect-listening-room__hub" data-state={commandCenterHealth}>
+                <span className="connect-listening-room__icon">
+                  <Server size={24} />
+                </span>
+                <span>ECHO Hub</span>
+                <strong>{previewTitle}</strong>
+                <small>{commandCenterHealthLabel} / {commandCenterErrorLabel}</small>
+              </article>
+              {listeningRoomNodes.map((node) => (
+                <article
+                  className="connect-listening-room__node"
+                  data-node={node.id}
+                  data-state={node.state}
+                  key={node.id}
+                  aria-label={`Listening Room ${node.title}`}
+                >
+                  <span className="connect-listening-room__icon">{node.icon}</span>
+                  <span>{node.eyebrow}</span>
+                  <strong>{node.title}</strong>
+                  <small>{node.detail}</small>
+                  <em>{node.metric}</em>
+                </article>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="connect-command-center__issues" data-empty={commandCenterIssues.length === 0 ? 'true' : undefined}>

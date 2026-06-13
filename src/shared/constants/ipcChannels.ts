@@ -348,6 +348,7 @@ export const IpcChannels = {
   ConnectAirPlayReceiverSetEnabled: 'connect:airplay-receiver-set-enabled',
   ConnectAirPlayReceiverStopPlayback: 'connect:airplay-receiver-stop-playback',
   ConnectAirPlayReceiverStatus: 'connect:airplay-receiver-status',
+  ConnectWallpaperEngineBridgeGetStatus: 'connect:wallpaper-engine-bridge-get-status',
   HqPlayerGetSettings: 'hqplayer:get-settings',
   HqPlayerSetSettings: 'hqplayer:set-settings',
   HqPlayerGetStatus: 'hqplayer:get-status',

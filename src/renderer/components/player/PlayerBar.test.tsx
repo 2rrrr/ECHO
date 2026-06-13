@@ -560,6 +560,58 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).not.toContain('等待信号');
   });
 
+  it('shows read-only Signal Path Doctor notes for the HQPlayer popover', async () => {
+    const track = makeTrack(38, { title: 'HQPlayer Doctor Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
+    const connectStatus = hqPlayerConnectStatus(track, 'playing');
+    const hqStatus = {
+      controlInfo: {
+        product: 'HQPlayer Desktop',
+      },
+      playbackStatus: {
+        state: 'playing',
+        activeMode: 'SDM',
+        activeFilter: 'sinc-long',
+        activeShaper: 'ASDM7EC-super',
+        activeRate: 22579200,
+        activeBits: 1,
+        activeChannels: 2,
+        metadata: {
+          sampleRate: 44100,
+          bits: 16,
+          channels: 2,
+          mime: 'audio/flac',
+        },
+      },
+    } as HqPlayerStatus;
+
+    window.echo = {
+      hqPlayer: {
+        getStatus: vi.fn().mockResolvedValue(hqStatus),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AudioSignalPathPopover
+        isOpen={true}
+        status={null}
+        track={track}
+        connectStatus={connectStatus}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('Signal Path Doctor');
+    expect(dialog.textContent).not.toContain('External renderer owns the chain');
+    const doctorToggle = screen.getByRole('button', { name: 'Expand Signal Path Doctor' });
+    expect(doctorToggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(doctorToggle);
+    expect(doctorToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(dialog.textContent).toContain('External renderer owns the chain');
+    await waitFor(() => expect(dialog.textContent).toContain('HQPlayer output is reported'));
+    expect(dialog.textContent).not.toContain('Apply');
+  });
+
   it('shows enhanced signal path nodes when EQ is enabled', () => {
     const track = makeTrack(34, { title: 'EQ Signal Track', codec: 'flac', sampleRate: 96000, bitDepth: 24 });
     const status = {
@@ -569,6 +621,19 @@ describe('PlayerBar', () => {
       dspActive: true,
       eqPresetName: 'Custom',
       nativeOutputFormat: 'pcm32',
+      audioLevels: {
+        inputPeakDb: -6.4,
+        inputRmsDb: -18.2,
+        estimatedOutputPeakDb: -2.4,
+        estimatedOutputRmsDb: -15.8,
+        visualEnergy: 0.52,
+        visualTransient: 0.2,
+        visualTelemetryState: 'pcm' as const,
+        headroomDb: 2.4,
+        clipCount: 0,
+        lastClipAt: null,
+        meterSource: 'pre_native_estimated_post_dsp' as const,
+      },
     };
 
     render(
@@ -580,6 +645,19 @@ describe('PlayerBar', () => {
 
     expect(screen.getByRole('button', { name: '打开音频链路：已强化，FLAC / 96k / 24b' }).textContent).toBe('');
     const dialog = screen.getByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('Signal Path Theater');
+    expect(dialog.textContent).toContain('Live Level');
+    expect(dialog.textContent).toContain('-15.8 dB');
+    expect(dialog.textContent).toContain('PCM live level / headroom 2.4 dB / peak -2.4 dB');
+    expect(dialog.textContent).toContain('Signal Path Doctor');
+    expect(dialog.textContent).not.toContain('Headroom is tight');
+    const doctorToggle = screen.getByRole('button', { name: 'Expand Signal Path Doctor' });
+    expect(doctorToggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(doctorToggle);
+    expect(doctorToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(dialog.textContent).toContain('Headroom is tight');
+    expect(dialog.textContent).toContain('Not bit-perfect');
+    expect(dialog.textContent).toContain('Processing');
     expect(dialog.textContent).toContain('信号路径: 已强化');
     expect(dialog.textContent).toContain('参数化 EQ');
     expect(dialog.textContent).toContain('5 个频段');

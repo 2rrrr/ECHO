@@ -629,6 +629,13 @@ export type EchoApi = {
     setAirPlayReceiverEnabled: (enabled: boolean) => Promise<AirPlayReceiverStatus>;
     stopAirPlayReceiverPlayback: () => Promise<AirPlayReceiverStatus>;
     onAirPlayReceiverStatus: (handler: (status: AirPlayReceiverStatus) => void) => () => void;
+    getWallpaperEngineBridgeStatus?: () => Promise<{
+      running: boolean;
+      host: string;
+      port: number | null;
+      url: string | null;
+      eventClients: number;
+    }>;
   };
   streaming: {
     search: (request: StreamingSearchRequest) => Promise<StreamingSearchResult>;

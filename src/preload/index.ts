@@ -2234,6 +2234,7 @@ const echoApi: EchoApi = {
       ipcRenderer.on(IpcChannels.ConnectAirPlayReceiverStatus, listener);
       return () => ipcRenderer.off(IpcChannels.ConnectAirPlayReceiverStatus, listener);
     },
+    getWallpaperEngineBridgeStatus: () => ipcRenderer.invoke(IpcChannels.ConnectWallpaperEngineBridgeGetStatus),
   },
   streaming: {
     search: (request) => ipcRenderer.invoke(IpcChannels.StreamingSearch, request),

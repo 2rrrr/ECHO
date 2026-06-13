@@ -1901,6 +1901,12 @@ describe('preload SMTC API', () => {
     expect(listeners.has(IpcChannels.AppWindowFullscreenChanged)).toBe(false);
   });
 
+  it('exposes the Wallpaper Engine bridge status through Connect IPC', async () => {
+    await exposedApi!.connect.getWallpaperEngineBridgeStatus?.();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.ConnectWallpaperEngineBridgeGetStatus);
+  });
+
   it('exposes mini player window helpers through IPC', async () => {
     const handler = vi.fn();
     await exposedApi!.miniPlayer.show();

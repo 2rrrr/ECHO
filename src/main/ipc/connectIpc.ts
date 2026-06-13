@@ -7,6 +7,7 @@ import { getConnectReceiverService } from '../connect/ConnectReceiverService';
 import { getConnectService, normalizeConnectStartRequest } from '../connect/ConnectService';
 import { getEchoLinkService } from '../connect/EchoLinkService';
 import type { EchoLinkServerStatus } from '../../shared/types/echoLink';
+import { getWallpaperEngineBridgeService } from '../integrations/wallpaperEngine/getWallpaperEngineBridgeService';
 import { getConnectDonatorUnlockService } from '../plugins/ConnectDonatorUnlockService';
 
 const sendConnectStatus = (status: ConnectSessionStatus): void => {
@@ -151,6 +152,10 @@ export const registerConnectIpc = (): void => {
   ipcMain.handle(IpcChannels.ConnectAirPlayReceiverStopPlayback, (): Promise<AirPlayReceiverStatus> => {
     requireConnectDonatorUnlock();
     return airPlayReceiverService.stopPlayback();
+  });
+  ipcMain.handle(IpcChannels.ConnectWallpaperEngineBridgeGetStatus, () => {
+    requireConnectDonatorUnlock();
+    return getWallpaperEngineBridgeService().getServerStatus();
   });
   startConfiguredReceivers(receiverService, airPlayReceiverService);
 };
