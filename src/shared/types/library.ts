@@ -841,6 +841,7 @@ export type PlaybackHistoryQuery = {
   to?: string;
   completedOnly?: boolean;
   sort?: 'plays' | 'recent';
+  statsMode?: 'full' | 'activity';
 };
 
 export type StartPlaybackHistoryRequest = {

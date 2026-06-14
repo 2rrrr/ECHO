@@ -1361,7 +1361,9 @@ export class LibraryService {
   }
 
   getPlaybackStatsDashboard(query?: PlaybackHistoryQuery): PlaybackStatsDashboard {
-    const dashboard = this.store.getPlaybackStatsDashboard(query);
+    const dashboard = query?.statsMode === 'activity'
+      ? this.store.getPlaybackStatsDashboardActivity(query)
+      : this.store.getPlaybackStatsDashboard(query);
     this.rememberPlaybackStatsDashboard(query, dashboard);
     return dashboard;
   }
@@ -2410,13 +2412,11 @@ export class LibraryService {
 
   private playbackStatsDashboardCacheKey(query?: PlaybackHistoryQuery): string {
     return JSON.stringify({
-      page: query?.page ?? null,
-      pageSize: query?.pageSize ?? null,
       search: query?.search ?? null,
       from: query?.from ?? null,
       to: query?.to ?? null,
       completedOnly: query?.completedOnly ?? null,
-      sort: query?.sort ?? null,
+      statsMode: query?.statsMode ?? 'full',
     });
   }
 

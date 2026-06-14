@@ -16015,7 +16015,7 @@ html[data-theme="dark"] .history-play-count {
     "url side"
     "search side"
     "queue side";
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, clamp(220px, 34vh, 390px)) minmax(180px, 1fr);
   gap: 14px;
 }
 
@@ -16036,12 +16036,17 @@ html[data-theme="dark"] .history-play-count {
 
 .downloads-search-panel {
   grid-area: search;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .downloads-queue-panel {
   grid-area: queue;
   min-height: 0;
   align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .downloads-side {
@@ -16167,7 +16172,11 @@ html[data-theme="dark"] .history-play-count {
 
 .download-search-results {
   display: grid;
+  min-height: 0;
   gap: 9px;
+  overflow: auto;
+  padding-right: 2px;
+  overscroll-behavior: contain;
 }
 
 .download-search-result {
@@ -16517,6 +16526,7 @@ html[data-theme="dark"] .history-play-count {
       "search"
       "side"
       "queue";
+    grid-template-rows: auto minmax(0, clamp(220px, 34vh, 390px)) auto minmax(180px, 1fr);
   }
 
   .downloads-side {
@@ -16559,6 +16569,7 @@ html[data-theme="dark"] .history-play-count {
       "search"
       "side"
       "queue";
+    grid-template-rows: auto minmax(0, clamp(220px, 34vh, 390px)) auto minmax(180px, 1fr);
   }
 
   .downloads-side {

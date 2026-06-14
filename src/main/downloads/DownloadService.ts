@@ -33,6 +33,7 @@ import { getMvService } from '../mv/MvService';
 import { getAppSettings } from '../app/appSettings';
 import { fetchWithNetworkProxy } from '../network/networkFetch';
 import { buildNetworkProxyEnv, buildYtDlpProxyArgs } from '../network/proxyEnv';
+import { getDownloadFeatureUnlockService } from '../plugins/DownloadFeatureUnlockService';
 import {
   isProtectedMusicDownloadProvider,
   protectedMusicDownloadBlockedMessage,
@@ -316,7 +317,29 @@ type OsuOfficialSearchResponse = {
   beatmapsets?: unknown;
 };
 
+type CatboyBeatmapset = {
+  SetID?: unknown;
+  Artist?: unknown;
+  Title?: unknown;
+  Creator?: unknown;
+  Tags?: unknown;
+  ApprovedDate?: unknown;
+  LastUpdate?: unknown;
+  ChildrenBeatmaps?: unknown;
+};
+
+type CatboyBeatmap = {
+  TotalLength?: unknown;
+  HitLength?: unknown;
+  Playcount?: unknown;
+};
+
 type SayobotBeatmapInfoResponse = {
+  status?: unknown;
+  data?: unknown;
+};
+
+type SayobotBeatmapListResponse = {
   status?: unknown;
   data?: unknown;
 };
@@ -1261,6 +1284,106 @@ export class DownloadService extends EventEmitter {
       throw new Error('fetch is not available for osu! search');
     }
 
+    const results: DownloadSearchResult[] = [];
+    const errors: string[] = [];
+    for (const searcher of [
+      () => this.searchCatboyBeatmapsets(query, limitPerProvider),
+      () => this.searchSayobotBeatmapsets(query, limitPerProvider),
+      () => this.searchOfficialOsuBeatmapsets(query, limitPerProvider),
+    ]) {
+      try {
+        results.push(...(await searcher()));
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    const filtered = this.filterOsuSearchResults(query, results);
+    const deduped: DownloadSearchResult[] = [];
+    const seen = new Set<string>();
+    for (const result of filtered) {
+      if (seen.has(result.id)) {
+        continue;
+      }
+      seen.add(result.id);
+      deduped.push(result);
+      if (deduped.length >= limitPerProvider) {
+        break;
+      }
+    }
+
+    if (deduped.length > 0 || errors.length === 0) {
+      return deduped;
+    }
+
+    throw new Error(`osu! search failed: ${errors.join(' | ')}`);
+  }
+
+  private async searchCatboyBeatmapsets(query: string, limitPerProvider: number): Promise<DownloadSearchResult[]> {
+    const fetchRunner = this.dependencies.fetch ?? fetchWithNetworkProxy;
+    if (!fetchRunner) {
+      return [];
+    }
+
+    const url = new URL('https://catboy.best/api/search');
+    url.searchParams.set('q', query);
+
+    const response = await fetchRunner(url.toString(), {
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        referer: 'https://catboy.best/',
+        'user-agent': osuDownloadUserAgent,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Catboy HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const beatmapsets = Array.isArray(payload) ? payload : [];
+    return beatmapsets
+      .map((entry) => this.mapCatboyBeatmapset(entry))
+      .filter((entry): entry is DownloadSearchResult => Boolean(entry))
+      .slice(0, limitPerProvider * 2);
+  }
+
+  private async searchSayobotBeatmapsets(query: string, limitPerProvider: number): Promise<DownloadSearchResult[]> {
+    const fetchRunner = this.dependencies.fetch ?? fetchWithNetworkProxy;
+    if (!fetchRunner) {
+      return [];
+    }
+
+    const url = new URL('https://api.sayobot.cn/beatmaplist');
+    url.searchParams.set('0', String(Math.max(limitPerProvider * 2, 20)));
+    url.searchParams.set('1', '0');
+    url.searchParams.set('2', '4');
+    url.searchParams.set('3', query);
+
+    const response = await fetchRunner(url.toString(), {
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        referer: 'https://sayobot.cn/',
+        'user-agent': osuDownloadUserAgent,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Sayobot HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as SayobotBeatmapListResponse;
+    const beatmapsets = Array.isArray(payload.data) ? payload.data : [];
+    return beatmapsets
+      .map((entry) => this.mapSayobotSearchBeatmapset(entry))
+      .filter((entry): entry is DownloadSearchResult => Boolean(entry))
+      .slice(0, limitPerProvider * 2);
+  }
+
+  private async searchOfficialOsuBeatmapsets(query: string, limitPerProvider: number): Promise<DownloadSearchResult[]> {
+    const fetchRunner = this.dependencies.fetch ?? fetchWithNetworkProxy;
+    if (!fetchRunner) {
+      return [];
+    }
+
     const url = new URL('https://osu.ppy.sh/beatmapsets/search');
     url.searchParams.set('q', query);
 
@@ -1280,7 +1403,7 @@ export class DownloadService extends EventEmitter {
     return beatmapsets
       .map((entry) => this.mapOsuOfficialBeatmapset(entry))
       .filter((entry): entry is DownloadSearchResult => Boolean(entry))
-      .slice(0, limitPerProvider);
+      .slice(0, limitPerProvider * 2);
   }
 
   private async fetchSayobotBeatmapsetResult(beatmapsetId: string): Promise<DownloadSearchResult> {
@@ -1322,6 +1445,63 @@ export class DownloadService extends EventEmitter {
       webpageUrl: `https://osu.ppy.sh/beatmapsets/${encodeURIComponent(beatmapsetId)}`,
       viewCount: null,
       publishedAt: null,
+    };
+  }
+
+  private mapCatboyBeatmapset(entry: unknown): DownloadSearchResult | null {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+
+    const item = entry as CatboyBeatmapset;
+    const id = this.cleanPositiveNumber(item.SetID);
+    const artist = this.cleanSearchText(item.Artist);
+    const title = this.cleanSearchText(item.Title);
+    if (!id || !title) {
+      return null;
+    }
+
+    const beatmaps = Array.isArray(item.ChildrenBeatmaps) ? (item.ChildrenBeatmaps as CatboyBeatmap[]) : [];
+    const durationSeconds = this.maxPositiveNumber(
+      beatmaps.map((beatmap) => this.cleanPositiveNumber(beatmap.TotalLength) ?? this.cleanPositiveNumber(beatmap.HitLength)),
+    );
+    const viewCount = this.maxPositiveNumber(beatmaps.map((beatmap) => this.cleanPositiveNumber(beatmap.Playcount)));
+    return {
+      id: String(id),
+      provider: 'osu',
+      title: [artist, title].filter(Boolean).join(' - ') || title,
+      uploader: this.cleanSearchText(item.Creator),
+      durationSeconds,
+      thumbnailUrl: this.normalizeOsuImageUrl(null, id),
+      webpageUrl: `https://osu.ppy.sh/beatmapsets/${encodeURIComponent(String(id))}`,
+      viewCount,
+      publishedAt: this.dateFromTimestampOrIso(item.ApprovedDate) ?? this.dateFromTimestampOrIso(item.LastUpdate),
+    };
+  }
+
+  private mapSayobotSearchBeatmapset(entry: unknown): DownloadSearchResult | null {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+
+    const item = entry as SayobotBeatmapset;
+    const id = this.cleanPositiveNumber(item.sid);
+    const artist = this.cleanSearchText(item.artistU) ?? this.cleanSearchText(item.artist);
+    const title = this.cleanSearchText(item.titleU) ?? this.cleanSearchText(item.title);
+    if (!id || !title) {
+      return null;
+    }
+
+    return {
+      id: String(id),
+      provider: 'osu',
+      title: [artist, title].filter(Boolean).join(' - ') || title,
+      uploader: this.cleanSearchText(item.creator),
+      durationSeconds: null,
+      thumbnailUrl: this.normalizeOsuImageUrl(null, id),
+      webpageUrl: `https://osu.ppy.sh/beatmapsets/${encodeURIComponent(String(id))}`,
+      viewCount: this.cleanPositiveNumber(item.play_count),
+      publishedAt: this.dateFromTimestampOrIso(item.approved_date) ?? this.dateFromTimestampOrIso(item.lastupdate),
     };
   }
 
@@ -1386,6 +1566,74 @@ export class DownloadService extends EventEmitter {
         this.dateFromTimestampOrIso(item.submitted_date) ??
         this.dateFromTimestampOrIso(item.last_updated),
     };
+  }
+
+  private filterOsuSearchResults(query: string, results: DownloadSearchResult[]): DownloadSearchResult[] {
+    const terms = query
+      .toLocaleLowerCase()
+      .split(/[\s\-_/\\|()[\]{}"'`~!@#$%^&*+=:;,.?]+/u)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0 && !/^\d+$/u.test(term));
+    if (terms.length === 0) {
+      return results;
+    }
+
+    return results
+      .map((result, index) => ({
+        index,
+        result,
+        score: this.scoreOsuSearchResult(query, terms, result),
+      }))
+      .filter((item) => item.score !== null)
+      .sort((left, right) => (right.score ?? 0) - (left.score ?? 0) || left.index - right.index)
+      .map((item) => item.result);
+  }
+
+  private scoreOsuSearchResult(query: string, terms: string[], result: DownloadSearchResult): number | null {
+    const normalizedQuery = this.normalizeOsuSearchText(query);
+    const titleParts = result.title.split(' - ');
+    const artist = titleParts.length > 1 ? titleParts[0] : '';
+    const songTitle = titleParts.length > 1 ? titleParts.slice(1).join(' - ') : result.title;
+    const normalizedArtist = this.normalizeOsuSearchText(artist);
+    const normalizedTitle = this.normalizeOsuSearchText(songTitle);
+    const normalizedUploader = this.normalizeOsuSearchText(result.uploader ?? '');
+    const haystack = this.normalizeOsuSearchText([result.title, result.uploader].filter(Boolean).join(' '));
+    if (!terms.every((term) => haystack.includes(term))) {
+      return null;
+    }
+
+    let score = 0;
+    if (normalizedUploader === normalizedQuery) {
+      score += 100;
+    } else if (normalizedUploader.startsWith(`${normalizedQuery} `) || normalizedUploader.includes(` ${normalizedQuery} `)) {
+      score += 75;
+    }
+
+    if (normalizedArtist === normalizedQuery) {
+      score += 90;
+    } else if (normalizedArtist.startsWith(normalizedQuery)) {
+      score += 65;
+    }
+
+    if (normalizedTitle === normalizedQuery) {
+      score += 70;
+    } else if (normalizedTitle.startsWith(normalizedQuery)) {
+      score += 50;
+    }
+
+    if (haystack.includes(normalizedQuery)) {
+      score += 20;
+    }
+    score += Math.min(10, Math.log10(Math.max(1, result.viewCount ?? 0) + 1) * 2);
+    return score;
+  }
+
+  private normalizeOsuSearchText(value: string): string {
+    return value
+      .toLocaleLowerCase()
+      .replace(/[\s\-_/\\|()[\]{}"'`~!@#$%^&*+=:;,.?]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   private parseSearchResults(provider: YtDlpDownloadSearchProvider, stdout: string): DownloadSearchResult[] {
@@ -1714,7 +1962,13 @@ export class DownloadService extends EventEmitter {
     }
 
     try {
-      return (this.dependencies.loadAppSettings?.() ?? getAppSettings()).downloadsFeatureUnlocked === true;
+      const injectedSettings = this.dependencies.loadAppSettings?.();
+      if (injectedSettings) {
+        return injectedSettings.downloadsFeatureUnlocked === true;
+      }
+
+      return getDownloadFeatureUnlockService().getStatus().unlocked === true ||
+        getAppSettings().downloadsFeatureUnlocked === true;
     } catch {
       return false;
     }

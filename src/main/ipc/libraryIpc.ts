@@ -898,6 +898,10 @@ const normalizePlaybackHistoryQuery = (value: unknown): PlaybackHistoryQuery => 
     query.sort = input.sort;
   }
 
+  if (input.statsMode === 'full' || input.statsMode === 'activity') {
+    query.statsMode = input.statsMode;
+  }
+
   return query;
 };
 

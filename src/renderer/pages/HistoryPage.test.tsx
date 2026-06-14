@@ -317,6 +317,9 @@ describe('HistoryPage', () => {
 
     await screen.findAllByText('History pretty');
     await waitFor(() => expect(library.getPlaybackStatsDashboard).toHaveBeenCalledTimes(1));
+    expect(library.getPlaybackStatsDashboard).toHaveBeenCalledWith(expect.objectContaining({ statsMode: 'activity' }));
+    expect(vi.mocked(library.getPlaybackStatsDashboard).mock.calls[0]?.[0]).not.toHaveProperty('page');
+    expect(vi.mocked(library.getPlaybackStatsDashboard).mock.calls[0]?.[0]).not.toHaveProperty('sort');
     expect(await screen.findByText('播放统计仪表盘')).toBeTruthy();
     expect(screen.getByText('Top History Song')).toBeTruthy();
   });

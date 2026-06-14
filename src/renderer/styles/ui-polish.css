@@ -1499,6 +1499,36 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
   justify-content: start;
 }
 
+.settings-page #settings-row-mysterious-key {
+  grid-template-columns: minmax(230px, 300px) minmax(0, 520px);
+  justify-content: start;
+}
+
+.settings-page #settings-row-mysterious-key > .settings-cache-panel--download {
+  width: min(520px, 100%);
+  max-width: none;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-page #settings-row-mysterious-key .settings-input-field {
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-page #settings-row-mysterious-key .settings-input-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-page #settings-row-mysterious-key .settings-mysterious-key-accepted {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .settings-page .setting-row--package-export {
   grid-template-columns: minmax(280px, 1fr) minmax(0, 520px);
   align-items: start;
@@ -1643,11 +1673,13 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
     display: none;
   }
 
+  .settings-page #settings-row-mysterious-key,
   .settings-page .setting-row--package-export {
     grid-template-columns: 1fr;
     justify-content: stretch;
   }
 
+  .settings-page #settings-row-mysterious-key > .settings-cache-panel--download,
   .settings-page .settings-package-export-panel {
     width: 100%;
     justify-self: stretch;
@@ -1736,7 +1768,8 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
   .settings-page .setting-row,
   .settings-page .setting-row--compact-panel,
   .settings-page .setting-row--package-export,
-  .settings-page #settings-sec-shortcuts .setting-row--compact-panel {
+  .settings-page #settings-sec-shortcuts .setting-row--compact-panel,
+  .settings-page #settings-row-mysterious-key {
     width: 100%;
     grid-template-columns: 1fr;
     gap: 10px;
@@ -1748,6 +1781,7 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
   .settings-page .setting-row > :not(.setting-info),
   .settings-page .setting-row--compact-panel > :not(.setting-info),
   .settings-page .setting-row--package-export > :not(.setting-info),
+  .settings-page #settings-row-mysterious-key > .settings-cache-panel--download,
   .settings-page .settings-package-export-panel {
     width: 100%;
     justify-self: stretch;
@@ -1771,6 +1805,8 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
 
   .settings-page .settings-shortcut-control .settings-chip-row--actions,
   .settings-page .settings-package-export-panel .settings-chip-row,
+  .settings-page #settings-row-mysterious-key .settings-chip-row,
+  .settings-page #settings-row-mysterious-key .settings-mysterious-key-accepted,
   .settings-page .settings-chip-row {
     justify-content: flex-start;
   }

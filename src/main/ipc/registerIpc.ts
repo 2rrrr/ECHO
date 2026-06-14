@@ -235,7 +235,10 @@ const getFeatureSettingsOptions = (): NormalizeSettingsOptions => {
   const finalThemeUnlocked = hasProThemeUnlock();
   const downloadsFeatureUnlocked = hasDownloadsUnlock();
   setFinalThemeUnlockAvailable(finalThemeUnlocked);
-  return { finalThemeUnlocked, downloadsFeatureUnlocked };
+  return {
+    finalThemeUnlocked,
+    ...(downloadsFeatureUnlocked ? { downloadsFeatureUnlocked: true } : {}),
+  };
 };
 
 const isWindowMaximizedForChrome = (window: BrowserWindow | null): boolean =>
@@ -494,7 +497,7 @@ export const registerIpc = (): void => {
       mkdirSync(backupDirectory, { recursive: true });
       writeSettingsBackupFile(backupPath, getAppSettings());
 
-      const settings = await applyAppSettingsPatch(importedSettings, { allowCoverCacheDir: true });
+      const settings = await applyAppSettingsPatch(importedSettings, { ...getFeatureSettingsOptions(), allowCoverCacheDir: true });
       return {
         settings,
         backupPath,
@@ -549,7 +552,7 @@ export const registerIpc = (): void => {
     const currentSettings = getAppSettings();
     const imported = await importEchoUserDataBackup(result.filePaths[0]);
     const restoredSettings = preserveCurrentDataBackupTarget(imported.settings, currentSettings);
-    const settings = await applyAppSettingsPatch(restoredSettings, { allowCoverCacheDir: true });
+    const settings = await applyAppSettingsPatch(restoredSettings, { ...getFeatureSettingsOptions(), allowCoverCacheDir: true });
     const warnings =
       imported.settings.autoDataBackupEnabled === true || imported.settings.autoDataBackupDirectory
         ? [...imported.warnings, '已保留当前设备的自动备份目录，未使用备份文件里的旧目录。']

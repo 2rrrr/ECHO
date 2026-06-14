@@ -628,7 +628,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       left: var(--card-x);
       top: var(--card-y);
       width: var(--card-w, 142px);
-      z-index: var(--card-z, 1);
+      z-index: var(--display-z, var(--card-z, 1));
       height: calc(var(--card-w, 142px) * var(--card-ratio, 1.42));
       min-width: 0;
       overflow: hidden;
@@ -637,11 +637,11 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       border-radius: 18px;
       background: rgba(0,0,0,0.1);
       box-shadow: 0 15px 42px rgba(0,0,0,var(--card-shadow, 0.32));
-      transform: translate3d(0, var(--depth-y, 0), 0) rotate(var(--tilt, 0deg)) scale(var(--card-scale, 1));
-      opacity: var(--opacity, 1);
-      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1)) blur(var(--card-blur, 0px));
+      transform: translate3d(var(--focus-x, 0px), calc(var(--depth-y, 0px) + var(--focus-y, 0px)), var(--focus-z, 0px)) rotateX(var(--display-pitch, var(--pitch, 0deg))) rotateY(var(--display-yaw, var(--yaw, 0deg))) rotate(var(--tilt, 0deg)) scale(var(--display-scale, var(--card-scale, 1)));
+      opacity: var(--display-opacity, var(--opacity, 1));
+      filter: saturate(var(--display-sat, var(--card-sat, 1.05))) brightness(var(--display-bright, var(--card-bright, 1))) blur(var(--display-blur, var(--card-blur, 0px)));
       contain: layout paint style;
-      transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+      transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease, filter 180ms ease;
       backface-visibility: hidden;
     }
     .album-card::before {
@@ -672,7 +672,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .album-card:hover {
       border-color: rgba(255,255,255,0.16);
       box-shadow: 0 30px 78px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08);
-      transform: translate3d(0, calc(var(--depth-y, 0) - 10px), 0) rotate(0deg) scale(1.025);
+      transform: translate3d(var(--focus-x, 0px), calc(var(--depth-y, 0px) + var(--focus-y, 0px) - 10px), 90px) rotateX(0deg) rotateY(0deg) rotate(0deg) scale(1.04);
       filter: saturate(1.08) brightness(1.04) blur(0);
       opacity: 1;
     }
@@ -691,13 +691,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       opacity: 0.78;
     }
     .album-card[data-layer="back"] {
-      filter: saturate(calc(var(--card-sat, 1) * 0.96)) brightness(calc(var(--card-bright, 1) * 0.94)) blur(var(--card-blur, 0.8px));
+      filter: saturate(var(--display-sat, var(--card-sat, 1))) brightness(var(--display-bright, var(--card-bright, 1))) blur(var(--display-blur, var(--card-blur, 0.8px)));
     }
     .album-card[data-layer="back"] .album-copy {
       opacity: 0.86;
     }
     .album-card[data-layer="back"] .album-mini-controls {
       opacity: 0.72;
+    }
+    .album-card[data-focused="true"] .album-copy,
+    .album-card[data-focused="true"] .album-mini-controls {
+      opacity: 1;
     }
     .album-card button {
       position: relative;
@@ -868,7 +872,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .stage[data-dragging="true"] .album-card {
       transition: none;
       will-change: transform;
-      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1));
+      filter: saturate(var(--display-sat, var(--card-sat, 1.05))) brightness(var(--display-bright, var(--card-bright, 1)));
       box-shadow: 0 8px 22px rgba(0,0,0,0.24);
     }
     .stage[data-dragging="true"] .album-card::before,
@@ -1179,6 +1183,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       nowAlbumTitle: '',
       nowAlbumArtist: '',
       albumTracks: new Map(),
+      renderedCards: [],
       statusBusy: false,
     };
     const $ = (id) => document.getElementById(id);
@@ -1317,6 +1322,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     const applyPan = () => {
       $('albumSea').style.setProperty('--pan-x', state.panX + 'px');
       $('albumSea').style.setProperty('--pan-y', state.panY + 'px');
+      updateAlbumFocus();
     };
     const requestPan = () => {
       if (state.panFrame) {
@@ -1438,6 +1444,108 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       }
       return stride;
     };
+    const readStyleNumber = (card, name, fallback = 0) => {
+      const value = Number.parseFloat(card.style.getPropertyValue(name));
+      return Number.isFinite(value) ? value : fallback;
+    };
+    const createAlbumPlan = (card, index) => {
+      const w = readStyleNumber(card, '--card-w', 120);
+      const ratio = readStyleNumber(card, '--card-ratio', 1.42);
+      const scale = readStyleNumber(card, '--card-scale', 1);
+      const layer = card.dataset.layer || 'back';
+      return {
+        card,
+        index,
+        layer,
+        x: readStyleNumber(card, '--card-x', 0),
+        y: readStyleNumber(card, '--card-y', 0),
+        w,
+        h: w * ratio,
+        ratio,
+        baseScale: scale,
+        baseOpacity: readStyleNumber(card, '--opacity', 1),
+        baseBlur: readStyleNumber(card, '--card-blur', 0),
+        baseZ: readStyleNumber(card, '--card-z', 1),
+        baseBright: readStyleNumber(card, '--card-bright', 1),
+        baseSat: readStyleNumber(card, '--card-sat', 1),
+        basePitch: readStyleNumber(card, '--pitch', 0),
+        baseYaw: readStyleNumber(card, '--yaw', 0),
+        collisionScale: scale * (layer === 'front' ? 1.18 : 1.2),
+      };
+    };
+    const applyAlbumPlan = (plan) => {
+      plan.card.style.setProperty('--card-x', Math.round(plan.x) + 'px');
+      plan.card.style.setProperty('--card-y', Math.round(plan.y) + 'px');
+    };
+    const settleAlbumPlan = (plan, placed) => {
+      const gap = plan.layer === 'front' ? 26 : 16;
+      const pad = 10;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        let moved = false;
+        const width = plan.w * plan.collisionScale;
+        const height = plan.h * plan.collisionScale;
+        for (const other of placed) {
+          const otherWidth = other.w * other.collisionScale;
+          const otherHeight = other.h * other.collisionScale;
+          const dx = plan.x + plan.w / 2 - other.x - other.w / 2;
+          const dy = plan.y + plan.h / 2 - other.y - other.h / 2;
+          const overlapX = (width + otherWidth) / 2 + gap - Math.abs(dx);
+          const overlapY = (height + otherHeight) / 2 + gap - Math.abs(dy);
+          if (overlapX <= 0 || overlapY <= 0) {
+            continue;
+          }
+          const signX = dx === 0 ? (seeded(plan.index, 24) > 0.5 ? 1 : -1) : Math.sign(dx);
+          const signY = dy === 0 ? (seeded(plan.index, 25) > 0.5 ? 1 : -1) : Math.sign(dy);
+          if (overlapX < overlapY) {
+            plan.x += signX * Math.min(overlapX, layout.cellW * 0.55);
+          } else {
+            plan.y += signY * Math.min(overlapY, layout.cellH * 0.55);
+          }
+          moved = true;
+        }
+        plan.x = clamp(plan.x, pad, world.width - plan.w - pad);
+        plan.y = clamp(plan.y, pad, world.height - plan.h - pad);
+        if (!moved) {
+          break;
+        }
+      }
+    };
+    const updateAlbumFocus = () => {
+      if (!state.renderedCards.length) {
+        return;
+      }
+      const wide = window.innerWidth >= 760;
+      const focusRadius = Math.max(260, Math.min(window.innerWidth, window.innerHeight) * (wide ? 0.46 : 0.54));
+      const softRadius = focusRadius * 1.45;
+      const focusX = -state.panX;
+      const focusY = -state.panY;
+      for (const meta of state.renderedCards) {
+        const dx = meta.x + meta.w / 2 - focusX;
+        const dy = meta.y + meta.h / 2 - focusY;
+        const distance = Math.hypot(dx, dy);
+        const near = 1 - clamp(distance / focusRadius, 0, 1);
+        const halo = 1 - clamp(distance / softRadius, 0, 1);
+        const focus = near * near * (3 - 2 * near);
+        const displayScale = meta.baseScale * (1 + focus * (meta.layer === 'front' ? 0.12 : 0.3));
+        const displayOpacity = clamp(meta.baseOpacity + halo * (1 - meta.baseOpacity) * 0.72 + focus * 0.08, 0.12, 1);
+        const displayBlur = Math.max(0, meta.baseBlur - focus * (meta.baseBlur + 0.35));
+        const displayZ = Math.round(meta.baseZ + focus * 240 + halo * 28);
+        const displayBright = Math.min(1.12, meta.baseBright + focus * 0.14);
+        const displaySat = Math.min(1.16, meta.baseSat + focus * 0.12);
+        const flatten = 1 - focus * 0.82;
+        meta.card.style.setProperty('--display-scale', displayScale.toFixed(3));
+        meta.card.style.setProperty('--display-opacity', displayOpacity.toFixed(3));
+        meta.card.style.setProperty('--display-blur', displayBlur.toFixed(2) + 'px');
+        meta.card.style.setProperty('--display-z', String(displayZ));
+        meta.card.style.setProperty('--display-bright', displayBright.toFixed(2));
+        meta.card.style.setProperty('--display-sat', displaySat.toFixed(2));
+        meta.card.style.setProperty('--focus-y', -Math.round(focus * 14) + 'px');
+        meta.card.style.setProperty('--focus-z', Math.round(focus * 120) + 'px');
+        meta.card.style.setProperty('--display-pitch', (meta.basePitch * flatten).toFixed(2) + 'deg');
+        meta.card.style.setProperty('--display-yaw', (meta.baseYaw * flatten).toFixed(2) + 'deg');
+        meta.card.dataset.focused = focus > 0.62 ? 'true' : 'false';
+      }
+    };
     const frontSlots = () => {
       const wide = window.innerWidth >= 760;
       const viewportW = Math.max(320, window.innerWidth);
@@ -1550,12 +1658,14 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       updateLayout();
       const sea = $('albumSea');
       sea.innerHTML = '';
+      state.renderedCards = [];
       if (!state.albums.length) {
         sea.innerHTML = '<div class="empty-sea">没有找到专辑</div>';
         applyPan();
         return;
       }
       const renderedAlbums = state.albums.slice(0, maxRenderedAlbums);
+      const placedCards = [];
       renderedAlbums.forEach((album, index) => {
         const card = document.createElement('article');
         card.className = 'album-card';
@@ -1564,6 +1674,11 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         card.dataset.albumArtist = album.albumArtist || '';
         card.dataset.layer = isFrontAlbum(index) ? 'front' : 'back';
         card.style.cssText = albumStyle(index);
+        const plan = createAlbumPlan(card, index);
+        settleAlbumPlan(plan, placedCards);
+        applyAlbumPlan(plan);
+        placedCards.push(plan);
+        state.renderedCards.push(plan);
         card.innerHTML =
           '<button type="button">' +
           '<div class="album-cover">' + (album.artworkUrl ? '<img alt="" loading="lazy" decoding="async" src="' + album.artworkUrl + '">' : '') + '</div>' +

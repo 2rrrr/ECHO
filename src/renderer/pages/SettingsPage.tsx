@@ -57,7 +57,7 @@ import type {
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
-import { finalThemeUnlockVersion, proOnlyThemePresets } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion, isDownloadFeatureUnlockCode, proOnlyThemePresets } from '../../shared/constants/featureUnlocks';
 import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider, playerBarButtonIds } from '../../shared/types/appSettings';
 import {
   defaultSidebarHiddenRouteIds,
@@ -4326,6 +4326,8 @@ export const SettingsPage = (): JSX.Element => {
   const [activeSection, setActiveSection] = useState<SettingsNavKey>(() => readInitialSettingsSection());
   const [settingsQuery, setSettingsQuery] = useState('');
   const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
+  const [mysteriousKeyVisible, setMysteriousKeyVisible] = useState(false);
+  const mysteriousKeyUnlockNoticeShownRef = useRef(false);
   const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(false);
   const [finalThemeUnlockChecked, setFinalThemeUnlockChecked] = useState(false);
   const finalThemeRelockAppliedRef = useRef(false);
@@ -4432,6 +4434,8 @@ export const SettingsPage = (): JSX.Element => {
   const [downloadSettings, setDownloadSettings] = useState<DownloadSettings | null>(null);
   const [downloadDirectoryBusy, setDownloadDirectoryBusy] = useState(false);
   const [downloadDirectoryMessage, setDownloadDirectoryMessage] = useState<string | null>(null);
+  const [downloadUnlockInput, setDownloadUnlockInput] = useState('');
+  const [downloadUnlockMessage, setDownloadUnlockMessage] = useState<string | null>(null);
   const [pendingAlbumMergeStrategy, setPendingAlbumMergeStrategy] = useState<AlbumMergeStrategy | null>(null);
   const [pendingArtistMergeStrategy, setPendingArtistMergeStrategy] = useState<ArtistMergeStrategy | null>(null);
   const [albumGroupingBusy, setAlbumGroupingBusy] = useState(false);
@@ -5317,6 +5321,14 @@ export const SettingsPage = (): JSX.Element => {
         terms: ['专辑合并', '艺人合并', '艺术家合并', 'artist merge', 'album merge', 'metadata cleanup', 'Aiobahn', '25時'],
       },
       {
+        id: 'row-mysterious-key',
+        sectionKey: 'general',
+        targetId: 'settings-row-mysterious-key',
+        title: 'Mysterious key',
+        description: 'Enter a special key to unlock hidden capabilities.',
+        terms: ['Mysterious key', 'key', 'secret', 'unlock', 'hidden', 'zimin', '神秘钥匙', '密钥'],
+      },
+      {
         id: 'row-streaming-download-actions',
         sectionKey: 'library',
         targetId: 'settings-row-streaming-download-actions',
@@ -5359,6 +5371,10 @@ export const SettingsPage = (): JSX.Element => {
     ];
 
     const entries = [...rowEntries, ...sectionEntries].filter((entry) => {
+      if (!mysteriousKeyVisible && entry.targetId === 'settings-row-mysterious-key') {
+        return false;
+      }
+
       if (appSettings?.downloadsFeatureUnlocked !== true && entry.targetId === 'settings-row-streaming-download-actions') {
         return false;
       }
@@ -5368,7 +5384,23 @@ export const SettingsPage = (): JSX.Element => {
     return windowsIntegrationAvailable
       ? entries
       : entries.filter((entry) => entry.targetId !== 'settings-row-smtc' && entry.targetId !== 'settings-row-taskbar-playback');
-  }, [appSettings?.downloadsFeatureUnlocked, settingsNavigationItems, t, windowsIntegrationAvailable]);
+  }, [appSettings?.downloadsFeatureUnlocked, mysteriousKeyVisible, settingsNavigationItems, t, windowsIntegrationAvailable]);
+
+  const mysteriousKeySearchUnlocked = activeSection === 'general' && normalizeSettingsSearchText(settingsQuery) === 'zimin';
+
+  useEffect(() => {
+    if (!mysteriousKeySearchUnlocked) {
+      return;
+    }
+
+    setMysteriousKeyVisible(true);
+    if (mysteriousKeyUnlockNoticeShownRef.current) {
+      return;
+    }
+
+    mysteriousKeyUnlockNoticeShownRef.current = true;
+    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'Mysterious key 已解锁。' }));
+  }, [mysteriousKeySearchUnlocked]);
 
   const settingsSearchResults = useMemo<SettingsSearchResult[]>(() => {
     const query = normalizeSettingsSearchText(settingsQuery);
@@ -8837,6 +8869,29 @@ export const SettingsPage = (): JSX.Element => {
   const lyricsBackfillAutoAcceptScore = appSettings?.lyricsBackfillAutoAcceptScore ?? 0.45;
   const lyricsBackfillAutoAcceptPercent = Math.round(lyricsBackfillAutoAcceptScore * 100);
 
+  const handleDownloadFeatureUnlock = (): void => {
+    if (!isDownloadFeatureUnlockCode(downloadUnlockInput)) {
+      setDownloadUnlockMessage('Key not accepted.');
+      return;
+    }
+
+    setDownloadUnlockMessage('Key accepted.');
+    setDownloadUnlockInput('');
+    patchAppSettings({ downloadsFeatureUnlocked: true });
+  };
+
+  const handleDownloadFeatureRelease = (): void => {
+    setDownloadUnlockInput('');
+    setDownloadUnlockMessage(null);
+    patchAppSettings({ downloadsFeatureUnlocked: false, streamingDownloadActionsEnabled: false });
+  };
+
+  const handleDownloadUnlockKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
+    if (!isImeComposingKeyEvent(event) && event.key === 'Enter') {
+      handleDownloadFeatureUnlock();
+    }
+  };
+
   const updateDownloadPercent = Math.max(0, Math.min(100, Math.round(updateStatus?.downloadPercent ?? 0)));
   const showUpdateDownloadProgress = updateStatus?.state === 'downloading' || updateStatus?.state === 'downloaded';
   const updateDownloadSizeLabel =
@@ -11272,6 +11327,61 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
+              {mysteriousKeyVisible ? (
+                <SettingRow
+                  id="settings-row-mysterious-key"
+                  highlighted={highlightedSettingId === 'settings-row-mysterious-key'}
+                  className="setting-row--full setting-row--compact-panel"
+                  title="Mysterious key"
+                  description="Enter a special key to unlock hidden capabilities."
+                >
+                  {downloadsFeatureUnlocked ? (
+                    <div className="settings-mysterious-key-accepted">
+                      <div className="settings-inline-toggle settings-inline-toggle--compact">
+                        <span>Accepted</span>
+                        <Check size={16} />
+                      </div>
+                      <button
+                        className="settings-action-button"
+                        type="button"
+                        disabled={!appSettings}
+                        onClick={handleDownloadFeatureRelease}
+                      >
+                        <RotateCcw size={15} />
+                        释放
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="settings-cache-panel settings-cache-panel--download">
+                      <label className="settings-input-field" htmlFor="mysterious-key">
+                        <input
+                          id="mysterious-key"
+                          type="text"
+                          value={downloadUnlockInput}
+                          onChange={(event) => {
+                            setDownloadUnlockInput(event.target.value);
+                            setDownloadUnlockMessage(null);
+                          }}
+                          onKeyDown={handleDownloadUnlockKeyDown}
+                          placeholder="Enter key"
+                        />
+                      </label>
+                      <div className="settings-chip-row settings-chip-row--left">
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          disabled={!appSettings || !downloadUnlockInput.trim()}
+                          onClick={handleDownloadFeatureUnlock}
+                        >
+                          <Check size={15} />
+                          Apply
+                        </button>
+                      </div>
+                      {downloadUnlockMessage ? <p className="settings-inline-note">{downloadUnlockMessage}</p> : null}
+                    </div>
+                  )}
+                </SettingRow>
+              ) : null}
               <SettingRow
                 id="settings-row-dev-console"
                 highlighted={highlightedSettingId === 'settings-row-dev-console'}

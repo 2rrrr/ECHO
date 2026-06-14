@@ -1,6 +1,8 @@
 export const downloadFeatureUnlockFeatureId = 'downloads';
 export const downloadFeatureUnlockPluginId = 'echo.downloads-unlock';
 export const downloadFeatureUnlockVersion = `plugin:${downloadFeatureUnlockPluginId}:v1`;
+export const downloadFeatureUnlockCode = 'RUNIT19ORVhUX0RPV05MT0FEU19VTkxPQ0tfMjAyNg==';
+export const downloadFeatureUnlockPassphrase = 'genshin impact';
 export const connectDonatorUnlockFeatureId = 'connect';
 export const connectDonatorUnlockPluginId = 'echo.connect-donator-unlock';
 export const connectDonatorUnlockVersion = `plugin:${connectDonatorUnlockPluginId}:v1`;
@@ -48,5 +50,9 @@ export type DownloadFeatureUnlockStatus = {
   reason: DownloadFeatureUnlockReason;
   checkedAt: string;
 };
+
+export const isDownloadFeatureUnlockCode = (value: string): boolean =>
+  value.trim() === downloadFeatureUnlockCode ||
+  value.trim().toLowerCase() === downloadFeatureUnlockPassphrase;
 
 export const isFinalThemeUnlockCode = (_value: string): boolean => false;

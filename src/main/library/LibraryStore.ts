@@ -4129,6 +4129,7 @@ export class LibraryStore {
 
   getPlaybackStatsDashboardActivity(query?: PlaybackHistoryQuery): PlaybackStatsDashboard {
     const { search, from, to, completedOnly } = pageFromHistoryQuery(query);
+    const canUseHistoryStatsTotals = !search && !from && !to && !completedOnly;
     const searchOptions = this.readSearchOptions();
     const searchFilter = buildSearchFilter(search, [
       likePredicate('history.title'),
@@ -4162,17 +4163,27 @@ export class LibraryStore {
 
     const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     const historyKeySql = 'COALESCE(history.stable_key, history.track_id, history.track_path)';
-    const totalsRow = this.getRow(
-      `SELECT
-         COUNT(*) AS play_count,
-         COALESCE(SUM(CASE WHEN history.completed > 0 THEN 1 ELSE 0 END), 0) AS completed_count,
-         COALESCE(SUM(history.played_seconds), 0) AS played_seconds,
-         COUNT(DISTINCT ${historyKeySql}) AS unique_tracks,
-         COUNT(DISTINCT COALESCE(NULLIF(TRIM(COALESCE(history.artist_snapshot, history.artist, '')), ''), 'Unknown Artist')) AS unique_artists
-       FROM playback_history AS history
-       ${whereSql}`,
-      ...params,
-    );
+    const totalsRow = canUseHistoryStatsTotals
+      ? this.getRow(
+        `SELECT
+           COALESCE(SUM(play_count), 0) AS play_count,
+           COALESCE(SUM(completed_count), 0) AS completed_count,
+           COALESCE(SUM(total_played_seconds), 0) AS played_seconds,
+           COUNT(*) AS unique_tracks,
+           COUNT(DISTINCT COALESCE(NULLIF(TRIM(COALESCE(artist_snapshot, artist, '')), ''), 'Unknown Artist')) AS unique_artists
+         FROM playback_history_stats`,
+      )
+      : this.getRow(
+        `SELECT
+           COUNT(*) AS play_count,
+           COALESCE(SUM(CASE WHEN history.completed > 0 THEN 1 ELSE 0 END), 0) AS completed_count,
+           COALESCE(SUM(history.played_seconds), 0) AS played_seconds,
+           COUNT(DISTINCT ${historyKeySql}) AS unique_tracks,
+           COUNT(DISTINCT COALESCE(NULLIF(TRIM(COALESCE(history.artist_snapshot, history.artist, '')), ''), 'Unknown Artist')) AS unique_artists
+         FROM playback_history AS history
+         ${whereSql}`,
+        ...params,
+      );
 
     const dayClauses = [...clauses];
     const dayParams = [...params];

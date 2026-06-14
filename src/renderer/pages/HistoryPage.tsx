@@ -118,6 +118,14 @@ const emptyHistoryPageData: HistoryPageData = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const historyStatsQueryFrom = (query: PlaybackHistoryQuery): PlaybackHistoryQuery => ({
+  search: query.search,
+  from: query.from,
+  to: query.to,
+  completedOnly: query.completedOnly,
+  statsMode: 'activity',
+});
+
 const isHistoryFilter = (value: unknown): value is HistoryFilter =>
   value === 'all' || value === 'today' || value === 'week' || value === 'month' || value === 'completed';
 
@@ -597,8 +605,9 @@ export const HistoryPage = (): JSX.Element => {
               return;
             }
 
+            const statsQuery = historyStatsQueryFrom(historyQuery);
             return Promise.all([
-              library.getPlaybackStatsDashboard(historyQuery),
+              library.getPlaybackStatsDashboard(statsQuery),
               library.getPlaybackMemoryGraph?.(historyQuery) ?? Promise.resolve(null),
             ])
               .then(([nextStats, nextMemory]) => {

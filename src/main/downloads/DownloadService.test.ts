@@ -601,6 +601,164 @@ describe('DownloadService', () => {
     ]);
   });
 
+  it('keeps osu keyword search results relevant for artist and title terms', async () => {
+    const fetchRunner = vi.fn(async (url: string | URL | Request) => {
+      const rawUrl = String(url);
+      if (rawUrl.includes('catboy.best/api/search')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              SetID: 2514670,
+              Artist: 'Rahatt',
+              Title: 'Matusa Bomber',
+              Creator: 'Mandudos232',
+              LastUpdate: '2026-02-27T05:20:51Z',
+              ChildrenBeatmaps: [{ TotalLength: 182, Playcount: 66 }],
+            },
+          ],
+        };
+      }
+
+      if (rawUrl.includes('api.sayobot.cn/beatmaplist')) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: 0,
+            data: [
+              {
+                sid: 1606746,
+                artist: 'Rahatt',
+                title: 'Matusa Bomber',
+                creator: 'Quorum',
+                play_count: 59155,
+                lastupdate: 1644845994,
+              },
+              {
+                sid: 2446361,
+                artist: 'marshall4',
+                title: 'blur_/notears_',
+                creator: 'heitonto',
+                play_count: 0,
+              },
+            ],
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          beatmapsets: [
+            {
+              id: 2499482,
+              artist: 'solfa feat. Shimotsuki Haruka + Ceui',
+              title: 'STUDY STEADY (Game Ver.)',
+              creator: 'Ryuukan Ameri',
+            },
+          ],
+        }),
+      };
+    }) as unknown as typeof fetch;
+    const service = new DownloadService(vi.fn(), () => null, {
+      fetch: fetchRunner,
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+
+    const response = await service.search({ query: 'matusa bomber', limitPerProvider: 5, provider: 'osu' });
+
+    expect(fetchRunner).toHaveBeenCalledWith(
+      expect.stringContaining('https://catboy.best/api/search'),
+      expect.objectContaining({ headers: expect.objectContaining({ referer: 'https://catboy.best/' }) }),
+    );
+    expect(fetchRunner).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.sayobot.cn/beatmaplist'),
+      expect.objectContaining({ headers: expect.objectContaining({ referer: 'https://sayobot.cn/' }) }),
+    );
+    expect(response.errors).toEqual([]);
+    expect(response.results.map((result) => result.title)).toEqual(['Rahatt - Matusa Bomber', 'Rahatt - Matusa Bomber']);
+    expect(response.results.map((result) => result.id)).toEqual(['1606746', '2514670']);
+  });
+
+  it('supports osu mapper-name search and ranks exact creator matches first', async () => {
+    const fetchRunner = vi.fn(async (url: string | URL | Request) => {
+      const rawUrl = String(url);
+      if (rawUrl.includes('catboy.best/api/search')) {
+        return {
+          ok: true,
+          json: async () => [
+            { SetID: 1062722, Artist: 'Streetlight Manifesto', Title: 'Ungrateful', Creator: 'Cokiiplay' },
+            { SetID: 1062527, Artist: 'MUST DIE!', Title: 'Onii-Chan (Aire Remix)', Creator: '[Ska]' },
+            { SetID: 1061992, Artist: 'SLT', Title: 'Skyward', Creator: 'Ska' },
+            { SetID: 1061809, Artist: 'Ska-P', Title: 'El Vals del Obrero', Creator: 'IwanWenChoong' },
+          ],
+        };
+      }
+
+      if (rawUrl.includes('api.sayobot.cn/beatmaplist')) {
+        return { ok: true, json: async () => ({ status: 0, data: [] }) };
+      }
+
+      return { ok: true, json: async () => ({ beatmapsets: [] }) };
+    }) as unknown as typeof fetch;
+    const service = new DownloadService(vi.fn(), () => null, {
+      fetch: fetchRunner,
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+
+    const response = await service.search({ query: 'Ska', limitPerProvider: 5, provider: 'osu' });
+
+    expect(response.errors).toEqual([]);
+    expect(response.results.map((result) => result.title)).toEqual([
+      'MUST DIE! - Onii-Chan (Aire Remix)',
+      'SLT - Skyward',
+      'Ska-P - El Vals del Obrero',
+    ]);
+    expect(response.results[0]).toEqual(expect.objectContaining({ uploader: '[Ska]', webpageUrl: 'https://osu.ppy.sh/beatmapsets/1062527' }));
+  });
+
+  it('supports osu artist search and ranks exact artist matches first', async () => {
+    const fetchRunner = vi.fn(async (url: string | URL | Request) => {
+      const rawUrl = String(url);
+      if (rawUrl.includes('catboy.best/api/search')) {
+        return {
+          ok: true,
+          json: async () => [
+            { SetID: 2560993, Artist: 'Lucidin', Title: 'Blossom of Ashes', Creator: 'Rat_KingOSU' },
+            { SetID: 1917851, Artist: 'Lucidin', Title: 'Fallen Symphony', Creator: 'jianawesome22' },
+            { SetID: 2400000, Artist: 'Other Artist', Title: 'Lucidin Tribute', Creator: 'Mapper' },
+          ],
+        };
+      }
+
+      if (rawUrl.includes('api.sayobot.cn/beatmaplist')) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: 0,
+            data: [{ sid: 2461640, artist: 'Lucidin', title: 'Everlasting Eternity', creator: 'Steedy1' }],
+          }),
+        };
+      }
+
+      return { ok: true, json: async () => ({ beatmapsets: [] }) };
+    }) as unknown as typeof fetch;
+    const service = new DownloadService(vi.fn(), () => null, {
+      fetch: fetchRunner,
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+
+    const response = await service.search({ query: 'Lucidin', limitPerProvider: 5, provider: 'osu' });
+
+    expect(response.errors).toEqual([]);
+    expect(response.results.map((result) => result.title)).toEqual([
+      'Lucidin - Blossom of Ashes',
+      'Lucidin - Fallen Symphony',
+      'Lucidin - Everlasting Eternity',
+      'Other Artist - Lucidin Tribute',
+    ]);
+  });
+
   it('passes manual network proxy settings to yt-dlp search commands', async () => {
     const ytDlpPath = makeToolPath();
     const commandRunner = vi.fn((_command: string, _args: string[]) => ({

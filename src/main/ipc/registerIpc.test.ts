@@ -26,7 +26,7 @@ type MinimalPluginSummary = {
 const pluginListMock = vi.fn<() => { directory: string; plugins: MinimalPluginSummary[] }>(() => ({ directory: 'D:\\Echo\\plugins', plugins: [] }));
 const connectDonatorUnlockStatusMock = vi.fn(() => ({ unlocked: false }));
 const downloadFeatureUnlockStatusMock = vi.fn(() => ({ unlocked: false }));
-const lockedFeatureSettingsOptions = { finalThemeUnlocked: false, downloadsFeatureUnlocked: false };
+const lockedFeatureSettingsOptions = { finalThemeUnlocked: false, downloadsFeatureUnlocked: undefined };
 const proxyTestSessionMock = { partition: 'network-proxy-test' };
 const fromPartitionMock = vi.fn(() => proxyTestSessionMock);
 const getLibraryServiceMock = vi.fn();
@@ -465,7 +465,7 @@ describe('app IPC cover cache directory', () => {
         appearanceThemePreset: 'FINAL',
         finalThemeUnlockVersion,
       },
-      { finalThemeUnlocked: true, downloadsFeatureUnlocked: false },
+      { finalThemeUnlocked: true, downloadsFeatureUnlocked: undefined },
     );
   });
 

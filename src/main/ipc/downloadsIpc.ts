@@ -11,6 +11,7 @@ import type {
 import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { getDownloadService } from '../downloads/DownloadService';
 import { getDownloadFeatureUnlockService } from '../plugins/DownloadFeatureUnlockService';
+import { getAppSettings } from '../app/appSettings';
 
 let downloadsIpcService: ReturnType<typeof getDownloadService> | null = null;
 
@@ -36,10 +37,21 @@ const getDownloadsIpcService = (): ReturnType<typeof getDownloadService> => {
   }
 };
 
+const assertDownloadsUnlocked = (): void => {
+  if (getDownloadFeatureUnlockService().getStatus().unlocked === true) {
+    return;
+  }
+  if (getAppSettings().downloadsFeatureUnlocked === true) {
+    return;
+  }
+
+  getDownloadFeatureUnlockService().assertUnlocked();
+};
+
 export const registerDownloadsIpc = (): void => {
   ipcMain.handle(IpcChannels.DownloadsGetJobs, (): DownloadJob[] => getDownloadsIpcService().getJobs());
   ipcMain.handle(IpcChannels.DownloadsCreateUrlJob, (_event, url: unknown, options?: CreateDownloadUrlJobOptions): DownloadJob => {
-    getDownloadFeatureUnlockService().assertUnlocked();
+    assertDownloadsUnlocked();
 
     if (typeof url !== 'string') {
       throw new Error('download URL must be a string');
@@ -65,11 +77,9 @@ export const registerDownloadsIpc = (): void => {
 
     return getDownloadsIpcService().setSettings({ outputDirectory: result.filePaths[0] });
   });
-  ipcMain.handle(IpcChannels.DownloadsSearch, (_event, request: string | DownloadSearchRequest): Promise<DownloadSearchResponse> =>
-    {
-      getDownloadFeatureUnlockService().assertUnlocked();
-      return getDownloadsIpcService().search(request);
-    },
-  );
+  ipcMain.handle(IpcChannels.DownloadsSearch, (_event, request: string | DownloadSearchRequest): Promise<DownloadSearchResponse> => {
+    assertDownloadsUnlocked();
+    return getDownloadsIpcService().search(request);
+  });
   ipcMain.handle(IpcChannels.DownloadsCheckTools, (): Promise<DownloadToolsStatus> => getDownloadsIpcService().checkTools());
 };
