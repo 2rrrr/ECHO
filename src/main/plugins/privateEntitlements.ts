@@ -1,4 +1,26 @@
 import type {
+  PluginCoverLookupRequest,
+  PluginCoverLookupResult,
+  PluginCreateExampleKind,
+  PluginCreateExampleResult,
+  PluginDeleteResult,
+  PluginEnableRequest,
+  PluginImportPackageResult,
+  PluginListResult,
+  PluginLyricsLookupRequest,
+  PluginLyricsLookupResult,
+  PluginMetadataLookupRequest,
+  PluginMetadataLookupResult,
+  PluginPackage,
+  PluginRunCommandRequest,
+  PluginSettingsPatch,
+  PluginSettingsResult,
+  PluginSourcePlaybackRequest,
+  PluginSourcePlaybackResult,
+  PluginSourceSearchRequest,
+  PluginSourceSearchResult,
+} from '../../shared/types/plugins';
+import type {
   EchoProAccountCredentials,
   EchoProAccountStatus,
   EchoProKeyRedeemResult,
@@ -8,7 +30,7 @@ import type {
   EchoProSettingsCloudSaveResult,
   EchoProSettingsCloudStatus,
 } from '../../shared/types/privateEntitlements';
-import type { ConnectDonatorUnlockStatus } from '../../shared/constants/featureUnlocks';
+import type { ConnectDonatorUnlockStatus, DownloadFeatureUnlockStatus } from '../../shared/constants/featureUnlocks';
 import {
   connectDonatorUnlockFeatureId,
   connectDonatorUnlockPluginId,
@@ -38,6 +60,7 @@ export type PrivateEntitlementsProvider = {
   requireFeature?: (feature: PrivateFeatureId) => Promise<void>;
   getConnectStatus?: () => ConnectDonatorUnlockStatus;
   refreshConnectStatus?: () => Promise<ConnectDonatorUnlockStatus>;
+  getDownloadStatus?: () => DownloadFeatureUnlockStatus;
   getAccountStatus?: () => Promise<EchoProAccountStatus>;
   loginAccount?: (credentials: EchoProAccountCredentials) => Promise<EchoProAccountStatus>;
   registerAccount?: (credentials: EchoProAccountCredentials) => Promise<EchoProAccountStatus>;
@@ -48,6 +71,27 @@ export type PrivateEntitlementsProvider = {
   saveSettingsCloud?: (input: PrivateSettingsCloudSaveInput) => Promise<EchoProSettingsCloudSaveResult>;
   pullSettingsCloud?: () => Promise<EchoProSettingsCloudPullResult>;
   applySettingsCloud?: (input: PrivateSettingsCloudApplyInput) => Promise<EchoProSettingsCloudApplyResult>;
+  plugins?: {
+    list: () => PluginListResult | Promise<PluginListResult>;
+    createExample: (kind: PluginCreateExampleKind) => Promise<PluginCreateExampleResult>;
+    enable: (request: PluginEnableRequest) => Promise<PluginListResult>;
+    disable: (pluginId: string) => PluginListResult | Promise<PluginListResult>;
+    deletePlugin: (pluginId: string) => Promise<PluginDeleteResult>;
+    reload: (pluginId: string) => Promise<PluginListResult>;
+    openDirectory: (pluginId?: string) => Promise<void>;
+    exportPackage: (pluginId: string) => Promise<PluginPackage>;
+    importPackage: (sourcePath?: string) => Promise<PluginImportPackageResult>;
+    runCommand: (request: PluginRunCommandRequest) => Promise<unknown>;
+    queryMetadata: (request: PluginMetadataLookupRequest) => Promise<PluginMetadataLookupResult>;
+    querySources: (request: PluginSourceSearchRequest) => Promise<PluginSourceSearchResult>;
+    resolveSourcePlayback: (request: PluginSourcePlaybackRequest) => Promise<PluginSourcePlaybackResult>;
+    queryLyrics: (request: PluginLyricsLookupRequest) => Promise<PluginLyricsLookupResult>;
+    queryCovers: (request: PluginCoverLookupRequest) => Promise<PluginCoverLookupResult>;
+    getSettings: (pluginId: string) => Promise<PluginSettingsResult>;
+    setSettings: (pluginId: string, patch: PluginSettingsPatch) => Promise<PluginSettingsResult>;
+    getLogs: (pluginId?: string) => Promise<string[]>;
+    scheduleAutoStart?: () => void;
+  };
   close?: () => void;
 };
 
@@ -72,6 +116,9 @@ export const clearPrivateEntitlementsProvider = (): void => {
 };
 
 export const getPrivateEntitlementsProvider = (): PrivateEntitlementsProvider | null => provider;
+
+export const getPrivatePluginOperations = (): NonNullable<PrivateEntitlementsProvider['plugins']> | null =>
+  provider?.plugins ?? null;
 
 export const createPrivateFeatureError = (
   feature: PrivateFeatureId = 'echo-pro',

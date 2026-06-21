@@ -5,34 +5,28 @@ import {
   type DownloadFeatureUnlockReason,
   type DownloadFeatureUnlockStatus,
 } from '../../shared/constants/featureUnlocks';
-import { getPluginService } from './PluginService';
+import { getPrivateEntitlementsProvider } from './privateEntitlements';
 
 const nowIso = (): string => new Date().toISOString();
 
 export class DownloadFeatureUnlockService {
   getStatus(): DownloadFeatureUnlockStatus {
+    const privateStatus = getPrivateEntitlementsProvider()?.getDownloadStatus?.();
+    if (privateStatus) {
+      return privateStatus;
+    }
+
     const checkedAt = nowIso();
-    const plugin = getPluginService().list().plugins.find((item) => item.id === downloadFeatureUnlockPluginId) ?? null;
     const baseStatus = {
       featureId: downloadFeatureUnlockFeatureId,
       pluginId: downloadFeatureUnlockPluginId,
       requiredVersion: downloadFeatureUnlockVersion,
       checkedAt,
-      pluginInstalled: Boolean(plugin),
-      pluginEnabled: plugin?.enabled === true && plugin.disabledByHost !== true && plugin.status !== 'disabled',
+      pluginInstalled: false,
+      pluginEnabled: false,
     } satisfies Omit<DownloadFeatureUnlockStatus, 'reason' | 'unlocked'>;
 
-    if (!plugin) {
-      return this.finishStatus(baseStatus, false, 'plugin-missing');
-    }
-    if (plugin.error || plugin.disabledByHost === true) {
-      return this.finishStatus(baseStatus, false, 'plugin-error');
-    }
-    if (!baseStatus.pluginEnabled) {
-      return this.finishStatus(baseStatus, false, 'plugin-disabled');
-    }
-
-    return this.finishStatus(baseStatus, true, 'unlocked');
+    return this.finishStatus(baseStatus, false, 'plugin-missing');
   }
 
   assertUnlocked(): DownloadFeatureUnlockStatus {

@@ -1544,24 +1544,21 @@ describe('DownloadService', () => {
     expect(service.getJobs()).toEqual([]);
   });
 
-  it('allows protected music direct downloads without playback authorization after the development unlock', () => {
+  it('rejects protected music direct downloads even when local development unlock settings are injected', () => {
     const outputDirectory = makeTempRoot();
     const service = new DownloadService(undefined, undefined, {
       loadAppSettings: () => ({ downloadsFeatureUnlocked: true }),
     });
     service.setSettings({ outputDirectory, importToLibrary: false });
 
-    const job = service.createUrlJob('https://m801.music.126.net/audio.mp3', {
-      directAudio: true,
-      directAudioMimeType: 'audio/mpeg',
-      streamingProvider: 'netease',
-      streamingProviderTrackId: '123',
-    });
-
-    expect(job).toMatchObject({
-      sourceUrl: 'https://m801.music.126.net/audio.mp3',
-      status: 'queued',
-    });
+    expect(() =>
+      service.createUrlJob('https://m801.music.126.net/audio.mp3', {
+        directAudio: true,
+        directAudioMimeType: 'audio/mpeg',
+        streamingProvider: 'netease',
+        streamingProviderTrackId: '123',
+      }),
+    ).toThrow(protectedMusicDownloadBlockedMessage);
   });
 
   it('rejects protected music direct downloads when the authorization belongs to another URL', () => {

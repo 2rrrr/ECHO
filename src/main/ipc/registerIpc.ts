@@ -52,7 +52,6 @@ import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
-import { getPluginService } from '../plugins/PluginService';
 import { getConnectDonatorUnlockService } from '../plugins/ConnectDonatorUnlockService';
 import { getDownloadFeatureUnlockService } from '../plugins/DownloadFeatureUnlockService';
 import {

@@ -1978,21 +1978,7 @@ export class DownloadService extends EventEmitter {
   }
 
   private canBypassProtectedMusicAuthorizationForDevelopment(): boolean {
-    if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
-      return false;
-    }
-
-    try {
-      const injectedSettings = this.dependencies.loadAppSettings?.();
-      if (injectedSettings) {
-        return injectedSettings.downloadsFeatureUnlocked === true;
-      }
-
-      return getDownloadFeatureUnlockService().getStatus().unlocked === true ||
-        getAppSettings().downloadsFeatureUnlocked === true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 
   private getNetworkProxySettings(): Pick<AppSettings, 'networkProxyMode' | 'networkProxyUrl' | 'networkProxyBypassRules'> {

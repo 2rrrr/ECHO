@@ -7,8 +7,7 @@ import {
   type StreamingTrack,
 } from '../../../shared/types/streaming';
 import { streamingStableKey } from '../../../shared/types/streaming';
-import { getPluginService } from '../../plugins/PluginService';
-import { requirePrivateFeature } from '../../plugins/privateEntitlements';
+import { createPrivateFeatureError, getPrivatePluginOperations } from '../../plugins/privateEntitlements';
 import type { StreamingProvider } from '../StreamingProvider';
 
 type PluginSourceIdentity = {
@@ -84,8 +83,11 @@ export class PluginStreamingProvider implements StreamingProvider {
   private readonly recentTracks = new Map<string, StreamingTrack>();
 
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
-    await requirePrivateFeature('plugin-streaming-source');
-    const result = await getPluginService().querySources({
+    const pluginOperations = getPrivatePluginOperations();
+    if (!pluginOperations) {
+      throw createPrivateFeatureError('plugin-streaming-source');
+    }
+    const result = await pluginOperations.querySources({
       query: request.query,
       page: request.page,
       pageSize: request.pageSize,
@@ -127,9 +129,12 @@ export class PluginStreamingProvider implements StreamingProvider {
   }
 
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {
-    await requirePrivateFeature('plugin-streaming-source');
+    const pluginOperations = getPrivatePluginOperations();
+    if (!pluginOperations) {
+      throw createPrivateFeatureError('plugin-streaming-source');
+    }
     const identity = decodePluginSourceIdentity(request.providerTrackId);
-    const source = await getPluginService().resolveSourcePlayback(identity);
+    const source = await pluginOperations.resolveSourcePlayback(identity);
     return {
       provider: 'plugin',
       providerTrackId: request.providerTrackId,

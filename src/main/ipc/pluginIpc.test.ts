@@ -5,7 +5,7 @@ const handlers: Record<string, (...args: unknown[]) => unknown> = {};
 const handleMock = vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
   handlers[channel] = handler;
 });
-const requirePrivateFeatureMock = vi.fn(async () => undefined);
+const getPrivatePluginOperationsMock = vi.fn();
 const serviceMock = {
   scheduleAutoStart: vi.fn(),
   list: vi.fn(() => ({ directory: 'D:\\Echo\\plugins', plugins: [] })),
@@ -15,16 +15,16 @@ const serviceMock = {
   deletePlugin: vi.fn(async (pluginId: string) => ({ pluginId, directory: 'D:\\Echo\\plugins\\echo.playback-panel' })),
   reload: vi.fn(async (pluginId: string) => ({ id: pluginId, status: 'running' })),
   openDirectory: vi.fn(async () => undefined),
-  exportPluginPackage: vi.fn(async () => 'D:\\Echo\\plugins\\echo.playback-panel.echo'),
-  importPluginPackage: vi.fn(async () => ({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel', importedFileCount: 2 })),
+  exportPackage: vi.fn(async () => ({ type: 'echo-next-plugin-package', version: 1, exportedAt: '2026-06-21T00:00:00.000Z', manifest: { id: 'echo.playback-panel', name: 'Playback Panel', version: '1.0.0', apiVersion: 2 }, files: [] })),
+  importPackage: vi.fn(async () => ({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel', importedFileCount: 2, checksum: 'abc' })),
   runCommand: vi.fn(async () => ({ ok: true })),
   queryMetadata: vi.fn(async () => ({ providers: [], candidates: [] })),
   querySources: vi.fn(async () => ({ providers: [], tracks: [] })),
   resolveSourcePlayback: vi.fn(async () => ({ url: 'https://example.com/audio.mp3' })),
   queryLyrics: vi.fn(async () => ({ providers: [], candidates: [] })),
   queryCovers: vi.fn(async () => ({ providers: [], candidates: [] })),
-  getPluginSettings: vi.fn(() => ({ pluginId: 'echo.playback-panel', values: {} })),
-  updatePluginSettings: vi.fn((_pluginId: string, patch: unknown) => ({ pluginId: 'echo.playback-panel', values: patch })),
+  getSettings: vi.fn(() => ({ pluginId: 'echo.playback-panel', values: {} })),
+  setSettings: vi.fn((_pluginId: string, patch: unknown) => ({ pluginId: 'echo.playback-panel', values: patch })),
   getLogs: vi.fn(() => []),
 };
 
@@ -34,12 +34,12 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../plugins/PluginService', () => ({
-  getPluginService: () => serviceMock,
-}));
-
 vi.mock('../plugins/privateEntitlements', () => ({
-  requirePrivateFeature: requirePrivateFeatureMock,
+  createPrivateFeatureError: (feature = 'echo-pro') => Object.assign(new Error('echo_pro_private_overlay_unavailable'), {
+    code: 'echo_pro_private_overlay_unavailable',
+    feature,
+  }),
+  getPrivatePluginOperations: getPrivatePluginOperationsMock,
 }));
 
 const resetHandlers = (): void => {
@@ -53,8 +53,8 @@ describe('plugin IPC', () => {
     resetHandlers();
     handleMock.mockClear();
     Object.values(serviceMock).forEach((mock) => mock.mockClear());
-    requirePrivateFeatureMock.mockReset();
-    requirePrivateFeatureMock.mockResolvedValue(undefined);
+    getPrivatePluginOperationsMock.mockReset();
+    getPrivatePluginOperationsMock.mockReturnValue(serviceMock);
     vi.resetModules();
     const module = await import('./pluginIpc');
     module.registerPluginIpc();
@@ -84,7 +84,7 @@ describe('plugin IPC', () => {
     expect(handlers[IpcChannels.PluginsDisable]!(null, 'echo.playback-panel')).toMatchObject({ enabled: false });
     await expect(handlers[IpcChannels.PluginsDelete]!(null, 'echo.playback-panel')).resolves.toMatchObject({ pluginId: 'echo.playback-panel' });
     await expect(handlers[IpcChannels.PluginsReload]!(null, 'echo.playback-panel')).resolves.toMatchObject({ status: 'running' });
-    await expect(handlers[IpcChannels.PluginsExportPackage]!(null, 'echo.playback-panel')).resolves.toContain('echo.playback-panel');
+    await expect(handlers[IpcChannels.PluginsExportPackage]!(null, 'echo.playback-panel')).resolves.toMatchObject({ manifest: { id: 'echo.playback-panel' } });
     await expect(handlers[IpcChannels.PluginsImportPackage]!(null)).resolves.toMatchObject({ pluginId: 'echo.playback-panel' });
     await expect(handlers[IpcChannels.PluginsImportPackage]!(null, 'D:\\Echo\\plugin.echo')).resolves.toMatchObject({ pluginId: 'echo.playback-panel' });
     await expect(handlers[IpcChannels.PluginsRunCommand]!(null, { pluginId: 'echo.playback-panel', commandId: 'show-status' })).resolves.toEqual({ ok: true });
@@ -105,9 +105,9 @@ describe('plugin IPC', () => {
     expect(serviceMock.createExample).toHaveBeenCalledWith('theme-preset');
     expect(serviceMock.enable).toHaveBeenCalledWith({ pluginId: 'echo.playback-panel' });
     expect(serviceMock.deletePlugin).toHaveBeenCalledWith('echo.playback-panel');
-    expect(serviceMock.exportPluginPackage).toHaveBeenCalledWith('echo.playback-panel');
-    expect(serviceMock.importPluginPackage).toHaveBeenCalledWith(undefined);
-    expect(serviceMock.importPluginPackage).toHaveBeenCalledWith('D:\\Echo\\plugin.echo');
+    expect(serviceMock.exportPackage).toHaveBeenCalledWith('echo.playback-panel');
+    expect(serviceMock.importPackage).toHaveBeenCalledWith(undefined);
+    expect(serviceMock.importPackage).toHaveBeenCalledWith('D:\\Echo\\plugin.echo');
     expect(serviceMock.runCommand).toHaveBeenCalledWith({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
     expect(serviceMock.queryMetadata).toHaveBeenCalledWith({ track: { title: 'Song' } });
     expect(serviceMock.querySources).toHaveBeenCalledWith({ query: 'Song' });
@@ -118,8 +118,8 @@ describe('plugin IPC', () => {
     });
     expect(serviceMock.queryLyrics).toHaveBeenCalledWith({ track: { title: 'Song' } });
     expect(serviceMock.queryCovers).toHaveBeenCalledWith({ track: { title: 'Song' } });
-    expect(serviceMock.getPluginSettings).toHaveBeenCalledWith('echo.playback-panel');
-    expect(serviceMock.updatePluginSettings).toHaveBeenCalledWith('echo.playback-panel', { mode: 'fast' });
+    expect(serviceMock.getSettings).toHaveBeenCalledWith('echo.playback-panel');
+    expect(serviceMock.setSettings).toHaveBeenCalledWith('echo.playback-panel', { mode: 'fast' });
   });
 
   it('rejects malformed plugin IPC payloads before reaching the service', async () => {
@@ -139,10 +139,10 @@ describe('plugin IPC', () => {
   });
 
   it('blocks plugin runtime IPC when ECHO Pro is not verified', async () => {
-    requirePrivateFeatureMock.mockRejectedValue(new Error('echo_pro_required'));
+    getPrivatePluginOperationsMock.mockReturnValue(null);
 
     await expect(handlers[IpcChannels.PluginsRunCommand]!(null, { pluginId: 'echo.playback-panel', commandId: 'show-status' }))
-      .rejects.toThrow('echo_pro_required');
+      .rejects.toThrow('echo_pro_private_overlay_unavailable');
     expect(serviceMock.runCommand).not.toHaveBeenCalled();
   });
 });
