@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  downloadFeatureUnlockCode,
-  connectDonatorHwidFileName,
-  connectDonatorLicenseFileName,
   connectDonatorUnlockPluginId,
   connectDonatorUnlockVersion,
   downloadFeatureUnlockPluginId,
@@ -20,10 +17,9 @@ describe('feature unlock codes', () => {
     expect(downloadFeatureUnlockVersion).toBe('plugin:echo.downloads-unlock:v1');
   });
 
-  it('keeps the legacy download unlock key working', () => {
-    expect(isDownloadFeatureUnlockCode(downloadFeatureUnlockCode)).toBe(true);
-    expect(isDownloadFeatureUnlockCode('genshin impact')).toBe(true);
-    expect(isDownloadFeatureUnlockCode(' Genshin Impact ')).toBe(true);
+  it('rejects all public download unlock text keys', () => {
+    expect(isDownloadFeatureUnlockCode('legacy-download-key')).toBe(false);
+    expect(isDownloadFeatureUnlockCode('legacy passphrase')).toBe(false);
     expect(isDownloadFeatureUnlockCode('zimin')).toBe(false);
     expect(isDownloadFeatureUnlockCode('')).toBe(false);
   });
@@ -37,11 +33,9 @@ describe('feature unlock codes', () => {
     expect(isFinalThemeUnlockCode('')).toBe(false);
   });
 
-  it('uses a fixed plugin marker and machine license file for Connect donator unlocks', () => {
+  it('uses a fixed account verifier marker for Connect donator unlocks', () => {
     expect(connectDonatorUnlockPluginId).toBe('echo.connect-donator-unlock');
     expect(connectDonatorUnlockVersion).toBe('plugin:echo.connect-donator-unlock:v1');
-    expect(connectDonatorHwidFileName).toBe('donator.allowed-hwids.json');
-    expect(connectDonatorLicenseFileName).toBe('donator.machine-license.json');
   });
 
   it('locks premium built-in themes behind the donator unlock', () => {

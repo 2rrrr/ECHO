@@ -25,6 +25,13 @@ type NativeFileScannerEnabledProvider = () => boolean;
 const nativeScannerExecutableName = process.platform === 'win32' ? 'echo-native-scanner.exe' : 'echo-native-scanner';
 const defaultNativeBatchSize = 256;
 const stderrTailLimit = 4096;
+const nativeFileScannerRuntimeStats = {
+  totalScans: 0,
+  nativeScanOk: 0,
+  fallbackToTs: 0,
+  tsOnlyScans: 0,
+  lastFallbackReason: null as string | null,
+};
 
 const getNativeFileScannerEnablement = (
   readSettingEnabled: NativeFileScannerEnabledProvider = () => false,
@@ -74,6 +81,7 @@ export const getNativeFileScannerDiagnostics = (
     binaryFound,
     binaryPath,
     willUseNative: enablement.enabled && binaryFound,
+    ...nativeFileScannerRuntimeStats,
   };
 };
 
@@ -296,6 +304,7 @@ export class NativeThenTsFileScanner implements FileScanner {
   async *scanFolder(folderPath: string, options: ScanOptions = {}): AsyncIterable<ScannedFile> {
     const enablement = getNativeFileScannerEnablement(this.readSettingEnabled);
     if (!enablement.enabled) {
+      nativeFileScannerRuntimeStats.tsOnlyScans += 1;
       logLibraryScanPerf({
         phase: 'fileScanner',
         detail: `mode=ts; native disabled; source=${enablement.source}`,
@@ -305,16 +314,20 @@ export class NativeThenTsFileScanner implements FileScanner {
     }
 
     try {
+      nativeFileScannerRuntimeStats.totalScans += 1;
       logLibraryScanPerf({
         phase: 'fileScanner',
         detail: `mode=native; source=${enablement.source}`,
       });
       yield* this.nativeScanner.scanFolder(folderPath, options);
+      nativeFileScannerRuntimeStats.nativeScanOk += 1;
     } catch (error) {
       if (options.signal?.aborted === true || options.shouldCancel?.() === true) {
         throw error;
       }
       const message = error instanceof Error ? error.message : String(error);
+      nativeFileScannerRuntimeStats.fallbackToTs += 1;
+      nativeFileScannerRuntimeStats.lastFallbackReason = message;
       this.logger(`[library-scan] Native file scanner failed; falling back to TS scanner: ${message}`);
       logLibraryScanPerf({
         phase: 'nativeFileScanner',

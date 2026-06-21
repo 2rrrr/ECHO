@@ -31,6 +31,7 @@ export const defaultArtistOnlineInfoSources: ArtistOnlineInfoSource[] = ['wikipe
 export const artistStreamingAlbumProviders = ['netease', 'qqmusic'] as const;
 export type ArtistStreamingAlbumsProvider = typeof artistStreamingAlbumProviders[number];
 export const defaultArtistStreamingAlbumsProvider: ArtistStreamingAlbumsProvider = 'netease';
+export const currentUserNoticeVersion = 1;
 
 export type DesktopLyricsBounds = {
   x: number;
@@ -180,6 +181,7 @@ export type RemoteBackgroundConcurrencySettings = {
 export type AppSettings = {
   appMemoryVersion?: number;
   onboardingCompleted?: boolean;
+  userNoticeAcceptedVersion?: number;
   locale?: AppLocale;
   appearanceTheme: AppThemeMode;
   appearanceThemeScheduleEnabled?: boolean;

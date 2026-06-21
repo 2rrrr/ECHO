@@ -397,6 +397,39 @@ export class StreamingFavoritesStore {
     return `${JSON.stringify(this.getSnapshot(), null, 2)}\n`;
   }
 
+  importSnapshot(value: unknown): { snapshot: StreamingFavoritesSnapshot; importedCollections: number; importedTracks: number } {
+    const incoming = normalizeSnapshot(value);
+    const current = this.getSnapshot();
+    const importedAt = new Date().toISOString();
+    let importedTracks = 0;
+
+    for (const provider of favoriteProviders) {
+      const incomingTrackIds = new Set(incoming.providers[provider].map((item) => item.providerTrackId));
+      importedTracks += incoming.providers[provider].length;
+      current.providers[provider] = [
+        ...incoming.providers[provider],
+        ...current.providers[provider].filter((item) => !incomingTrackIds.has(item.providerTrackId)),
+      ];
+    }
+
+    const incomingCollectionKeys = new Set<string>();
+    for (const collection of incoming.collections) {
+      incomingCollectionKeys.add(`${collection.provider}:${collection.providerPlaylistId}`);
+      importedTracks += collection.tracks.length;
+    }
+    current.collections = [
+      ...incoming.collections,
+      ...current.collections.filter((collection) => !incomingCollectionKeys.has(`${collection.provider}:${collection.providerPlaylistId}`)),
+    ];
+    current.updatedAt = importedAt;
+    this.writeSnapshot(current);
+    return {
+      snapshot: current,
+      importedCollections: incoming.collections.length,
+      importedTracks,
+    };
+  }
+
   private writeSnapshot(snapshot: StreamingFavoritesSnapshot): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
     const tempPath = `${this.filePath}.tmp`;

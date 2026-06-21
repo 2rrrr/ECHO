@@ -10,6 +10,7 @@ import { getLibraryService } from '../library/LibraryService';
 import { defaultCoverSvg } from '../library/workers/TsCoverExtractor';
 import { fetchWithNetworkProxy } from '../network/networkFetch';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
+import { requirePrivateFeature } from '../plugins/privateEntitlements';
 
 const cacheControlHeader = 'public, max-age=31536000, immutable';
 const wallpaperCacheControlHeader = 'no-store';
@@ -264,6 +265,7 @@ const subsonicCoverResponse = async (url: URL): Promise<Response> => {
     return cached;
   }
 
+  await requirePrivateFeature('cover-cache');
   const result = await getRemoteSourceService().readRemoteCover(trackId, size);
   const mimeType = result.mimeType?.split(';')[0]?.trim().toLocaleLowerCase();
   if (result.status !== 'ok' || !result.data?.byteLength || !mimeType?.startsWith('image/')) {

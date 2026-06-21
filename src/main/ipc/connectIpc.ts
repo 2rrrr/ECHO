@@ -55,14 +55,15 @@ const startConfiguredReceivers = (
   if (getAppSettings().connectAutoStartReceiversEnabled !== true) {
     return;
   }
-  try {
-    getConnectDonatorUnlockService().assertUnlocked();
-  } catch {
-    return;
-  }
-
-  void receiverService.setEnabled(true).catch(() => undefined);
-  void airPlayReceiverService.setEnabled(true).catch(() => undefined);
+  void getConnectDonatorUnlockService().refreshStatus()
+    .then((status) => {
+      if (status.unlocked !== true) {
+        return;
+      }
+      void receiverService.setEnabled(true).catch(() => undefined);
+      void airPlayReceiverService.setEnabled(true).catch(() => undefined);
+    })
+    .catch(() => undefined);
 };
 
 export const registerConnectIpc = (): void => {
@@ -78,7 +79,7 @@ export const registerConnectIpc = (): void => {
     getConnectDonatorUnlockService().assertUnlocked();
   };
 
-  ipcMain.handle(IpcChannels.ConnectGetDonatorUnlockStatus, () => getConnectDonatorUnlockService().getStatus());
+  ipcMain.handle(IpcChannels.ConnectGetDonatorUnlockStatus, () => getConnectDonatorUnlockService().refreshStatus());
   ipcMain.handle(IpcChannels.ConnectListDevices, (): ConnectDevice[] => {
     requireConnectDonatorUnlock();
     return service.listDevices();

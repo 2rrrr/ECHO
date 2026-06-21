@@ -10,6 +10,16 @@ import type {
 } from '../shared/types/audio';
 import type { AppSettings, NetworkProxyTestResult } from '../shared/types/appSettings';
 import type { ConnectDonatorUnlockStatus } from '../shared/constants/featureUnlocks';
+import type {
+  EchoProAccountCredentials,
+  EchoProAccountStatus,
+  EchoProKeyRedeemResult,
+  EchoProReleaseDevicesResult,
+  EchoProSettingsCloudApplyResult,
+  EchoProSettingsCloudPullResult,
+  EchoProSettingsCloudSaveResult,
+  EchoProSettingsCloudStatus,
+} from '../shared/types/privateEntitlements';
 import type { TaskbarPlaybackStatus } from '../shared/types/taskbarPlayback';
 import type {
   DataBackupExportResult,
@@ -336,6 +346,16 @@ export type EchoApi = {
     openExternalUrl: (url: string) => Promise<void>;
     showTouchKeyboard: () => Promise<boolean>;
     testNetworkProxy: (patch?: Partial<AppSettings>) => Promise<NetworkProxyTestResult>;
+    getEchoProAccountStatus: () => Promise<EchoProAccountStatus>;
+    loginEchoProAccount: (credentials: EchoProAccountCredentials) => Promise<EchoProAccountStatus>;
+    registerEchoProAccount: (credentials: EchoProAccountCredentials) => Promise<EchoProAccountStatus>;
+    logoutEchoProAccount: () => Promise<EchoProAccountStatus>;
+    redeemEchoProKey: (key: string) => Promise<EchoProKeyRedeemResult>;
+    releaseEchoProDevices: (password: string) => Promise<EchoProReleaseDevicesResult>;
+    getEchoProSettingsCloudStatus: () => Promise<EchoProSettingsCloudStatus>;
+    saveEchoProSettingsCloud: () => Promise<EchoProSettingsCloudSaveResult>;
+    pullEchoProSettingsCloud: () => Promise<EchoProSettingsCloudPullResult>;
+    applyEchoProSettingsCloud: () => Promise<EchoProSettingsCloudApplyResult>;
     validateGlobalShortcut: (accelerator: string) => Promise<GlobalShortcutValidationResult>;
     onGlobalShortcutCommand: (handler: (action: GlobalShortcutAction) => void) => () => void;
   };

@@ -26,6 +26,7 @@ type MinimalPluginSummary = {
 const pluginListMock = vi.fn<() => { directory: string; plugins: MinimalPluginSummary[] }>(() => ({ directory: 'D:\\Echo\\plugins', plugins: [] }));
 const connectDonatorUnlockStatusMock = vi.fn(() => ({ unlocked: false }));
 const downloadFeatureUnlockStatusMock = vi.fn(() => ({ unlocked: false }));
+const requirePrivateFeatureMock = vi.fn(async () => undefined);
 const lockedFeatureSettingsOptions = { finalThemeUnlocked: false, downloadsFeatureUnlocked: undefined };
 const proxyTestSessionMock = { partition: 'network-proxy-test' };
 const fromPartitionMock = vi.fn(() => proxyTestSessionMock);
@@ -269,6 +270,14 @@ vi.mock('../plugins/DownloadFeatureUnlockService', () => ({
   }),
 }));
 
+vi.mock('../plugins/privateEntitlements', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plugins/privateEntitlements')>();
+  return {
+    ...actual,
+    requirePrivateFeature: requirePrivateFeatureMock,
+  };
+});
+
 vi.mock('./lastFmIpc', () => ({
   registerLastFmIpc: vi.fn(),
 }));
@@ -313,6 +322,8 @@ describe('app IPC cover cache directory', () => {
     connectDonatorUnlockStatusMock.mockReturnValue({ unlocked: false });
     downloadFeatureUnlockStatusMock.mockReset();
     downloadFeatureUnlockStatusMock.mockReturnValue({ unlocked: false });
+    requirePrivateFeatureMock.mockReset();
+    requirePrivateFeatureMock.mockResolvedValue(undefined);
     getLibraryServiceMock.mockReset();
     ensureCoverCacheDirectoryMock.mockReset();
     ensureTrayMock.mockClear();

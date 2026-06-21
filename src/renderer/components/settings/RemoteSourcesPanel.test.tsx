@@ -49,6 +49,10 @@ const appApiMocks = vi.hoisted(() => ({
   openExternalUrl: vi.fn(),
 }));
 
+const connectApiMocks = vi.hoisted(() => ({
+  getDonatorUnlockStatus: vi.fn(),
+}));
+
 const playbackQueueMocks = vi.hoisted(() => ({
   appendToQueue: vi.fn(),
   playTrack: vi.fn(),
@@ -56,6 +60,7 @@ const playbackQueueMocks = vi.hoisted(() => ({
 
 vi.mock('../../utils/echoBridge', () => ({
   getAppBridge: () => appApiMocks,
+  getConnectBridge: () => connectApiMocks,
   getRemoteSourcesBridge: () => remoteApiMocks,
 }));
 
@@ -231,6 +236,10 @@ describe('RemoteSourcesPanel', () => {
     for (const mock of Object.values(appApiMocks)) {
       mock.mockReset();
     }
+    connectApiMocks.getDonatorUnlockStatus.mockReset();
+    connectApiMocks.getDonatorUnlockStatus.mockResolvedValue({
+      unlocked: true,
+    });
     remoteApiMocks.list.mockImplementation(() => Promise.resolve(sources));
     remoteApiMocks.getOverview.mockImplementation(() => Promise.resolve(overviewFor(sources)));
     remoteApiMocks.previewAlbumGrouping.mockResolvedValue({
@@ -316,6 +325,24 @@ describe('RemoteSourcesPanel', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it('shows the ECHO Pro lock before loading remote sources', async () => {
+    connectApiMocks.getDonatorUnlockStatus.mockResolvedValueOnce({ unlocked: false });
+
+    render(<RemoteSourcesPanel />);
+
+    expect(await screen.findByText('网盘功能已升级为 ECHO Pro Only')).toBeTruthy();
+    expect(remoteApiMocks.list).not.toHaveBeenCalled();
+
+    const navigateHome = vi.fn();
+    window.addEventListener('app:navigate:route', navigateHome);
+    fireEvent.click(screen.getByRole('button', { name: '从侧栏隐藏' }));
+    await waitFor(() => expect(appApiMocks.setSettings).toHaveBeenCalledWith(expect.objectContaining({
+      sidebarHiddenRouteIds: expect.arrayContaining(['remote']),
+    })));
+    expect(navigateHome).toHaveBeenCalledWith(expect.objectContaining({ detail: 'home' }));
+    window.removeEventListener('app:navigate:route', navigateHome);
   });
 
   it('tests and saves a WebDAV source with the configured root path', async () => {

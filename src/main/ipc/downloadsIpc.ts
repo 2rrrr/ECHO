@@ -11,7 +11,6 @@ import type {
 import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { getDownloadService } from '../downloads/DownloadService';
 import { getDownloadFeatureUnlockService } from '../plugins/DownloadFeatureUnlockService';
-import { getAppSettings } from '../app/appSettings';
 
 let downloadsIpcService: ReturnType<typeof getDownloadService> | null = null;
 
@@ -54,9 +53,6 @@ const parseOsuBeatmapsetId = (value: string): string | null => {
 
 const downloadsUnlocked = (): boolean => {
   if (getDownloadFeatureUnlockService().getStatus().unlocked === true) {
-    return true;
-  }
-  if (getAppSettings().downloadsFeatureUnlocked === true) {
     return true;
   }
 

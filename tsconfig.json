@@ -22,5 +22,16 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.d.ts"
+  ],
+  "exclude": [
+    "private/**",
+    "src/main/app/accessControlBoundary.ts",
+    "src/main/app/legacyEntitlementRecovery.ts",
+    "src/main/plugins/EchoProAccountService.ts",
+    "src/main/plugins/MachineIdentity.ts",
+    "src/main/plugins/ProFeatureGate.ts",
+    "src/main/protection/**",
+    "src/shared/types/echoProAccount.ts",
+    "tools/connect-donator-issuer/**"
   ]
 }

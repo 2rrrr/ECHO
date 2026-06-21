@@ -6,12 +6,14 @@ import {
   Check,
   Database,
   ExternalLink,
+  EyeOff,
   File,
   FolderOpen,
   Gauge,
   HardDrive,
   KeyRound,
   ListPlus,
+  LockKeyhole,
   Minus,
   Music2,
   PauseCircle,
@@ -56,7 +58,8 @@ import type { LibraryTrack } from '../../../shared/types/library';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
-import { getAppBridge, getRemoteSourcesBridge } from '../../utils/echoBridge';
+import { getAppBridge, getConnectBridge, getRemoteSourcesBridge } from '../../utils/echoBridge';
+import { hideSidebarRouteEntry } from '../../utils/sidebarRouteVisibility';
 
 type Tab = {
   provider: RemoteSourceProvider;
@@ -798,6 +801,7 @@ const credentialTextForSource = (source: RemoteSource): string => {
 
 export const RemoteSourcesPanel = (): JSX.Element => {
   const appApi = getAppBridge();
+  const connectApi = getConnectBridge();
   const remoteApi = getRemoteSourcesBridge();
   const { t } = useI18n();
   const { appendToQueue, playTrack } = usePlaybackQueue();
@@ -845,8 +849,10 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const [baiduAuthFeedback, setBaiduAuthFeedback] = useState<string | null>(null);
   const [baiduAuthUrl, setBaiduAuthUrl] = useState<string | null>(null);
   const [showBaiduDeveloperFields, setShowBaiduDeveloperFields] = useState(false);
+  const [isSidebarHideBusy, setIsSidebarHideBusy] = useState(false);
   const [remoteBackgroundConcurrencySaving, setRemoteBackgroundConcurrencySaving] = useState(false);
   const [testResult, setTestResult] = useState<TestRemoteSourceResult | null>(null);
+  const [remoteSourcesProUnlocked, setRemoteSourcesProUnlocked] = useState<boolean | null>(null);
   const terminalSyncEventsRef = useRef<Record<string, string>>({});
 
   const activeTab = useMemo(() => tabs.find((tab) => tab.provider === activeProvider) ?? tabs[0], [activeProvider]);
@@ -859,6 +865,43 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const selectedBrowser = selectedSource ? browserStates[selectedSource.id] ?? emptyBrowserState() : null;
   const overviewBySourceId = useMemo(() => new Map(overview.sources.map((source) => [source.sourceId, source])), [overview.sources]);
   const playbackLoadReduced = globalJobStatus.playbackActive && !globalJobStatus.paused;
+
+  const openEchoProAccountSettings = useCallback((): void => {
+    window.dispatchEvent(new CustomEvent('app:navigate:settings-section', { detail: { section: 'general', targetId: 'settings-row-echo-pro-account' } }));
+  }, []);
+
+  const hideRemoteSourcesFromSidebar = useCallback(async (): Promise<void> => {
+    setIsSidebarHideBusy(true);
+    setMessage(null);
+    try {
+      await hideSidebarRouteEntry('remote', appApi);
+    } catch (hideError) {
+      setMessage(hideError instanceof Error ? hideError.message : String(hideError));
+    } finally {
+      setIsSidebarHideBusy(false);
+    }
+  }, [appApi]);
+
+  const refreshRemoteSourcesProUnlock = useCallback(async (): Promise<void> => {
+    if (!connectApi?.getDonatorUnlockStatus) {
+      setRemoteSourcesProUnlocked(false);
+      return;
+    }
+    try {
+      const status = await connectApi.getDonatorUnlockStatus();
+      setRemoteSourcesProUnlocked(status.unlocked === true);
+      if (status.unlocked !== true) {
+        setMessage('网盘功能需要 ECHO Pro 账号完成云端验证。');
+      }
+    } catch {
+      setRemoteSourcesProUnlocked(false);
+      setMessage('网盘功能需要 ECHO Pro 账号完成云端验证。');
+    }
+  }, [connectApi]);
+
+  useEffect(() => {
+    void refreshRemoteSourcesProUnlock();
+  }, [refreshRemoteSourcesProUnlock]);
   const providerSummaries = useMemo(() => tabs.map((tab) => {
     const overviewSources = overview.sources.filter((source) => source.provider === tab.provider);
     const listedSources = sources.filter((source) => source.provider === tab.provider);
@@ -960,14 +1003,14 @@ export const RemoteSourcesPanel = (): JSX.Element => {
 
   const refreshRemoteAlbumGroupingPreview = useCallback(
     async (strategy = pendingRemoteAlbumMergeStrategy): Promise<RemoteAlbumGroupingPreview | null> => {
-      if (!remoteApi?.previewAlbumGrouping) {
+      if (remoteSourcesProUnlocked !== true || !remoteApi?.previewAlbumGrouping) {
         return null;
       }
       const preview = await remoteApi.previewAlbumGrouping(strategy);
       setRemoteAlbumGroupingPreview(preview);
       return preview;
     },
-    [pendingRemoteAlbumMergeStrategy, remoteApi],
+    [pendingRemoteAlbumMergeStrategy, remoteApi, remoteSourcesProUnlocked],
   );
 
   const scanRemoteAlbumsForGrouping = useCallback(async (): Promise<void> => {
@@ -1032,7 +1075,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   );
 
   const refreshStatuses = useCallback(async (sourceIds: string[], replace = false, includeOverview = false): Promise<void> => {
-    if (!remoteApi) {
+    if (remoteSourcesProUnlocked !== true || !remoteApi) {
       return;
     }
 
@@ -1052,10 +1095,10 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     if (nextOverview) {
       setOverview(nextOverview);
     }
-  }, [remoteApi]);
+  }, [remoteApi, remoteSourcesProUnlocked]);
 
   const refreshVisibleOverview = useCallback(async (sourceIds: string[]): Promise<void> => {
-    if (!remoteApi) {
+    if (remoteSourcesProUnlocked !== true || !remoteApi) {
       return;
     }
 
@@ -1069,7 +1112,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     if (updatedSources.length > 0) {
       setOverview((current) => mergeOverviewSources(current, updatedSources));
     }
-  }, [remoteApi]);
+  }, [remoteApi, remoteSourcesProUnlocked]);
 
   const updateRemoteBackgroundConcurrencyDraft = useCallback(
     (key: keyof RemoteBackgroundConcurrencySettings, value: number): void => {
@@ -1125,7 +1168,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   }, [appApi, remoteApi, remoteBackgroundConcurrency, sources]);
 
   const refreshSources = useCallback(async (): Promise<void> => {
-    if (!remoteApi) {
+    if (remoteSourcesProUnlocked !== true || !remoteApi) {
       return;
     }
 
@@ -1136,7 +1179,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     setSources(nextSources);
     setOverview(nextOverview);
     await refreshStatuses(nextSources.map((source) => source.id), true);
-  }, [refreshStatuses, remoteApi]);
+  }, [refreshStatuses, remoteApi, remoteSourcesProUnlocked]);
 
   useEffect(() => {
     void refreshSources();
@@ -1271,7 +1314,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       }));
       setMessage(message);
     }
-  }, [remoteApi]);
+  }, [remoteApi, remoteSourcesProUnlocked]);
 
   const playBrowserItem = useCallback(async (source: RemoteSource, item: RemoteDirectoryItem, indexedTrack?: RemoteTrackLookupItem): Promise<void> => {
     const track = indexedTrack ? trackFromLookupItem(source, indexedTrack) : trackFromBrowserItem(source, item);
@@ -2299,6 +2342,40 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       void refreshStatuses(visibleSourceIds, false, true);
     }, 150);
   }, [globalJobStatus.paused, refreshStatuses, remoteApi, visibleSourceIds]);
+
+  if (remoteSourcesProUnlocked !== true) {
+    return (
+      <div className="remote-sources-panel">
+        <section className="remote-sources-hero">
+          <div>
+            <h3>{t('settings.remote.hero.title')}</h3>
+            <strong>网盘功能已升级为 ECHO Pro Only</strong>
+            <p>WebDAV、百度网盘、NAS/SMB、媒体服务器和远程索引都需要 ECHO Pro 账号完成云端验证后才能使用。</p>
+          </div>
+          <LockKeyhole size={28} />
+        </section>
+        <section className="remote-source-guardrail" aria-label="ECHO Pro required">
+          <strong>{remoteSourcesProUnlocked === null ? '正在检查 ECHO Pro 状态' : '需要 ECHO Pro'}</strong>
+          <span>本地不会再用插件解锁网盘功能；请在设置的 ECHO Pro 账号里登录并确认 Pro 已启用。</span>
+        </section>
+        <div className="remote-source-actions">
+          <button className="settings-action-button" type="button" onClick={openEchoProAccountSettings}>
+            <KeyRound size={15} />
+            打开 ECHO Pro 账号
+          </button>
+          <button className="settings-action-button" type="button" onClick={() => void refreshRemoteSourcesProUnlock()}>
+            <RefreshCw size={15} />
+            重新检查
+          </button>
+          <button className="settings-action-button" type="button" onClick={() => void hideRemoteSourcesFromSidebar()} disabled={isSidebarHideBusy}>
+            {isSidebarHideBusy ? <RefreshCw className="spinning-icon" size={15} /> : <EyeOff size={15} />}
+            从侧栏隐藏
+          </button>
+        </div>
+        {message ? <p className="settings-inline-note">{message}</p> : null}
+      </div>
+    );
+  }
 
   return (
     <div className="remote-sources-panel">

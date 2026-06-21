@@ -16,6 +16,7 @@ import type { RemoteStreamUrlResult } from '../../../shared/types/remoteSources'
 import type { StreamingPlaybackRequest, StreamingPlaybackSource } from '../../../shared/types/streaming';
 import { defaultHqPlayerSettings, getAppSettings, normalizeHqPlayerSettings, setAppSettings } from '../../app/appSettings';
 import { getRemoteSourceService } from '../../library/remote/RemoteSourceService';
+import { requirePrivateFeature } from '../../plugins/privateEntitlements';
 import { getStreamingService } from '../../streaming/StreamingService';
 import { createHqPlayerPlaybackControlPlan } from './HqPlayerControlAdapter';
 import {
@@ -65,7 +66,10 @@ export type HqPlayerControlSender = (plan: HqPlayerPlaybackControlPlan) => Promi
 const hqPlayerConnectionTimeoutMs = 1500;
 
 const defaultMediaResolver: HqPlayerMediaResolver = {
-  createRemoteStreamUrl: (input) => getRemoteSourceService().createStreamUrl(input),
+  createRemoteStreamUrl: async (input) => {
+    await requirePrivateFeature('hqplayer-remote-media');
+    return getRemoteSourceService().createStreamUrl(input);
+  },
   resolveStreamingPlayback: (request, options) => {
     if (options?.forceRefresh) {
       getStreamingService().invalidatePlayback(request);

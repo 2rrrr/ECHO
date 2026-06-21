@@ -17,6 +17,12 @@ import type {
 import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../../shared/types/coverCache';
 import type { UpdateStatus } from '../../shared/types/updates';
+import type {
+  EchoProSettingsCloudApplyResult,
+  EchoProSettingsCloudPullResult,
+  EchoProSettingsCloudSaveResult,
+  EchoProSettingsCloudStatus,
+} from '../../shared/types/privateEntitlements';
 import type { FontFileAsset } from '../../preload/apiTypes';
 import {
   defaultSettings,
@@ -49,6 +55,19 @@ import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { getPluginService } from '../plugins/PluginService';
 import { getConnectDonatorUnlockService } from '../plugins/ConnectDonatorUnlockService';
 import { getDownloadFeatureUnlockService } from '../plugins/DownloadFeatureUnlockService';
+import {
+  applyEchoProSettingsCloud,
+  getEchoProAccountStatus,
+  getEchoProSettingsCloudStatus,
+  loginEchoProAccount,
+  logoutEchoProAccount,
+  pullEchoProSettingsCloud,
+  redeemEchoProKey,
+  registerEchoProAccount,
+  releaseEchoProDevices,
+  requirePrivateFeature,
+  saveEchoProSettingsCloud,
+} from '../plugins/privateEntitlements';
 import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
 import { getMainWindow } from '../app/windowManager';
 import { applyMainWindowBackgroundMaterial } from '../app/windowBackgroundMaterial';
@@ -287,6 +306,39 @@ const readSettingsBackupFile = (filePath: string): AppSettings => {
   return normalizeSettings(parsed);
 };
 
+const cloudSettingsSensitiveKeyPattern = /token|secret|password|cookie|session|authorization|credential|auth/i;
+
+const sanitizeSettingsForCloud = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeSettingsForCloud(item));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !cloudSettingsSensitiveKeyPattern.test(key))
+      .map(([key, item]) => [key, sanitizeSettingsForCloud(item)]),
+  );
+};
+
+const getCloudSyncSettings = (): Record<string, unknown> =>
+  sanitizeSettingsForCloud(getAppSettings(getFeatureSettingsOptions())) as Record<string, unknown>;
+
+const getCloudSyncDeviceName = (): string | null => {
+  try {
+    return userInfo().username || null;
+  } catch {
+    return null;
+  }
+};
+
+const shouldRequireProForWindowAcrylicPatch = (patch: Partial<AppSettings>): boolean =>
+  patch.appWindowAcrylicEnabled === true ||
+  patch.appWindowAcrylicKeepWhenUnfocusedEnabled === true ||
+  Object.prototype.hasOwnProperty.call(patch, 'appWindowAcrylicTransparencyPercent');
+
 const applyAppSettingsPatch = async (
   patch: Partial<AppSettings>,
   options: NormalizeSettingsOptions & { allowCoverCacheDir?: boolean } = {},
@@ -306,6 +358,10 @@ const applyAppSettingsPatch = async (
     libraryService.setCoverCacheDir(coverCacheDir);
   } else {
     delete settingsPatch.coverCacheDir;
+  }
+
+  if (shouldRequireProForWindowAcrylicPatch(settingsPatch)) {
+    await requirePrivateFeature('window-acrylic');
   }
 
   let settings = setAppSettings(settingsPatch, {
@@ -648,6 +704,40 @@ export const registerIpc = (): void => {
       session.fromPartition(`network-proxy-test-${randomUUID()}`),
     ),
   );
+  ipcMain.handle(IpcChannels.AppEchoProAccountGetStatus, (): Promise<unknown> => getEchoProAccountStatus());
+  ipcMain.handle(IpcChannels.AppEchoProAccountLogin, (_event: IpcMainInvokeEvent, credentials: unknown): Promise<unknown> =>
+    loginEchoProAccount(credentials as { username: string; password: string }),
+  );
+  ipcMain.handle(IpcChannels.AppEchoProAccountRegister, (_event: IpcMainInvokeEvent, credentials: unknown): Promise<unknown> =>
+    registerEchoProAccount(credentials as { username: string; password: string }),
+  );
+  ipcMain.handle(IpcChannels.AppEchoProAccountLogout, (): Promise<unknown> => logoutEchoProAccount());
+  ipcMain.handle(IpcChannels.AppEchoProAccountRedeemKey, (_event: IpcMainInvokeEvent, key: unknown): Promise<unknown> =>
+    redeemEchoProKey(typeof key === 'string' ? key : ''),
+  );
+  ipcMain.handle(IpcChannels.AppEchoProAccountReleaseDevices, (_event: IpcMainInvokeEvent, password: unknown): Promise<unknown> =>
+    releaseEchoProDevices(typeof password === 'string' ? password : ''),
+  );
+  ipcMain.handle(IpcChannels.AppEchoProSettingsCloudGetStatus, (): Promise<EchoProSettingsCloudStatus> =>
+    getEchoProSettingsCloudStatus(),
+  );
+  ipcMain.handle(IpcChannels.AppEchoProSettingsCloudSave, (): Promise<EchoProSettingsCloudSaveResult> =>
+    saveEchoProSettingsCloud({
+      settings: getCloudSyncSettings(),
+      appVersion: app.getVersion(),
+      deviceName: getCloudSyncDeviceName(),
+    }),
+  );
+  ipcMain.handle(IpcChannels.AppEchoProSettingsCloudPull, (): Promise<EchoProSettingsCloudPullResult> =>
+    pullEchoProSettingsCloud(),
+  );
+  ipcMain.handle(IpcChannels.AppEchoProSettingsCloudApply, async (): Promise<EchoProSettingsCloudApplyResult> => {
+    return applyEchoProSettingsCloud({
+      applySettings: async (settings) => {
+        await applyAppSettingsPatch(settings as Partial<AppSettings>, { ...getFeatureSettingsOptions(), allowCoverCacheDir: true });
+      },
+    });
+  });
   ipcMain.handle(
     IpcChannels.AppSetCoverCacheDirectory,
     async (_event: IpcMainInvokeEvent, rawRequest: unknown): Promise<CoverCacheMigrationResult | null> => {

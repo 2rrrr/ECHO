@@ -12,7 +12,6 @@ import {
   Image,
   Loader2,
   LockKeyhole,
-  PackagePlus,
   Pause,
   Play,
   Power,
@@ -32,8 +31,6 @@ import {
 import QRCode from 'qrcode';
 import type { AirPlayReceiverProtocol, AppSettings } from '../../shared/types/appSettings';
 import {
-  connectDonatorHwidFileName,
-  connectDonatorLicenseFileName,
   connectDonatorUnlockPluginId,
   connectDonatorUnlockVersion,
   type ConnectDonatorUnlockReason,
@@ -61,6 +58,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
+import { hideSidebarRouteEntry } from '../utils/sidebarRouteVisibility';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
@@ -182,7 +180,7 @@ const defaultDonatorUnlockStatus: ConnectDonatorUnlockStatus = {
   pluginInstalled: false,
   pluginEnabled: false,
   hwidHash: '',
-  reason: 'plugin-missing',
+  reason: 'license-invalid',
   checkedAt: new Date(0).toISOString(),
 };
 
@@ -302,11 +300,6 @@ const hqPlayerBackendLabel: Record<HqPlayerDefaultPlaybackBackend, TranslationKe
 };
 
 const connectDonatorUnlockReasonLabel: Record<ConnectDonatorUnlockReason, TranslationKey> = {
-  'plugin-missing': 'connectPage.lock.reason.pluginMissing',
-  'plugin-disabled': 'connectPage.lock.reason.pluginDisabled',
-  'plugin-error': 'connectPage.lock.reason.pluginError',
-  'hwid-file-missing': 'connectPage.lock.reason.hwidFileMissing',
-  'hwid-file-invalid': 'connectPage.lock.reason.hwidFileInvalid',
   'hwid-not-allowed': 'connectPage.lock.reason.hwidNotAllowed',
   'license-invalid': 'connectPage.lock.reason.licenseInvalid',
   unlocked: 'connectPage.lock.reason.unlocked',
@@ -1020,6 +1013,7 @@ export const ConnectPage = (): JSX.Element => {
   const [airPlayReceiverProtocol, setAirPlayReceiverProtocol] = useState<AirPlayReceiverProtocol>('airplay1');
   const [donatorUnlockStatus, setDonatorUnlockStatus] = useState<ConnectDonatorUnlockStatus>(defaultDonatorUnlockStatus);
   const [isDonatorUnlockLoading, setIsDonatorUnlockLoading] = useState(true);
+  const [isSidebarHideBusy, setIsSidebarHideBusy] = useState(false);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [isCommandBusy, setIsCommandBusy] = useState(false);
   const [volumePercent, setVolumePercent] = useState(80);
@@ -2184,8 +2178,20 @@ export const ConnectPage = (): JSX.Element => {
     });
   }, []);
 
-  const openPluginsForUnlock = useCallback((): void => {
-    window.dispatchEvent(new Event('app:navigate:plugins'));
+  const openEchoProAccountSettings = useCallback((): void => {
+    window.dispatchEvent(new CustomEvent('app:navigate:settings-section', { detail: { section: 'general', targetId: 'settings-row-echo-pro-account' } }));
+  }, []);
+
+  const hideConnectFromSidebar = useCallback(async (): Promise<void> => {
+    setIsSidebarHideBusy(true);
+    setError(null);
+    try {
+      await hideSidebarRouteEntry('connect');
+    } catch (hideError) {
+      setError(hideError instanceof Error ? hideError.message : String(hideError));
+    } finally {
+      setIsSidebarHideBusy(false);
+    }
   }, []);
 
   const copyDonatorHwid = useCallback(async (): Promise<void> => {
@@ -2202,57 +2208,38 @@ export const ConnectPage = (): JSX.Element => {
   if (donatorUnlockStatus.unlocked !== true) {
     return (
       <div className="connect-page connect-page--locked">
-        <section className="connect-donator-lock" aria-label={t('connectPage.lock.aria')}>
-          <div className="connect-donator-lock__icon" aria-hidden="true">
-            {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={30} /> : <LockKeyhole size={30} />}
-          </div>
-          <div className="connect-donator-lock__intro">
-            <span>Connect Command Center</span>
+        <section className="remote-sources-hero connect-pro-hero" aria-label={t('connectPage.lock.aria')}>
+          <div>
+            <h3>{t('route.connect.label')}</h3>
             <strong>{t('connectPage.lock.title')}</strong>
-            <small>{t('connectPage.lock.description')}</small>
+            <p>{t('connectPage.lock.description')}</p>
           </div>
-          <p className="section-kicker">WIRELESS PLAYBACK</p>
-          <h1>Donator Only</h1>
-          <p>{t(connectDonatorUnlockReasonLabel[donatorUnlockStatus.reason], {
-            hwidFile: connectDonatorHwidFileName,
-            licenseFile: connectDonatorLicenseFileName,
-          })}</p>
-          <div className="connect-donator-lock__status">
-            <span>Unlock Gate</span>
-            <strong>{donatorUnlockStatus.pluginInstalled ? (donatorUnlockStatus.pluginEnabled ? 'Plugin enabled' : 'Plugin disabled') : 'Plugin not imported'}</strong>
-          </div>
-          <div className="connect-donator-lock__facts">
-            <span>
-              <em>Plugin</em>
-              <strong>{connectDonatorUnlockPluginId}</strong>
-            </span>
-            <span>
-              <em>State</em>
-              <strong>{donatorUnlockStatus.pluginInstalled ? (donatorUnlockStatus.pluginEnabled ? 'Enabled' : 'Disabled') : 'Not imported'}</strong>
-            </span>
-            <span>
-              <em>HWID SHA-256</em>
-              <strong>{donatorUnlockStatus.hwidHash || 'Unavailable'}</strong>
-            </span>
-          </div>
-          <div className="connect-donator-lock__actions">
-            <button className="settings-action-button" type="button" onClick={openPluginsForUnlock}>
-              <PackagePlus size={16} />
-              {t('connectPage.lock.importPlugin')}
-            </button>
-            <button className="settings-action-button" type="button" onClick={() => void refreshDonatorUnlockStatus()} disabled={isDonatorUnlockLoading}>
-              {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
-              {t('connectPage.lock.recheck')}
-            </button>
-            <button className="settings-action-button" type="button" onClick={() => void copyDonatorHwid()} disabled={!donatorUnlockStatus.hwidHash}>
-              <Copy size={16} />
-              {t('connectPage.lock.copyHwid')}
-            </button>
-          </div>
-          <small>
-            {t('connectPage.lock.issuerHint', { licenseFile: connectDonatorLicenseFileName })}
-          </small>
+          {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={28} /> : <LockKeyhole size={28} />}
         </section>
+        <section className="remote-source-guardrail connect-pro-guardrail" aria-label="ECHO Pro required">
+          <strong>{isDonatorUnlockLoading ? '正在检查 ECHO Pro 状态' : '需要 ECHO Pro'}</strong>
+          <span>{t(connectDonatorUnlockReasonLabel[donatorUnlockStatus.reason])}</span>
+        </section>
+        <div className="remote-source-actions connect-pro-actions">
+          <button className="settings-action-button" type="button" onClick={openEchoProAccountSettings}>
+            <LockKeyhole size={15} />
+            打开 ECHO Pro 账号
+          </button>
+          <button className="settings-action-button" type="button" onClick={() => void refreshDonatorUnlockStatus()} disabled={isDonatorUnlockLoading}>
+            {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={15} /> : <RefreshCw size={15} />}
+            {t('connectPage.lock.recheck')}
+          </button>
+          <button className="settings-action-button" type="button" onClick={() => void copyDonatorHwid()} disabled={!donatorUnlockStatus.hwidHash}>
+            <Copy size={15} />
+            {t('connectPage.lock.copyHwid')}
+          </button>
+          <button className="settings-action-button" type="button" onClick={() => void hideConnectFromSidebar()} disabled={isSidebarHideBusy}>
+            {isSidebarHideBusy ? <Loader2 className="spinning-icon" size={15} /> : <EyeOff size={15} />}
+            从侧栏隐藏
+          </button>
+        </div>
+        {error ? <p className="settings-inline-note" role="alert">{error}</p> : null}
+        <p className="settings-inline-note">Connect 不再默认隐藏，但 DLNA、AirPlay、HQPlayer、ECHO Link、手机扫码和 Web 遥控仍需 ECHO Pro 才能启用。</p>
       </div>
     );
   }

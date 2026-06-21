@@ -15,7 +15,7 @@ import {
   createRecommendedLocalShortcuts,
 } from '../../shared/types/globalShortcuts';
 import type { HqPlayerConnectionTestResult, HqPlayerSettings, HqPlayerStatus } from '../../shared/types/hqplayer';
-import type { LibraryDatabaseProtectionStatus, LibraryScanStatus } from '../../shared/types/library';
+import type { LibraryDatabaseProtectionStatus, LibraryDiagnostics, LibraryScanStatus } from '../../shared/types/library';
 import type { MvSettings } from '../../shared/types/mv';
 import { resetLibraryScanSessionForTests } from '../stores/libraryScanSession';
 import { finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
@@ -137,6 +137,55 @@ const hqPlayerStatus: HqPlayerStatus = {
   lastError: null,
 };
 
+const libraryDiagnostics: LibraryDiagnostics = {
+  foldersCount: 0,
+  tracksCount: 0,
+  albumsCount: 0,
+  artistsCount: 0,
+  coversCount: 0,
+  lastScan: null,
+  lastQueryMs: {
+    getTracks: null,
+    getAlbums: null,
+  },
+  averageAlbumPayloadBytes: null,
+  databasePath: null,
+  databaseSizeBytes: null,
+  coverCachePath: null,
+  coverCacheSizeBytes: null,
+  coverCacheVersion: 1,
+  cpuCount: 8,
+  scanPerformanceMode: 'balanced',
+  metadataConcurrency: 2,
+  coverConcurrency: 2,
+  nativeFileScanner: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: true,
+    binaryPath: 'G:\\ECHO-main\\electron-app\\build\\echo-native-scanner.exe',
+    willUseNative: false,
+    totalScans: 0,
+    nativeScanOk: 0,
+    fallbackToTs: 0,
+    tsOnlyScans: 0,
+    lastFallbackReason: null,
+  },
+  nativeMetadataReader: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: true,
+    binaryPath: 'G:\\ECHO-main\\electron-app\\build\\echo-native-scanner.exe',
+    willUseNative: false,
+    supportedFormats: ['FLAC', 'MP3', 'M4A/MP4'],
+    totalReads: 0,
+    nativeOk: 0,
+    fallbackToTs: 0,
+    skippedUnsupportedExtension: 0,
+    hitRate: undefined,
+  },
+  audioAnalysisEnabled: false,
+};
+
 const getSettingsMock = vi.fn();
 const setSettingsMock = vi.fn();
 const resetSettingsMock = vi.fn();
@@ -167,6 +216,7 @@ const validateGlobalShortcutMock = vi.fn();
 const kickoffArtistImageBackfillMock = vi.fn();
 const getArtistImageJobStatusMock = vi.fn();
 const clearArtistOnlineInfoCacheMock = vi.fn();
+const getLibraryDiagnosticsMock = vi.fn();
 const previewDuplicateTrackCleanupMock = vi.fn();
 const applyDuplicateTrackCleanupMock = vi.fn();
 const getFoldersMock = vi.fn();
@@ -184,6 +234,7 @@ const hqPlayerTestConnectionMock = vi.fn();
 const openDevConsoleMock = vi.fn();
 const relaunchAppMock = vi.fn();
 const getDonatorUnlockStatusMock = vi.fn();
+const releaseEchoProDevicesMock = vi.fn();
 
 const downloadSettings: DownloadSettings = {
   audioStrategy: 'best_available',
@@ -305,6 +356,7 @@ vi.mock('../utils/echoBridge', () => ({
     resetSettings: resetSettingsMock,
     setCoverCacheDirectory: vi.fn(),
     setSettings: setSettingsMock,
+    releaseEchoProDevices: releaseEchoProDevicesMock,
   }),
   getAudioBridge: () => ({
     getStatus: audioGetStatusMock,
@@ -405,6 +457,7 @@ vi.mock('../utils/echoBridge', () => ({
     refreshAlbumGrouping: vi.fn().mockResolvedValue({ songCount: 0, albumCount: 0, artistCount: 0, folderCount: 0, totalDuration: 0, lastScanAt: null }),
     startReplayGainAnalysis: startReplayGainAnalysisMock,
     getReplayGainAnalysisStatus: getReplayGainAnalysisStatusMock,
+    getDiagnostics: getLibraryDiagnosticsMock,
   }),
 }));
 
@@ -463,6 +516,7 @@ beforeEach(() => {
   resetLibraryScanSessionForTests();
   setNavigatorPlatform('Win32', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
   getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+  getLibraryDiagnosticsMock.mockResolvedValue(libraryDiagnostics);
   chooseDownloadOutputDirectoryMock.mockResolvedValue({ ...downloadSettings, outputDirectory: 'E:\\Music Downloads' });
   hqPlayerGetSettingsMock.mockResolvedValue(hqPlayerSettings);
   hqPlayerSetSettingsMock.mockImplementation(async (patch: Partial<HqPlayerSettings>) => ({ ...hqPlayerSettings, ...patch }));
@@ -907,6 +961,24 @@ describe('SettingsPage', () => {
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ onboardingCompleted: false }));
     expect(settingsChanged).toHaveBeenCalledWith(expect.objectContaining({ detail: nextSettings }));
+  });
+
+  it('opens the user notice from the general settings notice button', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const openUserNotice = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    window.addEventListener('app:open-user-notice', openUserNotice, { once: true });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.userNotice.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'settings.general.userNotice.action' }));
+
+    expect(openUserNotice).toHaveBeenCalledTimes(1);
+    expect(setSettingsMock).not.toHaveBeenCalledWith({ userNoticeAcceptedVersion: expect.any(Number) });
   });
 
   it('saves sidebar auto-hide from the general settings toggle', async () => {
@@ -1977,6 +2049,7 @@ describe('SettingsPage', () => {
   it('saves the window acrylic opt-in and offers to relaunch for the window material change', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    getDonatorUnlockStatusMock.mockResolvedValue({ unlocked: true });
     getSettingsMock.mockResolvedValue(settings);
     let currentSettings = settings;
     setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => {
@@ -1994,7 +2067,9 @@ describe('SettingsPage', () => {
       .getByText('settings.appearance.windowAcrylic.title · settings.appearance.windowAcrylic.experimental')
       .closest('.setting-row') as HTMLElement;
     expect(within(row).getByText('settings.appearance.windowAcrylic.themeWarning')).toBeTruthy();
-    fireEvent.click(within(row).getByRole('button'));
+    const acrylicToggle = within(row).getByRole('button');
+    await waitFor(() => expect(acrylicToggle).toHaveProperty('disabled', false));
+    fireEvent.click(acrylicToggle);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicEnabled: true }));
     expect(confirmSpy).toHaveBeenCalledWith('settings.appearance.windowAcrylic.restartConfirm');
@@ -2306,7 +2381,7 @@ describe('SettingsPage', () => {
     const customTheme = {
       id: 'theme-safe',
       name: 'Safe Theme',
-      basePreset: 'nyanCat' as const,
+      basePreset: 'classic' as const,
       light: { accent: '#ff66aa' },
       createdAt: '2026-05-20T00:00:00.000Z',
       updatedAt: '2026-05-20T00:00:00.000Z',
@@ -2335,20 +2410,22 @@ describe('SettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     fireEvent.click(screen.getByRole('button', { name: /Safe Theme/ }));
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'nyanCat', appearanceThemeCustomId: 'theme-safe' }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'classic', appearanceThemeCustomId: 'theme-safe' }));
 
     fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.rename/ }));
     await waitFor(() =>
       expect(setSettingsMock).toHaveBeenCalledWith({
+        appearanceThemeCustomId: 'theme-safe',
         appearanceCustomThemes: expect.arrayContaining([expect.objectContaining({ id: 'theme-safe', name: 'Renamed Theme' })]),
       }),
     );
+    expect(screen.getAllByRole('button', { name: /Renamed Theme/ }).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.duplicate/ }));
     await waitFor(() =>
       expect(setSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          appearanceThemePreset: 'nyanCat',
+          appearanceThemePreset: 'classic',
           appearanceThemeCustomId: expect.any(String),
           appearanceCustomThemes: expect.arrayContaining([expect.objectContaining({ name: expect.stringContaining('Copy') })]),
         }),
@@ -2360,7 +2437,7 @@ describe('SettingsPage', () => {
       expect(setSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
           appearanceThemeCustomId: null,
-          appearanceThemePreset: 'nyanCat',
+          appearanceThemePreset: 'classic',
         }),
       ),
     );
@@ -2402,7 +2479,10 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.library\\.label');
-    const row = screen.getByRole('heading', { name: /Native File Scanner/ }).closest('.setting-row') as HTMLElement;
+    const row = screen.getByRole('heading', { name: 'mediaLibrary.settings.nativeFileScanner.title' }).closest('.setting-row') as HTMLElement;
+    await waitFor(() => expect(getLibraryDiagnosticsMock).toHaveBeenCalled());
+    expect(within(row).getByText('mediaLibrary.settings.nativeStatus.disabled')).toBeTruthy();
+    expect(within(row).getByText('mediaLibrary.settings.nativeFileScanner.stats')).toBeTruthy();
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ nativeFileScannerEnabled: true }));
@@ -2421,7 +2501,10 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.library\\.label');
-    const row = screen.getByRole('heading', { name: /Native Metadata Reader/ }).closest('.setting-row') as HTMLElement;
+    const row = screen.getByRole('heading', { name: 'mediaLibrary.settings.nativeMetadataReader.title' }).closest('.setting-row') as HTMLElement;
+    await waitFor(() => expect(getLibraryDiagnosticsMock).toHaveBeenCalled());
+    expect(within(row).getByText('mediaLibrary.settings.nativeStatus.disabled')).toBeTruthy();
+    expect(within(row).getByText('mediaLibrary.settings.nativeMetadataReader.stats')).toBeTruthy();
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ nativeMetadataReaderEnabled: true }));

@@ -1705,6 +1705,16 @@ const echoApi: EchoApi = {
     showTouchKeyboard: () => ipcRenderer.invoke(IpcChannels.AppShowTouchKeyboard),
     testNetworkProxy: (patch) =>
       patch === undefined ? ipcRenderer.invoke(IpcChannels.AppTestNetworkProxy) : ipcRenderer.invoke(IpcChannels.AppTestNetworkProxy, patch),
+    getEchoProAccountStatus: () => ipcRenderer.invoke(IpcChannels.AppEchoProAccountGetStatus),
+    loginEchoProAccount: (credentials) => ipcRenderer.invoke(IpcChannels.AppEchoProAccountLogin, credentials),
+    registerEchoProAccount: (credentials) => ipcRenderer.invoke(IpcChannels.AppEchoProAccountRegister, credentials),
+    logoutEchoProAccount: () => ipcRenderer.invoke(IpcChannels.AppEchoProAccountLogout),
+    redeemEchoProKey: (key) => ipcRenderer.invoke(IpcChannels.AppEchoProAccountRedeemKey, key),
+    releaseEchoProDevices: (password) => ipcRenderer.invoke(IpcChannels.AppEchoProAccountReleaseDevices, password),
+    getEchoProSettingsCloudStatus: () => ipcRenderer.invoke(IpcChannels.AppEchoProSettingsCloudGetStatus),
+    saveEchoProSettingsCloud: () => ipcRenderer.invoke(IpcChannels.AppEchoProSettingsCloudSave),
+    pullEchoProSettingsCloud: () => ipcRenderer.invoke(IpcChannels.AppEchoProSettingsCloudPull),
+    applyEchoProSettingsCloud: () => ipcRenderer.invoke(IpcChannels.AppEchoProSettingsCloudApply),
     validateGlobalShortcut: (accelerator) => ipcRenderer.invoke(IpcChannels.AppValidateGlobalShortcut, accelerator),
     onGlobalShortcutCommand: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, action: unknown): void => {

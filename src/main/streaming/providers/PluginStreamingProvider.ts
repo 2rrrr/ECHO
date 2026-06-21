@@ -8,6 +8,7 @@ import {
 } from '../../../shared/types/streaming';
 import { streamingStableKey } from '../../../shared/types/streaming';
 import { getPluginService } from '../../plugins/PluginService';
+import { requirePrivateFeature } from '../../plugins/privateEntitlements';
 import type { StreamingProvider } from '../StreamingProvider';
 
 type PluginSourceIdentity = {
@@ -83,6 +84,7 @@ export class PluginStreamingProvider implements StreamingProvider {
   private readonly recentTracks = new Map<string, StreamingTrack>();
 
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
+    await requirePrivateFeature('plugin-streaming-source');
     const result = await getPluginService().querySources({
       query: request.query,
       page: request.page,
@@ -125,6 +127,7 @@ export class PluginStreamingProvider implements StreamingProvider {
   }
 
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {
+    await requirePrivateFeature('plugin-streaming-source');
     const identity = decodePluginSourceIdentity(request.providerTrackId);
     const source = await getPluginService().resolveSourcePlayback(identity);
     return {

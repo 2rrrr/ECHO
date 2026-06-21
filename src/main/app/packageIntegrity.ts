@@ -79,7 +79,13 @@ export const verifyPackageIntegrity = async ({
   env?: NodeJS.ProcessEnv;
 } = {}): Promise<PackageIntegrityVerificationResult> => {
   if (!isPackageIntegrityEnforced(isPackaged, env)) {
-    return { ok: true, skipped: true, verified: [], warnings: [], errors: [] };
+    return {
+      ok: true,
+      skipped: true,
+      verified: [],
+      warnings: [],
+      errors: [],
+    };
   }
 
   const verified: string[] = [];

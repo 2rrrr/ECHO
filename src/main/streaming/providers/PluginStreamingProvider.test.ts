@@ -5,15 +5,22 @@ const serviceMock = vi.hoisted(() => ({
   querySources: vi.fn(),
   resolveSourcePlayback: vi.fn(),
 }));
+const requirePrivateFeatureMock = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock('../../plugins/PluginService', () => ({
   getPluginService: () => serviceMock,
+}));
+
+vi.mock('../../plugins/privateEntitlements', () => ({
+  requirePrivateFeature: requirePrivateFeatureMock,
 }));
 
 describe('PluginStreamingProvider', () => {
   beforeEach(() => {
     serviceMock.querySources.mockReset();
     serviceMock.resolveSourcePlayback.mockReset();
+    requirePrivateFeatureMock.mockReset();
+    requirePrivateFeatureMock.mockResolvedValue(undefined);
   });
 
   it('maps plugin source candidates into playable streaming tracks', async () => {
@@ -94,6 +101,14 @@ describe('PluginStreamingProvider', () => {
       headers: { Range: 'bytes=0-' },
       supportsRange: true,
     });
+  });
+
+  it('rejects plugin streaming when ECHO Pro is not verified', async () => {
+    requirePrivateFeatureMock.mockRejectedValue(new Error('echo_pro_required'));
+
+    const provider = new PluginStreamingProvider();
+    await expect(provider.search({ provider: 'plugin', query: 'song', page: 1, pageSize: 20 })).rejects.toThrow('echo_pro_required');
+    expect(serviceMock.querySources).not.toHaveBeenCalled();
   });
 });
 

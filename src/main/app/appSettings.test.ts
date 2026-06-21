@@ -299,11 +299,15 @@ describe('app settings normalization', () => {
   });
 
   it('normalizes the upcoming track notice as an explicit opt-in', async () => {
+    const { currentUserNoticeVersion } = await import('../../shared/types/appSettings');
     const { normalizeSettings } = await import('./appSettings');
 
     expect(normalizeSettings({}).upcomingTrackNoticeEnabled).toBe(false);
     expect(normalizeSettings({ upcomingTrackNoticeEnabled: true }).upcomingTrackNoticeEnabled).toBe(true);
     expect(normalizeSettings({ upcomingTrackNoticeEnabled: 'true' as never }).upcomingTrackNoticeEnabled).toBe(false);
+    expect(normalizeSettings({}).userNoticeAcceptedVersion).toBe(0);
+    expect(normalizeSettings({ userNoticeAcceptedVersion: currentUserNoticeVersion }).userNoticeAcceptedVersion).toBe(currentUserNoticeVersion);
+    expect(normalizeSettings({ userNoticeAcceptedVersion: currentUserNoticeVersion + 1 }).userNoticeAcceptedVersion).toBe(0);
   });
 
   it('normalizes data protection disable as an explicit opt-in', async () => {

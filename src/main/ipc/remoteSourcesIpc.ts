@@ -20,6 +20,7 @@ import type {
 } from '../../shared/types/remoteSources';
 import type { LibrarySort } from '../../shared/types/library';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
+import { requirePrivateFeature } from '../plugins/privateEntitlements';
 import {
   createBaiduOAuthAuthorizeUrl,
   exchangeBaiduOAuthCode,
@@ -52,6 +53,18 @@ const sortValues = new Set<LibrarySort>([
   'album',
   'recent',
 ]);
+
+const requireRemoteSourcesProUnlock = async (): Promise<void> => {
+  await requirePrivateFeature('remote-sources');
+};
+
+const withRemoteSourcesProUnlock = <TArgs extends unknown[], TResult>(
+  handler: (...args: TArgs) => TResult | Promise<TResult>,
+): ((...args: TArgs) => Promise<TResult>) =>
+  async (...args: TArgs): Promise<TResult> => {
+    await requireRemoteSourcesProUnlock();
+    return handler(...args);
+  };
 
 const requireText = (value: unknown, name: string): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -344,34 +357,34 @@ const normalizeUpdate = (value: unknown): RemoteSourceUpdate => {
 };
 
 export const registerRemoteSourcesIpc = (): void => {
-  ipcMain.handle(IpcChannels.RemoteSourcesList, () => getRemoteSourceService().listSources());
-  ipcMain.handle(IpcChannels.RemoteSourcesGetOverview, (_event, sourceId?: unknown) =>
+  ipcMain.handle(IpcChannels.RemoteSourcesList, withRemoteSourcesProUnlock(() => getRemoteSourceService().listSources()));
+  ipcMain.handle(IpcChannels.RemoteSourcesGetOverview, withRemoteSourcesProUnlock((_event, sourceId?: unknown) =>
     getRemoteSourceService().getOverview(optionalText(sourceId)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesPreviewAlbumGrouping, (_event, strategy?: unknown, sourceId?: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesPreviewAlbumGrouping, withRemoteSourcesProUnlock((_event, strategy?: unknown, sourceId?: unknown) =>
     getRemoteSourceService().previewAlbumGrouping(normalizeRemoteAlbumMergeStrategy(strategy), optionalText(sourceId)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesListIssues, (_event, sourceId: unknown, kind: unknown, limit?: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesListIssues, withRemoteSourcesProUnlock((_event, sourceId: unknown, kind: unknown, limit?: unknown) =>
     getRemoteSourceService().listIssues(requireText(sourceId, 'sourceId'), normalizeIssueKind(kind), normalizeIssueLimit(limit)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesCreate, (_event, input: unknown) => getRemoteSourceService().createSource(normalizeInput(input)));
-  ipcMain.handle(IpcChannels.RemoteSourcesUpdate, (_event, input: unknown) => getRemoteSourceService().updateSource(normalizeUpdate(input)));
-  ipcMain.handle(IpcChannels.RemoteSourcesDisconnect, (_event, sourceId: unknown) => getRemoteSourceService().disconnectSource(requireText(sourceId, 'sourceId')));
-  ipcMain.handle(IpcChannels.RemoteSourcesDelete, (_event, sourceId: unknown) => getRemoteSourceService().deleteSource(requireText(sourceId, 'sourceId')));
-  ipcMain.handle(IpcChannels.RemoteSourcesTest, (_event, input: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesCreate, withRemoteSourcesProUnlock((_event, input: unknown) => getRemoteSourceService().createSource(normalizeInput(input))));
+  ipcMain.handle(IpcChannels.RemoteSourcesUpdate, withRemoteSourcesProUnlock((_event, input: unknown) => getRemoteSourceService().updateSource(normalizeUpdate(input))));
+  ipcMain.handle(IpcChannels.RemoteSourcesDisconnect, withRemoteSourcesProUnlock((_event, sourceId: unknown) => getRemoteSourceService().disconnectSource(requireText(sourceId, 'sourceId'))));
+  ipcMain.handle(IpcChannels.RemoteSourcesDelete, withRemoteSourcesProUnlock((_event, sourceId: unknown) => getRemoteSourceService().deleteSource(requireText(sourceId, 'sourceId'))));
+  ipcMain.handle(IpcChannels.RemoteSourcesTest, withRemoteSourcesProUnlock((_event, input: unknown) =>
     typeof input === 'string' ? getRemoteSourceService().testSource(requireText(input, 'sourceId')) : getRemoteSourceService().testSource(normalizeInput(input)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesBrowse, (_event, sourceId: unknown, path?: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesBrowse, withRemoteSourcesProUnlock((_event, sourceId: unknown, path?: unknown) =>
     getRemoteSourceService().browse(requireText(sourceId, 'sourceId'), optionalText(path)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesSync, (_event, sourceId: unknown, options?: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesSync, withRemoteSourcesProUnlock((_event, sourceId: unknown, options?: unknown) =>
     getRemoteSourceService().syncSource(requireText(sourceId, 'sourceId'), normalizeRemoteSyncOptions(options)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesCancelSync, (_event, sourceId: unknown) => getRemoteSourceService().cancelSync(requireText(sourceId, 'sourceId')));
-  ipcMain.handle(IpcChannels.RemoteSourcesGetSyncStatus, (_event, sourceId: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesCancelSync, withRemoteSourcesProUnlock((_event, sourceId: unknown) => getRemoteSourceService().cancelSync(requireText(sourceId, 'sourceId'))));
+  ipcMain.handle(IpcChannels.RemoteSourcesGetSyncStatus, withRemoteSourcesProUnlock((_event, sourceId: unknown) =>
     getRemoteSourceService().getSyncStatus(requireText(sourceId, 'sourceId')),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesCreateStreamUrl, (_event, input: unknown) => {
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesCreateStreamUrl, withRemoteSourcesProUnlock((_event, input: unknown) => {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw new Error('stream URL input must be an object');
     }
@@ -383,62 +396,62 @@ export const registerRemoteSourcesIpc = (): void => {
       remotePath: optionalText(request.remotePath) ?? undefined,
       stableKey: optionalText(request.stableKey) ?? undefined,
     });
-  });
-  ipcMain.handle(IpcChannels.RemoteSourcesHydrateVisibleTracks, (_event, trackIds: unknown, options: unknown) =>
+  }));
+  ipcMain.handle(IpcChannels.RemoteSourcesHydrateVisibleTracks, withRemoteSourcesProUnlock((_event, trackIds: unknown, options: unknown) =>
     getRemoteSourceService().hydrateVisibleTracks(normalizeTrackIds(trackIds), normalizeVisibleHydrationOptions(options)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesLookupTracks, (_event, sourceId: unknown, remotePaths: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesLookupTracks, withRemoteSourcesProUnlock((_event, sourceId: unknown, remotePaths: unknown) =>
     getRemoteSourceService().lookupTracks(requireText(sourceId, 'sourceId'), normalizeRemotePaths(remotePaths)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesListIndexedTracks, (_event, sourceId: unknown, rootPath: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesListIndexedTracks, withRemoteSourcesProUnlock((_event, sourceId: unknown, rootPath: unknown) =>
     getRemoteSourceService().listIndexedTracks(requireText(sourceId, 'sourceId'), optionalText(rootPath)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesListIndexedTracksPage, (_event, sourceId: unknown, query: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesListIndexedTracksPage, withRemoteSourcesProUnlock((_event, sourceId: unknown, query: unknown) =>
     getRemoteSourceService().listIndexedTracksPage(requireText(sourceId, 'sourceId'), normalizeIndexedTracksQuery(query)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesGetIndexedFolderStats, (_event, sourceId: unknown, rootPath: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesGetIndexedFolderStats, withRemoteSourcesProUnlock((_event, sourceId: unknown, rootPath: unknown) =>
     getRemoteSourceService().getIndexedFolderStats(requireText(sourceId, 'sourceId'), optionalText(rootPath)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesPreviewDirectoryItems, (_event, sourceId: unknown, items: unknown, options: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesPreviewDirectoryItems, withRemoteSourcesProUnlock((_event, sourceId: unknown, items: unknown, options: unknown) =>
     getRemoteSourceService().previewDirectoryItems(
       requireText(sourceId, 'sourceId'),
       normalizePreviewDirectoryItems(items),
       normalizeDirectoryPreviewOptions(options),
     ),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesStartBackgroundJobs, (_event, sourceId: unknown, kinds?: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesStartBackgroundJobs, withRemoteSourcesProUnlock((_event, sourceId: unknown, kinds?: unknown) =>
     getRemoteSourceService().startBackgroundJobs(requireText(sourceId, 'sourceId'), normalizeJobKinds(kinds)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesPauseBackgroundJobs, (_event, sourceId: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesPauseBackgroundJobs, withRemoteSourcesProUnlock((_event, sourceId: unknown) =>
     getRemoteSourceService().pauseBackgroundJobs(requireText(sourceId, 'sourceId')),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesResumeBackgroundJobs, (_event, sourceId: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesResumeBackgroundJobs, withRemoteSourcesProUnlock((_event, sourceId: unknown) =>
     getRemoteSourceService().resumeBackgroundJobs(requireText(sourceId, 'sourceId')),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesGetJobStatus, (_event, sourceId: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesGetJobStatus, withRemoteSourcesProUnlock((_event, sourceId: unknown) =>
     getRemoteSourceService().getJobStatus(requireText(sourceId, 'sourceId')),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesRetryFailedJobs, (_event, sourceId: unknown, kinds?: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesRetryFailedJobs, withRemoteSourcesProUnlock((_event, sourceId: unknown, kinds?: unknown) =>
     getRemoteSourceService().retryFailedJobs(requireText(sourceId, 'sourceId'), normalizeJobKinds(kinds)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesSetBackgroundPaused, (_event, paused: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesSetBackgroundPaused, withRemoteSourcesProUnlock((_event, paused: unknown) =>
     getRemoteSourceService().setBackgroundPaused(normalizeBoolean(paused)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesGetBackgroundGlobalStatus, () => getRemoteSourceService().getBackgroundGlobalStatus());
-  ipcMain.handle(IpcChannels.RemoteSourcesUpdateRuntimeLimits, (_event, sourceId: unknown, limits: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesGetBackgroundGlobalStatus, withRemoteSourcesProUnlock(() => getRemoteSourceService().getBackgroundGlobalStatus()));
+  ipcMain.handle(IpcChannels.RemoteSourcesUpdateRuntimeLimits, withRemoteSourcesProUnlock((_event, sourceId: unknown, limits: unknown) =>
     getRemoteSourceService().updateRuntimeLimits(requireText(sourceId, 'sourceId'), normalizeRuntimeLimits(limits)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesCreateBaiduAuthUrl, async (_event, input: unknown) => {
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesCreateBaiduAuthUrl, withRemoteSourcesProUnlock(async (_event, input: unknown) => {
     const url = createBaiduOAuthAuthorizeUrl(normalizeBaiduOAuthAuthorizeRequest(input));
     await shell.openExternal(url);
     return url;
-  });
-  ipcMain.handle(IpcChannels.RemoteSourcesExchangeBaiduAuthCode, (_event, input: unknown) =>
+  }));
+  ipcMain.handle(IpcChannels.RemoteSourcesExchangeBaiduAuthCode, withRemoteSourcesProUnlock((_event, input: unknown) =>
     exchangeBaiduOAuthCode(normalizeBaiduOAuthTokenRequest(input)),
-  );
-  ipcMain.handle(IpcChannels.RemoteSourcesStartBaiduOAuthLogin, (_event, input: unknown) =>
+  ));
+  ipcMain.handle(IpcChannels.RemoteSourcesStartBaiduOAuthLogin, withRemoteSourcesProUnlock((_event, input: unknown) =>
     startBaiduOAuthLogin(normalizeBaiduOAuthLoginRequest(input), {
       openUrl: (url) => shell.openExternal(url),
     }),
-  );
+  ));
 };

@@ -1,5 +1,5 @@
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, AlertTriangle, Code2, Download, Eye, FolderOpen, LockKeyhole, PackagePlus, Play, Power, RefreshCw, ScrollText, ShieldCheck, TerminalSquare, Trash2, Upload } from 'lucide-react';
+import { Activity, AlertTriangle, Code2, Download, Eye, FolderOpen, KeyRound, LockKeyhole, PackagePlus, Play, Power, RefreshCw, ScrollText, ShieldCheck, TerminalSquare, Trash2, Upload } from 'lucide-react';
 import { pluginPanelBridgeActions, pluginPanelBridgeChannel, pluginPanelBridgeVersion, pluginPermissionDescriptors } from '../../shared/types/plugins';
 import type {
   PluginCreateExampleKind,
@@ -16,7 +16,7 @@ import type {
 import { EmptyState } from '../components/ui/EmptyState';
 import { useOptionalI18n } from '../i18n/I18nProvider';
 import type { Locale } from '../i18n/locales';
-import { getPluginsBridge } from '../utils/echoBridge';
+import { getConnectBridge, getPluginsBridge } from '../utils/echoBridge';
 import { formatUserFacingError } from '../utils/userFacingError';
 
 const pluginPageTextZhCN = {
@@ -547,6 +547,7 @@ export const PluginsPage = (): JSX.Element => {
     return interpolatePluginText(localText[key], options);
   }, [localText]);
   const pluginsApi = getPluginsBridge();
+  const connectApi = getConnectBridge();
   const panelFrameRef = useRef<HTMLIFrameElement | null>(null);
   const [plugins, setPlugins] = useState<PluginSummary[]>([]);
   const [pluginDirectory, setPluginDirectory] = useState('');
@@ -556,28 +557,56 @@ export const PluginsPage = (): JSX.Element => {
   const [message, setMessage] = useState<string | null>(null);
   const [isPackageDragging, setIsPackageDragging] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<PluginSettingsPatch>({});
+  const [pluginsProUnlocked, setPluginsProUnlocked] = useState<boolean | null>(null);
 
   const selectedPlugin = useMemo(
     () => plugins.find((plugin) => plugin.id === selectedPluginId) ?? plugins[0] ?? null,
     [plugins, selectedPluginId],
   );
 
+  const openEchoProAccountSettings = useCallback((): void => {
+    window.dispatchEvent(new CustomEvent('app:navigate:settings-section', { detail: { section: 'general', targetId: 'settings-row-echo-pro-account' } }));
+  }, []);
+
+  const refreshPluginsProUnlock = useCallback(async (): Promise<void> => {
+    if (!connectApi?.getDonatorUnlockStatus) {
+      setPluginsProUnlocked(false);
+      return;
+    }
+    try {
+      const status = await connectApi.getDonatorUnlockStatus();
+      setPluginsProUnlocked(status.unlocked === true);
+      if (status.unlocked !== true) {
+        setMessage('插件功能需要 ECHO Pro 账号完成云端验证。');
+      } else {
+        setMessage(null);
+      }
+    } catch {
+      setPluginsProUnlocked(false);
+      setMessage('插件功能需要 ECHO Pro 账号完成云端验证。');
+    }
+  }, [connectApi]);
+
   const refresh = useCallback(async (): Promise<void> => {
-    if (!pluginsApi) {
+    if (!pluginsApi || pluginsProUnlocked !== true) {
       return;
     }
     const result = await pluginsApi.list();
     setPlugins(result.plugins);
     setPluginDirectory(result.directory);
     setSelectedPluginId((current) => result.plugins.some((plugin) => plugin.id === current) ? current : result.plugins[0]?.id ?? null);
-  }, [pluginsApi]);
+  }, [pluginsApi, pluginsProUnlocked]);
 
   const refreshLogs = useCallback(async (pluginId?: string | null): Promise<void> => {
-    if (!pluginsApi) {
+    if (!pluginsApi || pluginsProUnlocked !== true) {
       return;
     }
     setLogs(await pluginsApi.getLogs(pluginId ?? undefined));
-  }, [pluginsApi]);
+  }, [pluginsApi, pluginsProUnlocked]);
+
+  useEffect(() => {
+    void refreshPluginsProUnlock();
+  }, [refreshPluginsProUnlock]);
 
   useEffect(() => {
     void refresh().catch((error) => setMessage(formatError(error, t('fallback.error'))));
@@ -588,7 +617,7 @@ export const PluginsPage = (): JSX.Element => {
   }, [refreshLogs, selectedPlugin?.id]);
 
   useEffect(() => {
-    if (!pluginsApi || !selectedPlugin) {
+    if (!pluginsApi || pluginsProUnlocked !== true || !selectedPlugin) {
       setSettingsDraft({});
       return;
     }
@@ -596,7 +625,7 @@ export const PluginsPage = (): JSX.Element => {
     void pluginsApi.getSettings?.(selectedPlugin.id)
       .then((result) => setSettingsDraft(result.values))
       .catch(() => undefined);
-  }, [pluginsApi, selectedPlugin]);
+  }, [pluginsApi, pluginsProUnlocked, selectedPlugin]);
 
   const runAction = useCallback(
     async (key: string, action: () => Promise<unknown>, success: string): Promise<void> => {
@@ -779,7 +808,7 @@ export const PluginsPage = (): JSX.Element => {
   };
 
   useEffect(() => {
-    if (!pluginsApi || !selectedPlugin) {
+    if (!pluginsApi || pluginsProUnlocked !== true || !selectedPlugin) {
       return undefined;
     }
 
@@ -847,12 +876,45 @@ export const PluginsPage = (): JSX.Element => {
 
     window.addEventListener('message', handlePanelMessage);
     return () => window.removeEventListener('message', handlePanelMessage);
-  }, [pluginsApi, refresh, refreshLogs, selectedPlugin, t]);
+  }, [pluginsApi, pluginsProUnlocked, refresh, refreshLogs, selectedPlugin, t]);
 
   if (!pluginsApi) {
     return (
       <div className="page-stack plugins-page">
         <EmptyState icon={Code2} title={t('empty.unavailable.title')} description={t('empty.unavailable.description')} />
+      </div>
+    );
+  }
+
+  if (pluginsProUnlocked !== true) {
+    return (
+      <div className="page-stack plugins-page">
+        <header className="plain-page-header plugins-header">
+          <div>
+            <span className="section-kicker">ECHO Pro Required</span>
+            <h1>{t('header.title')}</h1>
+            <p>{pluginsProUnlocked === null ? '正在检查 ECHO Pro 状态...' : '插件功能已升级为 ECHO Pro Only。'}</p>
+          </div>
+          <LockKeyhole size={28} />
+        </header>
+        <section className="plugin-pro-lock" aria-label="ECHO Pro required">
+          <LockKeyhole size={24} />
+          <div>
+            <strong>插件功能已升级为 ECHO Pro Only</strong>
+            <span>启用、导入、运行命令、插件音源和插件设置都需要 ECHO Pro 云端验证。</span>
+          </div>
+        </section>
+        <div className="plugin-actions">
+          <button className="settings-action-button" type="button" onClick={openEchoProAccountSettings}>
+            <KeyRound size={16} />
+            打开 ECHO Pro 账号
+          </button>
+          <button className="settings-action-button" type="button" onClick={() => void refreshPluginsProUnlock()}>
+            <RefreshCw size={16} />
+            重新检查
+          </button>
+        </div>
+        {message ? <p className="plugins-message">{message}</p> : null}
       </div>
     );
   }

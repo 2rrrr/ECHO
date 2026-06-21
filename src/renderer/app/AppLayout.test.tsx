@@ -1184,6 +1184,51 @@ describe('AppLayout standalone routes', () => {
     });
   });
 
+  it('keeps the Connect sidebar entry visible before Pro unlock', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      sidebarRouteOrder: ['home', 'connect', 'songs'],
+      sidebarHiddenRouteIds: [],
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+      connect: {
+        getDonatorUnlockStatus: vi.fn().mockResolvedValue({
+          ...unlockedDonatorStatus,
+          unlocked: false,
+          pluginInstalled: false,
+          pluginEnabled: false,
+          hwidHash: 'b'.repeat(64),
+          reason: 'license-invalid',
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const localRoutes: AppRoute[] = [
+      routesWithHome[0],
+      {
+        id: 'connect',
+        label: 'Connect',
+        description: 'Connect',
+        icon: Music2,
+        placement: 'main',
+        element: <div>Connect locked shell</div>,
+      },
+      routes[0],
+    ];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={localRoutes} />
+      </AppProviders>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    await waitFor(() => expect(within(sidebar).getByRole('button', { name: 'Connect' })).toBeTruthy());
+  });
+
   it('adds host-controlled plugin panel routes from enabled plugins', async () => {
     window.localStorage.clear();
     const getSettings = vi.fn().mockResolvedValue({

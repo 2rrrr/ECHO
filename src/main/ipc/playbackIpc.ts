@@ -29,6 +29,7 @@ import { getPlaybackSessionStore, normalizePersistedPlaybackSession } from '../a
 import { getCrashReportService } from '../diagnostics/CrashReportService';
 import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
+import { requirePrivateFeature } from '../plugins/privateEntitlements';
 import { getAppSettings } from '../app/appSettings';
 import { noteDataProtectionPlaybackActivity, setDataProtectionPlaybackStateProvider } from '../app/dataProtection';
 import { resolveLocalAudioFiles } from '../app/localFileOpen';
@@ -717,6 +718,10 @@ const resolveMediaItemForPlayback = async (
   const item = request.item;
   let durationSeconds = item.duration && item.duration > 0 ? item.duration : null;
   let refreshedRemoteTrack: RemoteLibraryTrack | null = null;
+  if (item.mediaType === 'remote') {
+    await requirePrivateFeature('cover-cache');
+  }
+
   if (item.mediaType === 'remote' && !durationSeconds) {
     setRemotePlaybackActive(true);
     refreshedRemoteTrack = await getRemoteSourceService().refreshTrackMetadata(item.trackId);

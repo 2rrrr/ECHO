@@ -38,6 +38,12 @@ const metadataRequestTimeoutMs = 10000;
 const nativeMetadataReaderSupportedFormats = ['FLAC', 'MP3', 'M4A/MP4'];
 const nativeMetadataReaderSupportedExtensions = new Set(['.flac', '.fla', '.mp3', '.m4a', '.mp4', '.m4b', '.m4p']);
 const defaultNativeMetadataSummaryInterval = 500;
+const nativeMetadataReaderRuntimeStats: NativeMetadataReaderRuntimeStats = {
+  total: 0,
+  nativeOk: 0,
+  fallbackToTs: 0,
+  skippedUnsupportedExtension: 0,
+};
 
 const isNativeMetadataSupportedPath = (filePath: string): boolean =>
   nativeMetadataReaderSupportedExtensions.has(extname(filePath).toLowerCase());
@@ -82,6 +88,13 @@ export const getNativeMetadataReaderDiagnostics = (
     binaryPath,
     willUseNative: enablement.enabled && binaryFound,
     supportedFormats: nativeMetadataReaderSupportedFormats,
+    totalReads: nativeMetadataReaderRuntimeStats.total,
+    nativeOk: nativeMetadataReaderRuntimeStats.nativeOk,
+    fallbackToTs: nativeMetadataReaderRuntimeStats.fallbackToTs,
+    skippedUnsupportedExtension: nativeMetadataReaderRuntimeStats.skippedUnsupportedExtension,
+    hitRate: nativeMetadataReaderRuntimeStats.total > 0
+      ? nativeMetadataReaderRuntimeStats.nativeOk / nativeMetadataReaderRuntimeStats.total
+      : undefined,
   };
 };
 
@@ -412,6 +425,10 @@ export class NativeThenTsMetadataReader implements MetadataReader {
     } else {
       this.stats.skippedUnsupportedExtension += 1;
     }
+    nativeMetadataReaderRuntimeStats.total = this.stats.total;
+    nativeMetadataReaderRuntimeStats.nativeOk = this.stats.nativeOk;
+    nativeMetadataReaderRuntimeStats.fallbackToTs = this.stats.fallbackToTs;
+    nativeMetadataReaderRuntimeStats.skippedUnsupportedExtension = this.stats.skippedUnsupportedExtension;
 
     const verbose = isNativeMetadataVerbose();
     const shouldLog =

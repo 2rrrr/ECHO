@@ -23,8 +23,10 @@ import {
   History,
   Info,
   Keyboard,
+  KeyRound,
   Link2,
   Lock,
+  LogIn,
   MessageSquare,
   Monitor,
   Palette,
@@ -36,9 +38,11 @@ import {
   RotateCw,
   Search,
   Save,
+  ShieldCheck,
   ShieldAlert,
   SlidersHorizontal,
   Trash2,
+  User,
   Volume2,
   X,
   Zap,
@@ -70,6 +74,7 @@ import {
   type SidebarRouteId,
 } from '../../shared/types/sidebar';
 import type { AccountBrowser, AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
+import type { EchoProAccountStatus, EchoProSettingsCloudStatus } from '../../shared/types/privateEntitlements';
 import type {
   ArtistOnlineInfoSource,
   ArtistStreamingAlbumsProvider,
@@ -115,6 +120,7 @@ import type {
   DuplicateTrackCleanupPreview,
   DuplicateTrackIndexSummary,
   LibraryDatabaseProtectionStatus,
+  LibraryDiagnostics,
   LibraryScanStatus,
   LyricsBackfillJobStatus,
   ReplayGainAnalysisJobStatus,
@@ -136,7 +142,7 @@ import { DiagnosticsAssistantPanel } from '../components/settings/DiagnosticsAss
 import { RemoteSourcesPanel } from '../components/settings/RemoteSourcesPanel';
 import { StyledSelect } from '../components/ui/StyledSelect';
 import { useI18n } from '../i18n/I18nProvider';
-import type { TranslationKey } from '../i18n/locales';
+import type { Locale, TranslationKey } from '../i18n/locales';
 import {
   detectRendererPlatform,
   isAdvancedNativeOutputPlatform,
@@ -410,6 +416,8 @@ const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; 
 ];
 const playbackAdvancedPanelExpandedStorageKey = 'echo:settings:playback:advanced-panel-expanded';
 const integrationsAccountPanelExpandedStorageKey = 'echo:settings:integrations:account-panel-expanded';
+const generalEchoProAccountPanelExpandedStorageKey = 'echo:settings:general:echo-pro-account-panel-expanded';
+const openUserNoticeEvent = 'app:open-user-notice';
 const integrationsCredentialPanelExpandedStorageKey = 'echo:settings:integrations:credential-panel-expanded';
 const integrationCredentialSettingIds = new Set([
   'settings-row-spotify-auth-config',
@@ -4230,6 +4238,7 @@ const TidalAccountCard = ({
 };
 
 const NumberRangeField = ({
+  disabled = false,
   max,
   min,
   onChange,
@@ -4237,6 +4246,7 @@ const NumberRangeField = ({
   suffix,
   value,
 }: {
+  disabled?: boolean;
   max: number;
   min: number;
   onChange: (value: number) => void;
@@ -4245,13 +4255,151 @@ const NumberRangeField = ({
   value: number;
 }): JSX.Element => (
   <label className="settings-range-field">
-    <input min={min} max={max} step={step} type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    <input disabled={disabled} min={min} max={max} step={step} type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
     <span>
       {value}
       {suffix}
     </span>
   </label>
 );
+
+const normalizeEchoProErrorCode = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  const lowered = message.toLowerCase();
+  const knownCodes = [
+    'invalid_credentials',
+    'registration_disabled',
+    'username_taken',
+    'device_limit_reached',
+    'session_required',
+    'pro_required',
+    'invalid_key',
+    'key_rejected',
+    'key_already_used',
+    'echo_pro_register_unavailable',
+    'echo_pro_http_400',
+    'echo_pro_http_401',
+    'echo_pro_http_403',
+    'echo_pro_http_405',
+    'echo_pro_http_409',
+    'echo_pro_http_500',
+  ];
+  const matchedCode = knownCodes.find((code) => lowered.includes(code));
+  if (matchedCode) {
+    return matchedCode;
+  }
+  if (lowered.includes('405') && lowered.includes('register')) {
+    return 'echo_pro_register_unavailable';
+  }
+  if (lowered.includes('405')) {
+    return 'echo_pro_http_405';
+  }
+  if (lowered.includes('username') && lowered.includes('3-40')) {
+    return 'echo_pro_username_use_qq';
+  }
+  if (lowered.includes('password') && lowered.includes('10-200')) {
+    return 'echo_pro_password_length';
+  }
+  if (lowered.includes('password') && lowered.includes('releasing')) {
+    return 'echo_pro_release_password_required';
+  }
+  if (lowered.includes('endpoint') && lowered.includes('not configured')) {
+    return 'echo_pro_endpoint_missing';
+  }
+  return message;
+};
+
+const formatEchoProError = (error: unknown, locale: Locale): string => {
+  const code = normalizeEchoProErrorCode(error);
+  const zh = locale === 'zh-CN';
+  const messages: Record<string, { zh: string; en: string }> = {
+    invalid_credentials: {
+      zh: '账号或密码不正确。注册/登录账号建议直接填写你的 QQ 号，密码至少 10 位。',
+      en: 'The account or password is incorrect. Use your QQ number as the account name, with a password of at least 10 characters.',
+    },
+    registration_disabled: {
+      zh: '服务器暂时关闭公开注册。请使用已授权账号登录，或联系管理员。',
+      en: 'Public registration is currently disabled. Sign in with an authorized account or contact the administrator.',
+    },
+    username_taken: {
+      zh: '这个账号已注册。请直接用你的 QQ 号登录，或换另一个 QQ 号注册。',
+      en: 'This account is already registered. Sign in with your QQ number, or register with another QQ number.',
+    },
+    device_limit_reached: {
+      zh: '这个账号已绑定 2 台设备。请在已登录设备里点击“解绑所有设备”，然后再登录本机。',
+      en: 'This account has already bound 2 devices. Use "Release all devices" on a signed-in device, then sign in here again.',
+    },
+    session_required: {
+      zh: '登录已失效，请重新登录 ECHO Pro。',
+      en: 'Your session expired. Please sign in to ECHO Pro again.',
+    },
+    pro_required: {
+      zh: '此功能需要 ECHO Pro。请先登录并兑换 ECHO Pro Key。',
+      en: 'This feature requires ECHO Pro. Sign in and redeem an ECHO Pro key first.',
+    },
+    invalid_key: {
+      zh: 'ECHO Pro Key 格式不正确，请检查后再兑换。',
+      en: 'The ECHO Pro key format is invalid. Check it and try again.',
+    },
+    key_rejected: {
+      zh: '这个 ECHO Pro Key 无效、已禁用或已过期。',
+      en: 'This ECHO Pro key is invalid, disabled, or expired.',
+    },
+    key_already_used: {
+      zh: '这个 ECHO Pro Key 已被使用。',
+      en: 'This ECHO Pro key has already been used.',
+    },
+    echo_pro_register_unavailable: {
+      zh: '注册接口暂不可用。请确认服务器已部署最新版，并建议使用 QQ 号作为账号注册。',
+      en: 'Registration is temporarily unavailable. Make sure the latest server is deployed, and use your QQ number as the account name.',
+    },
+    echo_pro_http_400: {
+      zh: '提交的信息格式不正确。账号建议填写 QQ 号，密码至少 10 位。',
+      en: 'The submitted information is invalid. Use your QQ number as the account name and a password of at least 10 characters.',
+    },
+    echo_pro_http_401: {
+      zh: '认证失败。请检查账号、密码，或重新登录。',
+      en: 'Authentication failed. Check your account and password, or sign in again.',
+    },
+    echo_pro_http_403: {
+      zh: '服务器拒绝了请求。可能是账号未授权、设备数已满或 Key 不可用。',
+      en: 'The server rejected the request. The account may not be authorized, the device limit may be reached, or the key may be unavailable.',
+    },
+    echo_pro_http_405: {
+      zh: '服务器接口方法不匹配，通常是线上 nginx/服务端还没更新。请重新部署最新版 ECHO Pro 云端服务。',
+      en: 'The server route does not accept this method, usually because nginx or the cloud service is outdated. Redeploy the latest ECHO Pro cloud service.',
+    },
+    echo_pro_http_409: {
+      zh: '账号冲突。这个 QQ 号可能已经注册，请直接登录。',
+      en: 'Account conflict. This QQ number may already be registered, so try signing in.',
+    },
+    echo_pro_http_500: {
+      zh: '服务器内部错误，请稍后再试或联系管理员。',
+      en: 'The server hit an internal error. Try again later or contact the administrator.',
+    },
+    echo_pro_username_use_qq: {
+      zh: '账号建议填写 QQ 号，只能包含字母、数字、点、下划线、@ 或短横线，长度 3-40。',
+      en: 'Use your QQ number as the account name. It must be 3-40 characters and may contain letters, numbers, dot, underscore, @, or dash.',
+    },
+    echo_pro_password_length: {
+      zh: '密码长度需要 10-200 位。',
+      en: 'Password length must be 10-200 characters.',
+    },
+    echo_pro_release_password_required: {
+      zh: '解绑所有设备前，请输入当前 ECHO Pro 账号密码。',
+      en: 'Enter your current ECHO Pro password before releasing all devices.',
+    },
+    echo_pro_endpoint_missing: {
+      zh: 'ECHO Pro 服务器地址未配置或不安全。',
+      en: 'The ECHO Pro server endpoint is not configured or is not secure.',
+    },
+  };
+  const known = messages[code];
+  if (known) {
+    return zh ? known.zh : known.en;
+  }
+  return code.replace(/^Error invoking remote method '[^']+': Error:\s*/u, '');
+};
 
 const FontPickerModal = ({
   currentFont,
@@ -4415,6 +4563,18 @@ export const SettingsPage = (): JSX.Element => {
   const [accountBusy, setAccountBusy] = useState<Partial<Record<AccountProvider, AccountBusyAction>>>({});
   const [accountErrors, setAccountErrors] = useState<Partial<Record<AccountProvider, string | null>>>({});
   const [accountMessages, setAccountMessages] = useState<Partial<Record<AccountProvider, string | null>>>({});
+  const [echoProAccountPanelExpanded, setEchoProAccountPanelExpanded] = useState(() =>
+    readBooleanStoragePreference(generalEchoProAccountPanelExpandedStorageKey, false),
+  );
+  const [echoProAccountStatus, setEchoProAccountStatus] = useState<EchoProAccountStatus | null>(null);
+  const [echoProUsername, setEchoProUsername] = useState('');
+  const [echoProPassword, setEchoProPassword] = useState('');
+  const [echoProRedeemKey, setEchoProRedeemKey] = useState('');
+  const [echoProBusyAction, setEchoProBusyAction] = useState<'login' | 'register' | 'logout' | 'refresh' | 'redeem' | 'release-devices' | null>(null);
+  const [echoProSettingsCloudStatus, setEchoProSettingsCloudStatus] = useState<EchoProSettingsCloudStatus | null>(null);
+  const [echoProSettingsCloudBusyAction, setEchoProSettingsCloudBusyAction] = useState<'status' | 'save' | 'pull' | null>(null);
+  const [echoProMessage, setEchoProMessage] = useState<string | null>(null);
+  const [echoProError, setEchoProError] = useState<string | null>(null);
   const [youtubeBrowser, setYoutubeBrowser] = useState<YouTubeBrowser>('none');
   const [soundCloudBrowser, setSoundCloudBrowser] = useState<AccountBrowser>('none');
   const [lastFmAuthToken, setLastFmAuthToken] = useState<string | null>(null);
@@ -4447,6 +4607,7 @@ export const SettingsPage = (): JSX.Element => {
   const [libraryScanMessage, setLibraryScanMessage] = useState<string | null>(null);
   const [libraryScanStatuses, setLibraryScanStatuses] = useState<ScanStatusByFolder>(getLibraryScanStatuses);
   const [libraryDeferredRefreshReady, setLibraryDeferredRefreshReady] = useState(false);
+  const [libraryDiagnostics, setLibraryDiagnostics] = useState<LibraryDiagnostics | null>(null);
   const [artistImageBusyAction, setArtistImageBusyAction] = useState<'refresh' | 'clear' | null>(null);
   const [artistImageMessage, setArtistImageMessage] = useState<string | null>(null);
   const [artistImageProgress, setArtistImageProgress] = useState<ArtistImageProgress | null>(null);
@@ -4571,14 +4732,24 @@ export const SettingsPage = (): JSX.Element => {
 
   useEffect(() => {
     const handleSettingsSectionNavigation = (event: Event): void => {
-      const section = event instanceof CustomEvent ? (event.detail as { section?: unknown } | null | undefined)?.section : null;
+      const detail = event instanceof CustomEvent ? event.detail as { section?: unknown; targetId?: unknown } | null | undefined : null;
+      const section = detail?.section;
+      const targetId = typeof detail?.targetId === 'string' ? detail.targetId : null;
       if (!section || !settingsNavKeys.has(section as SettingsNavKey)) {
         return;
       }
 
       setActiveSection(section as SettingsNavKey);
       setSettingsQuery('');
-      setHighlightedSettingId(null);
+      if (targetId === 'settings-row-echo-pro-account') {
+        setEchoProAccountPanelExpanded(true);
+        try {
+          window.localStorage.setItem(generalEchoProAccountPanelExpandedStorageKey, 'true');
+        } catch {
+          // Local storage can be unavailable in privacy-restricted shells; the in-memory toggle still works.
+        }
+      }
+      setHighlightedSettingId(targetId);
     };
 
     window.addEventListener(settingsSectionNavigationEvent, handleSettingsSectionNavigation);
@@ -4629,6 +4800,34 @@ export const SettingsPage = (): JSX.Element => {
         title: t('settings.general.firstRunWizard.title'),
         description: t('settings.general.firstRunWizard.description'),
         terms: [t('settings.general.firstRunWizard.title'), t('settings.general.firstRunWizard.description'), '首次启动指引', '新手教程', '新手指引', '新手引导', '向导', '引导', '標準輸出', '標準出力', '标准输出', '系统音频', 'システムオーディオ', 'guide', 'beginner guide', 'onboarding', 'first run', 'welcome', 'system audio'],
+      },
+      {
+        id: 'row-user-notice',
+        sectionKey: 'general',
+        targetId: 'settings-row-user-notice',
+        title: t('settings.general.userNotice.title'),
+        description: t('settings.general.userNotice.description'),
+        terms: [
+          t('settings.general.userNotice.title'),
+          t('settings.general.userNotice.description'),
+          '用户须知',
+          '用戶須知',
+          'user notice',
+          'terms',
+          'DMCA',
+          'AI',
+          'Codex',
+          'Claude',
+          'community boundaries',
+        ],
+      },
+      {
+        id: 'row-echo-pro-account',
+        sectionKey: 'general',
+        targetId: 'settings-row-echo-pro-account',
+        title: 'ECHO Pro 账号',
+        description: '登录云端账号后由服务器验证 Pro 资格。',
+        terms: ['ECHO Pro', 'Echo Pro', 'pro account', 'account', 'login', 'password', '账号', '账户', '登录', '密码', '云端验证', '联网验证'],
       },
       {
         id: 'row-sidebar-auto-hide',
@@ -5427,6 +5626,53 @@ export const SettingsPage = (): JSX.Element => {
   }, [appSettings?.downloadsFeatureUnlocked, mysteriousKeyVisible, settingsNavigationItems, t, windowsIntegrationAvailable]);
 
   const mysteriousKeySearchUnlocked = activeSection === 'general' && normalizeSettingsSearchText(settingsQuery) === 'zimin';
+  const nativeFileScannerDiagnostics = libraryDiagnostics?.nativeFileScanner ?? null;
+  const nativeMetadataReaderDiagnostics = libraryDiagnostics?.nativeMetadataReader ?? null;
+  const nativeFileScannerState = nativeFileScannerDiagnostics
+    ? nativeFileScannerDiagnostics.willUseNative
+      ? 'ready'
+      : nativeFileScannerDiagnostics.enabled && !nativeFileScannerDiagnostics.binaryFound
+        ? 'missing'
+        : 'disabled'
+    : 'unknown';
+  const nativeMetadataReaderState = nativeMetadataReaderDiagnostics
+    ? nativeMetadataReaderDiagnostics.willUseNative
+      ? 'ready'
+      : nativeMetadataReaderDiagnostics.enabled && !nativeMetadataReaderDiagnostics.binaryFound
+        ? 'missing'
+        : 'disabled'
+    : 'unknown';
+  const nativeFileScannerStatusText = nativeFileScannerDiagnostics
+    ? nativeFileScannerDiagnostics.willUseNative
+      ? t('mediaLibrary.settings.nativeStatus.ready')
+      : nativeFileScannerDiagnostics.enabled && !nativeFileScannerDiagnostics.binaryFound
+        ? t('mediaLibrary.settings.nativeStatus.binaryMissing')
+        : t('mediaLibrary.settings.nativeStatus.disabled')
+    : t('mediaLibrary.settings.nativeStatus.unavailable');
+  const nativeMetadataReaderStatusText = nativeMetadataReaderDiagnostics
+    ? nativeMetadataReaderDiagnostics.willUseNative
+      ? t('mediaLibrary.settings.nativeStatus.ready')
+      : nativeMetadataReaderDiagnostics.enabled && !nativeMetadataReaderDiagnostics.binaryFound
+        ? t('mediaLibrary.settings.nativeStatus.binaryMissing')
+        : t('mediaLibrary.settings.nativeStatus.disabled')
+    : t('mediaLibrary.settings.nativeStatus.unavailable');
+  const nativeFileScannerStatsText = nativeFileScannerDiagnostics
+    ? t('mediaLibrary.settings.nativeFileScanner.stats', {
+        nativeOk: nativeFileScannerDiagnostics.nativeScanOk ?? 0,
+        total: nativeFileScannerDiagnostics.totalScans ?? 0,
+        fallback: nativeFileScannerDiagnostics.fallbackToTs ?? 0,
+        tsOnly: nativeFileScannerDiagnostics.tsOnlyScans ?? 0,
+      })
+    : t('mediaLibrary.settings.nativeStatus.diagnosticsPending');
+  const nativeMetadataReaderStatsText = nativeMetadataReaderDiagnostics
+    ? t('mediaLibrary.settings.nativeMetadataReader.stats', {
+        nativeOk: nativeMetadataReaderDiagnostics.nativeOk ?? 0,
+        total: nativeMetadataReaderDiagnostics.totalReads ?? 0,
+        fallback: nativeMetadataReaderDiagnostics.fallbackToTs ?? 0,
+        skipped: nativeMetadataReaderDiagnostics.skippedUnsupportedExtension ?? 0,
+        hitRate: `${Math.round((nativeMetadataReaderDiagnostics.hitRate ?? 0) * 100)}%`,
+      })
+    : t('mediaLibrary.settings.nativeStatus.diagnosticsPending');
 
   useEffect(() => {
     if (!mysteriousKeySearchUnlocked) {
@@ -5747,6 +5993,75 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshEchoProAccountStatus = useCallback(async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.getEchoProAccountStatus) {
+      setEchoProAccountStatus(null);
+      setEchoProError('ECHO Pro account bridge unavailable.');
+      return;
+    }
+
+    setEchoProBusyAction('refresh');
+    setEchoProError(null);
+    try {
+      setEchoProAccountStatus(await app.getEchoProAccountStatus());
+    } catch (accountError) {
+      setEchoProError(formatEchoProError(accountError, locale));
+    } finally {
+      setEchoProBusyAction(null);
+    }
+  }, [locale]);
+
+  const refreshEchoProSettingsCloudStatus = useCallback(async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.getEchoProSettingsCloudStatus) {
+      setEchoProSettingsCloudStatus(null);
+      return;
+    }
+
+    setEchoProSettingsCloudBusyAction('status');
+    try {
+      setEchoProSettingsCloudStatus(await app.getEchoProSettingsCloudStatus());
+    } catch (cloudError) {
+      setEchoProSettingsCloudStatus((current) => ({
+        available: current?.available ?? false,
+        lastSavedAt: current?.lastSavedAt ?? null,
+        lastPulledAt: current?.lastPulledAt ?? null,
+        lastAppliedAt: current?.lastAppliedAt ?? null,
+        appVersion: current?.appVersion ?? null,
+        deviceName: current?.deviceName ?? null,
+        settingsCount: current?.settingsCount ?? 0,
+        librarySyncPlaylistCount: current?.librarySyncPlaylistCount ?? 0,
+        librarySyncFavoriteTrackCount: current?.librarySyncFavoriteTrackCount ?? 0,
+        lastError: cloudError instanceof Error ? cloudError.message : String(cloudError),
+      }));
+    } finally {
+      setEchoProSettingsCloudBusyAction(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (echoProAccountPanelExpanded) {
+      void refreshEchoProAccountStatus();
+      void refreshEchoProSettingsCloudStatus();
+    }
+  }, [echoProAccountPanelExpanded, refreshEchoProAccountStatus, refreshEchoProSettingsCloudStatus]);
+
+  const refreshLibraryDiagnostics = useCallback(async () => {
+    try {
+      const library = getLibraryBridge();
+
+      if (!library?.getDiagnostics) {
+        setLibraryDiagnostics(null);
+        return;
+      }
+
+      setLibraryDiagnostics(await library.getDiagnostics());
+    } catch {
+      setLibraryDiagnostics(null);
+    }
+  }, []);
+
   const refreshDatabaseProtectionStatus = useCallback(async (options: { deepCheck?: boolean } = {}) => {
     const library = getLibraryBridge();
     if (!library?.getDatabaseProtectionStatus) {
@@ -5974,6 +6289,25 @@ export const SettingsPage = (): JSX.Element => {
       cancelIdleTask();
     };
   }, [activeSection, libraryDeferredRefreshReady, refreshDuplicateSummary]);
+
+  useEffect(() => {
+    if (activeSection !== 'library') {
+      return undefined;
+    }
+
+    const cancelIdleTask = scheduleSettingsIdleTask(() => {
+      void refreshLibraryDiagnostics();
+    });
+
+    return () => {
+      cancelIdleTask();
+    };
+  }, [
+    activeSection,
+    appSettings?.nativeFileScannerEnabled,
+    appSettings?.nativeMetadataReaderEnabled,
+    refreshLibraryDiagnostics,
+  ]);
 
   useEffect(() => {
     if (activeSection !== 'library') {
@@ -6554,6 +6888,14 @@ export const SettingsPage = (): JSX.Element => {
     setActiveSection(key);
     if (isIntegrationCredentialSettingId(options.targetId)) {
       setCredentialPanelExpanded(true);
+    }
+    if (options.targetId === 'settings-row-echo-pro-account') {
+      setEchoProAccountPanelExpanded(true);
+      try {
+        window.localStorage.setItem(generalEchoProAccountPanelExpandedStorageKey, 'true');
+      } catch {
+        // Local storage can be unavailable in privacy-restricted shells; the in-memory toggle still works.
+      }
     }
     if (options.clearSearch) {
       setSettingsQuery('');
@@ -7433,8 +7775,18 @@ export const SettingsPage = (): JSX.Element => {
 
     const nextThemes = renameThemeCustomTheme(savedThemeCustomThemes, activeThemeCustom.id, nextName);
     setThemeCustomThemes(nextThemes);
-    setAppSettings((current) => (current ? { ...current, appearanceCustomThemes: nextThemes } : current));
-    patchAppSettings({ appearanceCustomThemes: nextThemes });
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, activeThemeCustom.basePreset, savedThemePresetOverrides, {
+      customThemeId: activeThemeCustom.id,
+      customThemes: nextThemes,
+      finalThemeUnlocked,
+      scheduleSettings: {
+        ...(appSettings ?? {}),
+        appearanceCustomThemes: nextThemes,
+        appearanceThemeCustomId: activeThemeCustom.id,
+      },
+    });
+    setAppSettings((current) => (current ? { ...current, appearanceCustomThemes: nextThemes, appearanceThemeCustomId: activeThemeCustom.id } : current));
+    patchAppSettings({ appearanceCustomThemes: nextThemes, appearanceThemeCustomId: activeThemeCustom.id });
   };
 
   const handleThemeCustomDuplicate = (): void => {
@@ -7623,6 +7975,16 @@ export const SettingsPage = (): JSX.Element => {
     }
 
     const nextEnabled = !(appSettings.appWindowAcrylicEnabled ?? false);
+    if (nextEnabled && !finalThemeUnlocked) {
+      setError('窗口亚克力是 ECHO Pro Only 功能，请先在通用设置登录或兑换 ECHO Pro。');
+      setEchoProAccountPanelExpanded(true);
+      try {
+        window.localStorage.setItem(generalEchoProAccountPanelExpandedStorageKey, 'true');
+      } catch {
+        // Ignore storage failures; the in-memory panel state is enough for this session.
+      }
+      return;
+    }
 
     void app
       .setSettings({ appWindowAcrylicEnabled: nextEnabled })
@@ -7641,22 +8003,31 @@ export const SettingsPage = (): JSX.Element => {
       .catch((settingsError) => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
-  }, [appSettings, dispatchSettingsChanged, t]);
+  }, [appSettings, dispatchSettingsChanged, finalThemeUnlocked, t]);
 
   const handleWindowAcrylicTransparencyChange = useCallback(
     (value: number): void => {
+      if (!finalThemeUnlocked) {
+        setError('窗口亚克力是 ECHO Pro Only 功能，请先在通用设置登录或兑换 ECHO Pro。');
+        return;
+      }
       patchAppSettings({
         appWindowAcrylicTransparencyPercent: Math.max(0, Math.min(100, Math.round(value))),
       });
     },
-    [patchAppSettings],
+    [finalThemeUnlocked, patchAppSettings],
   );
 
   const handleWindowAcrylicKeepWhenUnfocusedToggle = useCallback((): void => {
+    const nextEnabled = !(appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled ?? false);
+    if (nextEnabled && !finalThemeUnlocked) {
+      setError('窗口亚克力是 ECHO Pro Only 功能，请先在通用设置登录或兑换 ECHO Pro。');
+      return;
+    }
     patchAppSettings({
-      appWindowAcrylicKeepWhenUnfocusedEnabled: !(appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled ?? false),
+      appWindowAcrylicKeepWhenUnfocusedEnabled: nextEnabled,
     });
-  }, [appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled, patchAppSettings]);
+  }, [appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled, finalThemeUnlocked, patchAppSettings]);
 
   const handleSidebarRouteDragStart = useCallback((event: ReactDragEvent<HTMLDivElement>, routeId: SidebarRouteId): void => {
     setDraggingSidebarRouteId(routeId);
@@ -8048,6 +8419,21 @@ export const SettingsPage = (): JSX.Element => {
     });
   }, []);
 
+  const toggleEchoProAccountPanelExpanded = useCallback((): void => {
+    setEchoProAccountPanelExpanded((expanded) => {
+      const next = !expanded;
+      try {
+        window.localStorage.setItem(generalEchoProAccountPanelExpandedStorageKey, next ? 'true' : 'false');
+      } catch {
+        // Local storage can be unavailable in privacy-restricted shells; the in-memory toggle still works.
+      }
+      if (next) {
+        void refreshEchoProAccountStatus();
+      }
+      return next;
+    });
+  }, [refreshEchoProAccountStatus]);
+
   const toggleCredentialPanelExpanded = useCallback((): void => {
     setCredentialPanelExpanded((expanded) => {
       const next = !expanded;
@@ -8059,6 +8445,162 @@ export const SettingsPage = (): JSX.Element => {
       return next;
     });
   }, []);
+
+  const submitEchoProAccount = useCallback(async (action: 'login' | 'register'): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.loginEchoProAccount || !app.registerEchoProAccount) {
+      setEchoProError('ECHO Pro account bridge unavailable.');
+      return;
+    }
+
+    setEchoProBusyAction(action);
+    setEchoProError(null);
+    setEchoProMessage(null);
+    try {
+      const credentials = { username: echoProUsername.trim(), password: echoProPassword };
+      const status = action === 'login'
+        ? await app.loginEchoProAccount(credentials)
+        : await app.registerEchoProAccount(credentials);
+      setEchoProAccountStatus(status);
+      if (status.pro === true) {
+        void refreshEchoProSettingsCloudStatus();
+      }
+      setEchoProPassword('');
+      setEchoProMessage(action === 'login' ? '已登录 ECHO Pro 账号。' : '账号已创建。Pro 资格需要服务器授权后生效。');
+    } catch (accountError) {
+      setEchoProError(formatEchoProError(accountError, locale));
+    } finally {
+      setEchoProBusyAction(null);
+    }
+  }, [echoProPassword, echoProUsername, locale, refreshEchoProSettingsCloudStatus]);
+
+  const logoutEchoProAccount = useCallback(async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.logoutEchoProAccount) {
+      setEchoProError('ECHO Pro account bridge unavailable.');
+      return;
+    }
+
+    setEchoProBusyAction('logout');
+    setEchoProError(null);
+    setEchoProMessage(null);
+    try {
+      setEchoProAccountStatus(await app.logoutEchoProAccount());
+      setEchoProSettingsCloudStatus(null);
+      setEchoProMessage('已退出 ECHO Pro 账号。');
+    } catch (accountError) {
+      setEchoProError(formatEchoProError(accountError, locale));
+    } finally {
+      setEchoProBusyAction(null);
+    }
+  }, [locale]);
+
+  const redeemEchoProKey = useCallback(async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.redeemEchoProKey) {
+      setEchoProError('ECHO Pro key bridge unavailable.');
+      return;
+    }
+
+    setEchoProBusyAction('redeem');
+    setEchoProError(null);
+    setEchoProMessage(null);
+    try {
+      const result = await app.redeemEchoProKey(echoProRedeemKey);
+      setEchoProAccountStatus(result.status);
+      setEchoProRedeemKey('');
+      setEchoProMessage(`ECHO Pro key redeemed at ${formatProtectionTimestamp(result.redeemedAt)}.`);
+      if (result.status.pro === true) {
+        void refreshEchoProSettingsCloudStatus();
+      }
+    } catch (redeemError) {
+      setEchoProError(formatEchoProError(redeemError, locale));
+    } finally {
+      setEchoProBusyAction(null);
+    }
+  }, [echoProRedeemKey, locale, refreshEchoProSettingsCloudStatus]);
+
+  const releaseEchoProDevices = useCallback(async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.releaseEchoProDevices) {
+      setEchoProError('ECHO Pro device bridge unavailable.');
+      return;
+    }
+    if (!echoProAccountStatus?.loggedIn) {
+      setEchoProError('Please log in before releasing ECHO Pro devices.');
+      return;
+    }
+    if (echoProPassword.length < 10) {
+      setEchoProError('Enter your current ECHO Pro password before releasing all devices.');
+      return;
+    }
+    if (!window.confirm('解绑所有 ECHO Pro 设备？这会释放当前账号的 2 个设备槽位，并让其它设备重新验证。')) {
+      return;
+    }
+
+    setEchoProBusyAction('release-devices');
+    setEchoProError(null);
+    setEchoProMessage(null);
+    try {
+      const result = await app.releaseEchoProDevices(echoProPassword);
+      setEchoProAccountStatus(result.status);
+      setEchoProPassword('');
+      setEchoProMessage(`已解绑 ${result.releasedCount} 台设备，时间 ${formatProtectionTimestamp(result.releasedAt)}。`);
+    } catch (releaseError) {
+      setEchoProError(formatEchoProError(releaseError, locale));
+    } finally {
+      setEchoProBusyAction(null);
+    }
+  }, [echoProAccountStatus?.loggedIn, echoProPassword, locale]);
+
+  const saveEchoProSettingsCloud = useCallback(async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.saveEchoProSettingsCloud) {
+      setEchoProError('ECHO Pro cloud settings bridge unavailable.');
+      return;
+    }
+
+    setEchoProSettingsCloudBusyAction('save');
+    setEchoProError(null);
+    setEchoProMessage(null);
+    try {
+      const status = await app.saveEchoProSettingsCloud();
+      setEchoProSettingsCloudStatus(status);
+      setEchoProMessage(locale === 'zh-CN'
+        ? `ECHO 设置、网络歌单和流媒体收藏已保存到云端：${formatProtectionTimestamp(status.savedAt)}。`
+        : `ECHO settings, online playlists, and streaming favorites were saved to cloud at ${formatProtectionTimestamp(status.savedAt)}.`);
+    } catch (cloudError) {
+      setEchoProError(formatEchoProError(cloudError, locale));
+    } finally {
+      setEchoProSettingsCloudBusyAction(null);
+    }
+  }, [locale]);
+
+  const applyEchoProSettingsCloud = useCallback(async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.applyEchoProSettingsCloud || !app.getSettings) {
+      setEchoProError('ECHO Pro cloud settings bridge unavailable.');
+      return;
+    }
+
+    setEchoProSettingsCloudBusyAction('pull');
+    setEchoProError(null);
+    setEchoProMessage(null);
+    try {
+      const status = await app.applyEchoProSettingsCloud();
+      setEchoProSettingsCloudStatus(status);
+      const settings = await app.getSettings();
+      setAppSettings(settings);
+      dispatchSettingsChanged(settings);
+      setEchoProMessage(locale === 'zh-CN'
+        ? `ECHO 设置、网络歌单和流媒体收藏已从云端同步：${formatProtectionTimestamp(status.appliedAt)}。`
+        : `ECHO settings, online playlists, and streaming favorites were synced from cloud at ${formatProtectionTimestamp(status.appliedAt)}.`);
+    } catch (cloudError) {
+      setEchoProError(formatEchoProError(cloudError, locale));
+    } finally {
+      setEchoProSettingsCloudBusyAction(null);
+    }
+  }, [dispatchSettingsChanged, locale]);
 
   const handleOnlineAlbumInfoSave = useCallback((): void => {
     const patch: Partial<AppSettings> = {
@@ -9114,6 +9656,10 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleOpenFirstRunWizard = (): void => {
     patchAppSettings({ onboardingCompleted: false });
+  };
+
+  const handleOpenUserNotice = (): void => {
+    window.dispatchEvent(new Event(openUserNoticeEvent));
   };
 
   const handleLiveLibraryUpdatesToggle = (): void => {
@@ -11098,6 +11644,166 @@ export const SettingsPage = (): JSX.Element => {
                   {t('settings.general.firstRunWizard.action')}
                 </button>
               </SettingRow>
+              <SettingRow
+                id="settings-row-user-notice"
+                highlighted={highlightedSettingId === 'settings-row-user-notice'}
+                title={t('settings.general.userNotice.title')}
+                description={t('settings.general.userNotice.description')}
+              >
+                <button
+                  className="settings-action-button settings-user-notice-button"
+                  type="button"
+                  onClick={handleOpenUserNotice}
+                >
+                  <ShieldCheck size={15} />
+                  {t('settings.general.userNotice.action')}
+                </button>
+              </SettingRow>
+              <div
+                className="settings-account-panel settings-echo-pro-account-panel"
+                data-expanded={echoProAccountPanelExpanded}
+                data-search-highlight={highlightedSettingId === 'settings-row-echo-pro-account' ? 'true' : undefined}
+                id="settings-row-echo-pro-account"
+              >
+                <header className="settings-account-panel-header">
+                  <div>
+                    <h3>ECHO Pro 账号</h3>
+                    <p>{locale === 'zh-CN' ? '登录云端账号后，Pro 资格只由服务器验证。本地不会保存密码。注册时建议使用 QQ 号作为账号。' : 'After signing in, Pro eligibility is verified only by the server. Passwords are not stored locally. Use your QQ number as the account name when registering.'}</p>
+                  </div>
+                  <div className="settings-account-panel-actions">
+                    <span className={`list-filter-chip ${echoProAccountStatus?.pro ? 'active' : ''}`}>
+                      {echoProAccountStatus?.pro ? 'Pro 已启用' : echoProAccountStatus?.loggedIn ? '未授权 Pro' : '未登录'}
+                    </span>
+                    <button
+                      className="settings-action-button settings-account-panel-toggle"
+                      type="button"
+                      aria-controls="settings-echo-pro-account-body"
+                      aria-expanded={echoProAccountPanelExpanded}
+                      aria-label={echoProAccountPanelExpanded ? '折叠 ECHO Pro 账号' : '展开 ECHO Pro 账号'}
+                      onClick={toggleEchoProAccountPanelExpanded}
+                    >
+                      {echoProAccountPanelExpanded ? '折叠' : '展开'}
+                      <ChevronDown size={15} />
+                    </button>
+                  </div>
+                </header>
+                {echoProAccountPanelExpanded ? (
+                  <div className="settings-account-list settings-echo-pro-account-body" id="settings-echo-pro-account-body">
+                    <article className="settings-account-row">
+                      <div className="settings-account-summary">
+                        <User size={18} aria-hidden="true" />
+                        <div>
+                          <h3>{echoProAccountStatus?.displayName ?? echoProAccountStatus?.username ?? 'ECHO Pro'}</h3>
+                          <p>{echoProAccountStatus?.checkedAt ? `上次检查 ${echoProAccountStatus.checkedAt}` : locale === 'zh-CN' ? '使用 QQ 号注册/登录后联网检查 Pro 资格。' : 'Register or sign in with your QQ number to check Pro eligibility online.'}</p>
+                        </div>
+                      </div>
+                      <label className="settings-account-cookie-field">
+                        <input
+                          type="text"
+                          value={echoProUsername}
+                          autoComplete="username"
+                          placeholder={locale === 'zh-CN' ? 'QQ号（作为账号）' : 'QQ number (account name)'}
+                          disabled={echoProBusyAction !== null}
+                          onChange={(event) => setEchoProUsername(event.target.value)}
+                        />
+                      </label>
+                      <label className="settings-account-cookie-field">
+                        <input
+                          type="password"
+                          value={echoProPassword}
+                          autoComplete={echoProAccountStatus?.loggedIn ? 'current-password' : 'new-password'}
+                          placeholder="密码"
+                          disabled={echoProBusyAction !== null}
+                          onChange={(event) => setEchoProPassword(event.target.value)}
+                        />
+                      </label>
+                      <label className="settings-account-cookie-field">
+                        <input
+                          type="text"
+                          value={echoProRedeemKey}
+                          autoComplete="off"
+                          placeholder="ECHO Pro Key"
+                          disabled={echoProBusyAction !== null}
+                          onChange={(event) => setEchoProRedeemKey(event.target.value)}
+                        />
+                      </label>
+                      <div className="settings-account-actions">
+                        <button className="settings-action-button settings-account-login-button" type="button" disabled={echoProBusyAction !== null} onClick={() => void submitEchoProAccount('login')}>
+                          <LogIn size={14} aria-hidden="true" />
+                          {echoProBusyAction === 'login' ? '登录中' : '登录'}
+                        </button>
+                        <button className="settings-action-button" type="button" disabled={echoProBusyAction !== null} onClick={() => void submitEchoProAccount('register')}>
+                          <User size={14} aria-hidden="true" />
+                          {echoProBusyAction === 'register' ? '注册中' : '注册'}
+                        </button>
+                        <button className="settings-action-button" type="button" disabled={echoProBusyAction !== null} onClick={() => void refreshEchoProAccountStatus()}>
+                          <RefreshCw size={14} aria-hidden="true" />
+                          {echoProBusyAction === 'refresh' ? '检查中' : '检查'}
+                        </button>
+                        <button className="settings-action-button" type="button" disabled={echoProBusyAction !== null || !echoProAccountStatus?.loggedIn || echoProRedeemKey.trim().length === 0} onClick={() => void redeemEchoProKey()}>
+                          <KeyRound size={14} aria-hidden="true" />
+                          {echoProBusyAction === 'redeem' ? '兑换中' : '兑换 Key'}
+                        </button>
+                        <button className="settings-danger-button" type="button" disabled={echoProBusyAction !== null || !echoProAccountStatus?.loggedIn} onClick={() => void logoutEchoProAccount()}>
+                          {echoProBusyAction === 'logout' ? '退出中' : '退出'}
+                        </button>
+                        <button className="settings-danger-button" type="button" disabled={echoProBusyAction !== null || !echoProAccountStatus?.loggedIn || echoProPassword.length < 10} onClick={() => void releaseEchoProDevices()}>
+                          {echoProBusyAction === 'release-devices' ? '解绑中' : '解绑所有设备'}
+                        </button>
+                      </div>
+                      <div className="settings-account-meta">
+                        <span>状态: {echoProAccountStatus?.loggedIn ? '已登录' : '未登录'} / {echoProAccountStatus?.pro ? 'Pro 有效' : 'Pro 未授权'}</span>
+                        <span>设备: {echoProAccountStatus?.machineCount ?? 0}/{echoProAccountStatus?.maxMachineCount ?? 2}</span>
+                        <span>{locale === 'zh-CN' ? '注册提示: 请优先使用 QQ 号作为账号，方便人工核对授权。' : 'Registration tip: use your QQ number as the account name so authorization can be matched reliably.'}</span>
+                        <span>验证: 云端账号 session + 本机 HWID；插件解锁已停用。</span>
+                      </div>
+                      <div className="settings-account-meta">
+                        <span>云端设置: {echoProSettingsCloudStatus?.available ? '已保存' : '暂无云端备份'}</span>
+                        <span>同步日期: {formatProtectionTimestamp(echoProSettingsCloudStatus?.lastSavedAt)}</span>
+                        <span>云端歌单: {echoProSettingsCloudStatus?.librarySyncPlaylistCount ?? 0} 个网络歌单 / {echoProSettingsCloudStatus?.librarySyncFavoriteTrackCount ?? 0} 首流媒体收藏</span>
+                        {echoProSettingsCloudStatus?.appVersion ? <span>来源版本: {echoProSettingsCloudStatus.appVersion}</span> : null}
+                        {echoProSettingsCloudStatus?.lastError ? <span>同步状态: {echoProSettingsCloudStatus.lastError}</span> : null}
+                      </div>
+                      <p className="settings-inline-note settings-account-note">
+                        {locale === 'zh-CN'
+                          ? '云端同步会保存设置、网络歌单和流媒体收藏；不会保存网易云 / QQ 音乐 / Spotify 等平台登录态。另一台设备同步后如不能播放，请先在账号设置里登录对应平台。'
+                          : 'Cloud sync saves settings, online playlists, and streaming favorites. It does not save NetEase / QQ Music / Spotify account sessions, so sign in to the matching provider before playback on another device.'}
+                      </p>
+                      <div className="settings-account-actions">
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          disabled={echoProSettingsCloudBusyAction !== null || echoProAccountStatus?.pro !== true}
+                          onClick={() => void saveEchoProSettingsCloud()}
+                        >
+                          <Save size={14} aria-hidden="true" />
+                          {echoProSettingsCloudBusyAction === 'save' ? '保存中' : '保存设置到云端'}
+                        </button>
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          disabled={echoProSettingsCloudBusyAction !== null || echoProAccountStatus?.pro !== true || echoProSettingsCloudStatus?.available !== true}
+                          onClick={() => void applyEchoProSettingsCloud()}
+                        >
+                          <Download size={14} aria-hidden="true" />
+                          {echoProSettingsCloudBusyAction === 'pull' ? '同步中' : '从云端同步'}
+                        </button>
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          disabled={echoProSettingsCloudBusyAction !== null || echoProAccountStatus?.pro !== true}
+                          onClick={() => void refreshEchoProSettingsCloudStatus()}
+                        >
+                          <RefreshCw size={14} aria-hidden="true" />
+                          {echoProSettingsCloudBusyAction === 'status' ? '刷新中' : '刷新同步日期'}
+                        </button>
+                      </div>
+                      {echoProMessage ? <p className="settings-inline-note settings-account-note">{echoProMessage}</p> : null}
+                      {echoProError ? <p className="settings-inline-error settings-account-note">{echoProError}</p> : null}
+                    </article>
+                  </div>
+                ) : null}
+              </div>
               <SettingRow title={t('settings.general.closeToTray')}>
                 <ToggleButton
                   active={appSettings?.hideToTrayOnClose ?? false}
@@ -13915,7 +14621,7 @@ export const SettingsPage = (): JSX.Element => {
                 <div className="settings-acrylic-control">
                   <ToggleButton
                     active={appSettings?.appWindowAcrylicEnabled === true}
-                    disabled={!appSettings}
+                    disabled={!appSettings || (appSettings.appWindowAcrylicEnabled !== true && !finalThemeUnlocked)}
                     onClick={handleWindowAcrylicToggle}
                   />
                   {appSettings?.appWindowAcrylicEnabled === true ? (
@@ -13924,6 +14630,7 @@ export const SettingsPage = (): JSX.Element => {
                         <span>{t('settings.appearance.windowAcrylic.keepWhenUnfocused')}</span>
                         <ToggleButton
                           active={appSettings.appWindowAcrylicKeepWhenUnfocusedEnabled === true}
+                          disabled={!finalThemeUnlocked}
                           onClick={handleWindowAcrylicKeepWhenUnfocusedToggle}
                         />
                       </div>
@@ -13935,11 +14642,13 @@ export const SettingsPage = (): JSX.Element => {
                           step={1}
                           suffix="%"
                           value={appSettings.appWindowAcrylicTransparencyPercent ?? 70}
+                          disabled={!finalThemeUnlocked}
                           onChange={handleWindowAcrylicTransparencyChange}
                         />
                       </div>
                     </div>
                   ) : null}
+                  {!finalThemeUnlocked ? <p className="settings-acrylic-warning">ECHO Pro Only：登录或兑换 ECHO Pro 后可开启窗口亚克力。</p> : null}
                   <p className="settings-acrylic-warning">{t('settings.appearance.windowAcrylic.themeWarning')}</p>
                 </div>
               </SettingRow>
@@ -14260,13 +14969,23 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('mediaLibrary.settings.nativeFileScanner.title')}
                 description={t('mediaLibrary.settings.nativeFileScanner.description')}
               >
-                <div className="settings-inline-toggle settings-inline-toggle--compact">
-                  <span>{appSettings?.nativeFileScannerEnabled ? t('mediaLibrary.settings.nativeFileScanner.enabled') : t('mediaLibrary.settings.nativeFileScanner.typescript')}</span>
-                  <ToggleButton
-                    active={appSettings?.nativeFileScannerEnabled === true}
-                    disabled={!appSettings}
-                    onClick={() => patchAppSettings({ nativeFileScannerEnabled: !(appSettings?.nativeFileScannerEnabled ?? false) })}
-                  />
+                <div className="settings-native-experiment-control">
+                  <div className="settings-inline-toggle settings-inline-toggle--compact">
+                    <span>{appSettings?.nativeFileScannerEnabled ? t('mediaLibrary.settings.nativeFileScanner.enabled') : t('mediaLibrary.settings.nativeFileScanner.typescript')}</span>
+                    <ToggleButton
+                      active={appSettings?.nativeFileScannerEnabled === true}
+                      disabled={!appSettings}
+                      onClick={() => patchAppSettings({ nativeFileScannerEnabled: !(appSettings?.nativeFileScannerEnabled ?? false) })}
+                    />
+                  </div>
+                  <div
+                    className="settings-native-experiment-status"
+                    data-state={nativeFileScannerState}
+                    title={nativeFileScannerDiagnostics?.binaryPath ?? undefined}
+                  >
+                    <span>{nativeFileScannerStatusText}</span>
+                    <em>{nativeFileScannerStatsText}</em>
+                  </div>
                 </div>
               </SettingRow>
               <SettingRow
@@ -14275,13 +14994,23 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('mediaLibrary.settings.nativeMetadataReader.title')}
                 description={t('mediaLibrary.settings.nativeMetadataReader.description')}
               >
-                <div className="settings-inline-toggle settings-inline-toggle--compact">
-                  <span>{appSettings?.nativeMetadataReaderEnabled ? t('mediaLibrary.settings.nativeMetadataReader.enabled') : t('mediaLibrary.settings.nativeMetadataReader.typescript')}</span>
-                  <ToggleButton
-                    active={appSettings?.nativeMetadataReaderEnabled === true}
-                    disabled={!appSettings}
-                    onClick={() => patchAppSettings({ nativeMetadataReaderEnabled: !(appSettings?.nativeMetadataReaderEnabled ?? false) })}
-                  />
+                <div className="settings-native-experiment-control">
+                  <div className="settings-inline-toggle settings-inline-toggle--compact">
+                    <span>{appSettings?.nativeMetadataReaderEnabled ? t('mediaLibrary.settings.nativeMetadataReader.enabled') : t('mediaLibrary.settings.nativeMetadataReader.typescript')}</span>
+                    <ToggleButton
+                      active={appSettings?.nativeMetadataReaderEnabled === true}
+                      disabled={!appSettings}
+                      onClick={() => patchAppSettings({ nativeMetadataReaderEnabled: !(appSettings?.nativeMetadataReaderEnabled ?? false) })}
+                    />
+                  </div>
+                  <div
+                    className="settings-native-experiment-status"
+                    data-state={nativeMetadataReaderState}
+                    title={nativeMetadataReaderDiagnostics?.binaryPath ?? undefined}
+                  >
+                    <span>{nativeMetadataReaderStatusText}</span>
+                    <em>{nativeMetadataReaderStatsText}</em>
+                  </div>
                 </div>
               </SettingRow>
               <SettingRow

@@ -471,7 +471,7 @@ describe('ConnectPage HQPlayer controls', () => {
     Reflect.deleteProperty(navigator, 'clipboard');
   });
 
-  it('shows Donator Only and avoids device scans while Connect is locked', async () => {
+  it('shows Pro Only and avoids device scans while Connect is locked', async () => {
     const bridge = installEchoBridge(hqStatus('available'));
     bridge.connect.getDonatorUnlockStatus.mockResolvedValue({
       featureId: 'connect',
@@ -481,20 +481,29 @@ describe('ConnectPage HQPlayer controls', () => {
       pluginInstalled: false,
       pluginEnabled: false,
       hwidHash: 'b'.repeat(64),
-      reason: 'plugin-missing',
+      reason: 'license-invalid',
       checkedAt: '2026-05-21T01:00:00.000Z',
     });
 
     renderConnectPage();
 
-    expect(await screen.findByRole('heading', { name: 'Donator Only' })).toBeTruthy();
-    expect(screen.getByText('Connect Command Center')).toBeTruthy();
-    expect(screen.getByText('导入插件')).toBeTruthy();
+    expect(await screen.findByText('Connect 已升级为 ECHO Pro Only')).toBeTruthy();
+    expect(screen.getByText('需要 ECHO Pro')).toBeTruthy();
+    expect(screen.getByText('打开 ECHO Pro 账号')).toBeTruthy();
     await waitFor(() => expect(bridge.connect.getDonatorUnlockStatus).toHaveBeenCalled());
     expect(bridge.connect.listDevices).not.toHaveBeenCalled();
     expect(bridge.connect.refresh).not.toHaveBeenCalled();
     expect(bridge.connect.getEchoLinkStatus).not.toHaveBeenCalled();
     expect(bridge.connect.getWallpaperEngineBridgeStatus).not.toHaveBeenCalled();
+
+    const navigateHome = vi.fn();
+    window.addEventListener('app:navigate:route', navigateHome);
+    fireEvent.click(screen.getByRole('button', { name: '从侧栏隐藏' }));
+    await waitFor(() => expect(bridge.app.setSettings).toHaveBeenCalledWith(expect.objectContaining({
+      sidebarHiddenRouteIds: expect.arrayContaining(['connect']),
+    })));
+    expect(navigateHome).toHaveBeenCalledWith(expect.objectContaining({ detail: 'home' }));
+    window.removeEventListener('app:navigate:route', navigateHome);
   });
 
   it('surfaces ECHO Link pairing, web remote, and protocol health in the Command Center', async () => {

@@ -17,8 +17,6 @@
     "ensure:nsis-resources": "node scripts/ensure-nsis-resources.mjs",
     "verify:ffmpeg": "node scripts/verify-ffmpeg-toolchain.mjs",
     "verify:airplay-package": "node scripts/verify-airplay-package.mjs",
-    "plugin:connect-donator": "node scripts/create-connect-donator-plugin.mjs",
-    "build:connect-donator-issuer": "node scripts/build-connect-donator-issuer.mjs",
     "test:audio-engine": "node scripts/test-audio-engine.mjs",
     "smoke:audio-host": "node scripts/smoke-audio-host.mjs",
     "presmoke:native-scanner": "node scripts/build-native-scanner.mjs",

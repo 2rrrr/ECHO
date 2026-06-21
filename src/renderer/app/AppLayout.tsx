@@ -11,6 +11,7 @@ import { contrastRatio, parseHexColor, sampleImageUrl, type ReadableColorSample,
 import { DragDropImportOverlay } from '../components/import/DragDropImportOverlay';
 import { PluginTrackActionDrawerHost } from '../components/library/PluginTrackActionDrawer';
 import { FirstRunWizard } from '../components/onboarding/FirstRunWizard';
+import { UserNoticeGate } from '../components/onboarding/UserNoticeGate';
 import { loadPersistedRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
 import { AppTitleBar } from '../components/layout/AppTitleBar';
@@ -21,7 +22,7 @@ import { createPluginPanelRoutes } from './routes';
 import type { AppRoute, AppRouteId } from './routes';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AccountProvider, AccountStatus } from '../../shared/types/accounts';
-import type { AppSettings } from '../../shared/types/appSettings';
+import { currentUserNoticeVersion, type AppSettings } from '../../shared/types/appSettings';
 import type { DiagnosticMemoryPressureEvent } from '../../shared/types/diagnostics';
 import type { DownloadJob } from '../../shared/types/downloads';
 import type { LibraryTrack } from '../../shared/types/library';
@@ -374,6 +375,7 @@ const getDesktopLyricsForwardIdentity = (status: AudioStatus | PlaybackStatus): 
 const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
+const openUserNoticeEvent = 'app:open-user-notice';
 const lyricsDrawerToolsChangedEvent = 'app:lyrics-drawer-tools-changed';
 const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
@@ -658,6 +660,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [diagnosticsNotice, setDiagnosticsNotice] = useState(false);
   const [memoryPressureNotice, setMemoryPressureNotice] = useState<DiagnosticMemoryPressureEvent | null>(null);
   const [firstRunSettings, setFirstRunSettings] = useState<AppSettings | null>(null);
+  const [userNoticeSettingsLoaded, setUserNoticeSettingsLoaded] = useState(false);
+  const [userNoticeAccepted, setUserNoticeAccepted] = useState(false);
+  const [userNoticeReviewOpen, setUserNoticeReviewOpen] = useState(false);
   const [isFirstRunWizardOpen, setIsFirstRunWizardOpen] = useState(false);
   const [isFirstRunWizardClosing, setIsFirstRunWizardClosing] = useState(false);
   const firstRunWizardMountedRef = useRef(false);
@@ -698,6 +703,16 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     window.addEventListener(lyricsDrawerToolsChangedEvent, handleLyricsDrawerToolsChanged);
     return () => window.removeEventListener(lyricsDrawerToolsChangedEvent, handleLyricsDrawerToolsChanged);
+  }, []);
+
+  useEffect(() => {
+    const handleOpenUserNotice = (): void => {
+      setUserNoticeSettingsLoaded(true);
+      setUserNoticeReviewOpen(true);
+    };
+
+    window.addEventListener(openUserNoticeEvent, handleOpenUserNotice);
+    return () => window.removeEventListener(openUserNoticeEvent, handleOpenUserNotice);
   }, []);
 
   useEffect(() => {
@@ -779,14 +794,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     () =>
       applySidebarPreferences(
         availableRoutes.map((route) => (
-          (route.id === 'downloads' && !downloadsFeatureUnlocked) ||
-          (route.id === 'connect' && !connectDonatorUnlocked)
+          route.id === 'downloads' && !downloadsFeatureUnlocked
             ? { ...route, hideFromSidebar: true }
             : route
         )),
         sidebarLayoutSettings,
       ),
-    [availableRoutes, connectDonatorUnlocked, downloadsFeatureUnlocked, sidebarLayoutSettings],
+    [availableRoutes, downloadsFeatureUnlocked, sidebarLayoutSettings],
   );
   const sidebarRouteById = useMemo(() => new Map(availableRoutes.map((route) => [route.id, route])), [availableRoutes]);
 
@@ -945,7 +959,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const isStandaloneRoute = activeRoute.chrome === 'standalone';
   const isLyricsRoute = activeRouteId === 'lyrics';
   const shouldRenderDragDropImportOverlay = !isStandaloneRoute && activeRouteId !== 'plugins';
-  const shouldRenderFirstRunWizard = isFirstRunWizardOpen || isFirstRunWizardClosing;
+  const shouldRenderUserNoticeGate = !userNoticeSettingsLoaded || !userNoticeAccepted || userNoticeReviewOpen;
+  const shouldRenderFirstRunWizard = !shouldRenderUserNoticeGate && (isFirstRunWizardOpen || isFirstRunWizardClosing);
   const shouldUseLyricsPlayerDrawer =
     isLyricsRoute &&
     (lyricsMiniPlayerSettings.lyricsPlayerBarDrawerEnabled === true ||
@@ -1189,11 +1204,29 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     let cancelled = false;
 
     const applyFirstRunSettings = (settings: Partial<AppSettings> | null | undefined): void => {
-      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'onboardingCompleted')) {
+      if (
+        !settings ||
+        (!Object.prototype.hasOwnProperty.call(settings, 'onboardingCompleted') &&
+          !Object.prototype.hasOwnProperty.call(settings, 'userNoticeAcceptedVersion'))
+      ) {
         return;
       }
 
       setFirstRunSettings((current) => ({ ...(current ?? {}), ...settings }) as AppSettings);
+      const hasUserNoticeAcceptedVersion = Object.prototype.hasOwnProperty.call(settings, 'userNoticeAcceptedVersion');
+      const nextUserNoticeAccepted = hasUserNoticeAcceptedVersion
+        ? settings.userNoticeAcceptedVersion === currentUserNoticeVersion
+        : userNoticeAccepted;
+      if (hasUserNoticeAcceptedVersion) {
+        setUserNoticeAccepted(nextUserNoticeAccepted);
+        setUserNoticeSettingsLoaded(true);
+      }
+
+      if (!nextUserNoticeAccepted) {
+        closeFirstRunWizard();
+        return;
+      }
+
       if (settings.onboardingCompleted === false) {
         openFirstRunWizard();
       } else {
@@ -1229,7 +1262,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       cancelled = true;
       window.removeEventListener('settings:changed', handleSettingsChanged);
     };
-  }, [closeFirstRunWizard, openFirstRunWizard]);
+  }, [closeFirstRunWizard, openFirstRunWizard, userNoticeAccepted]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3034,6 +3067,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       <EditableContextMenu />
 
       {shouldRenderDragDropImportOverlay ? <DragDropImportOverlay onNotice={showChromeNotice} /> : null}
+
+      {shouldRenderUserNoticeGate ? (
+        <UserNoticeGate
+          onAccepted={(settings) => {
+            setUserNoticeSettingsLoaded(true);
+            setUserNoticeAccepted(true);
+            setUserNoticeReviewOpen(false);
+            if (settings) {
+              setFirstRunSettings(settings);
+              setAppWallpaperSettings(selectAppWallpaperSettings(settings));
+              setLyricsMiniPlayerSettings(selectLyricsMiniPlayerSettings(settings));
+            }
+          }}
+        />
+      ) : null}
 
       {shouldRenderFirstRunWizard ? (
         <FirstRunWizard

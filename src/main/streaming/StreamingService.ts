@@ -19,6 +19,7 @@ import type {
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylistDetail,
   StreamingPlaylistImportResult,
   StreamingProviderDescriptor,
   StreamingProviderName,
@@ -621,6 +622,10 @@ export class StreamingService {
 
   getFavoritesExportContent(): string {
     return this.favoritesStore.getExportContent();
+  }
+
+  getFavoritesSnapshot(): StreamingFavoritesSnapshot {
+    return this.favoritesStore.getSnapshot();
   }
 
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {

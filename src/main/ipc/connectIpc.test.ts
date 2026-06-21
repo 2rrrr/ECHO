@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => {
   const unlockService = {
     assertUnlocked: vi.fn(),
     getStatus: vi.fn(() => ({ unlocked: true })),
+    refreshStatus: vi.fn(async () => ({ unlocked: true })),
   };
   const settings = {
     current: {
@@ -110,6 +111,7 @@ describe('connect IPC receiver autostart', () => {
     };
     mocks.unlockService.assertUnlocked.mockImplementation(() => undefined);
     mocks.unlockService.getStatus.mockReturnValue({ unlocked: true });
+    mocks.unlockService.refreshStatus.mockResolvedValue({ unlocked: true });
     mocks.showOpenDialog.mockReset();
   });
 
@@ -131,6 +133,7 @@ describe('connect IPC receiver autostart', () => {
 
     registerConnectIpc();
     await Promise.resolve();
+    await Promise.resolve();
 
     expect(mocks.receiverService.setEnabled).toHaveBeenCalledWith(true);
     expect(mocks.airPlayReceiverService.setEnabled).toHaveBeenCalledWith(true);
@@ -144,7 +147,7 @@ describe('connect IPC receiver autostart', () => {
 
     registerConnectIpc();
 
-    expect(mocks.handlers[IpcChannels.ConnectGetDonatorUnlockStatus]!(null)).toEqual({ unlocked: true });
+    await expect(mocks.handlers[IpcChannels.ConnectGetDonatorUnlockStatus]!(null)).resolves.toEqual({ unlocked: true });
     expect(() => mocks.handlers[IpcChannels.ConnectListDevices]!(null)).toThrow('connect_donator_unlock_required');
     expect(mocks.connectService.listDevices).not.toHaveBeenCalled();
   });

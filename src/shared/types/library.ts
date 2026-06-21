@@ -344,6 +344,11 @@ export type NativeFileScannerDiagnostics = {
   binaryFound: boolean;
   binaryPath: string | null;
   willUseNative: boolean;
+  totalScans?: number;
+  nativeScanOk?: number;
+  fallbackToTs?: number;
+  tsOnlyScans?: number;
+  lastFallbackReason?: string | null;
 };
 
 export type NativeMetadataReaderDiagnostics = {
@@ -353,6 +358,11 @@ export type NativeMetadataReaderDiagnostics = {
   binaryPath: string | null;
   willUseNative: boolean;
   supportedFormats: string[];
+  totalReads?: number;
+  nativeOk?: number;
+  fallbackToTs?: number;
+  skippedUnsupportedExtension?: number;
+  hitRate?: number;
 };
 
 export type LibraryLabState = {

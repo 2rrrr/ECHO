@@ -94,8 +94,13 @@ const pluginsBridge = {
   getLogs: vi.fn(async () => [{ id: 'log-1', pluginId: 'echo.playback-panel', level: 'info' as const, message: '已启动', createdAt: '2026-05-19T00:00:00.000Z' }]),
 };
 
+const getDonatorUnlockStatusMock = vi.fn(async () => ({ unlocked: true }));
+
 vi.mock('../utils/echoBridge', () => ({
   getPluginsBridge: () => pluginsBridge,
+  getConnectBridge: () => ({
+    getDonatorUnlockStatus: getDonatorUnlockStatusMock,
+  }),
 }));
 
 vi.mock('../components/ui/EmptyState', () => ({
@@ -110,6 +115,10 @@ vi.mock('../components/ui/EmptyState', () => ({
 describe('PluginsPage', () => {
   beforeEach(() => {
     Object.values(pluginsBridge).forEach((mock) => mock.mockClear());
+    pluginsBridge.list.mockResolvedValue({ directory: 'D:\\Echo\\plugins', plugins });
+    pluginsBridge.getLogs.mockResolvedValue([{ id: 'log-1', pluginId: 'echo.playback-panel', level: 'info' as const, message: '已启动', createdAt: '2026-05-19T00:00:00.000Z' }]);
+    getDonatorUnlockStatusMock.mockReset();
+    getDonatorUnlockStatusMock.mockResolvedValue({ unlocked: true });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
@@ -127,6 +136,18 @@ describe('PluginsPage', () => {
     expect(await screen.findByText('已启动')).toBeTruthy();
     expect(pluginsBridge.list).toHaveBeenCalledTimes(1);
     expect(pluginsBridge.getLogs).toHaveBeenCalledWith('echo.playback-panel');
+  });
+
+  it('locks plugin management until ECHO Pro is verified', async () => {
+    getDonatorUnlockStatusMock.mockResolvedValue({ unlocked: false });
+
+    render(<PluginsPage />);
+
+    expect(await screen.findByText('插件功能已升级为 ECHO Pro Only')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /打开 ECHO Pro 账号/ })).toBeTruthy();
+    await waitFor(() => expect(getDonatorUnlockStatusMock).toHaveBeenCalled());
+    expect(pluginsBridge.list).not.toHaveBeenCalled();
+    expect(pluginsBridge.getLogs).not.toHaveBeenCalled();
   });
 
   it('confirms requested permissions before enabling a plugin', async () => {
@@ -175,7 +196,9 @@ describe('PluginsPage', () => {
   });
 
   it('imports dropped .echo plugin packages', async () => {
+    pluginsBridge.list.mockResolvedValue({ directory: 'D:\\Echo\\plugins', plugins: [{ ...plugins[0], panel: null }] });
     const { container } = render(<PluginsPage />);
+    await waitFor(() => expect(pluginsBridge.list).toHaveBeenCalled());
     const page = container.querySelector('.plugins-page') as HTMLElement;
     const file = new File(['{}'], 'echo.playback-panel.echo', { type: 'application/json' });
 

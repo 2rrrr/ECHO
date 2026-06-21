@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
 import { finalThemeUnlockVersion, proOnlyThemePresets } from '../../shared/constants/featureUnlocks';
-import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider, playerBarButtonIds } from '../../shared/types/appSettings';
+import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, currentUserNoticeVersion, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider, playerBarButtonIds } from '../../shared/types/appSettings';
 import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type {
   ArtistOnlineInfoSource,
@@ -365,6 +365,7 @@ const getDefaultLocale = (): AppLocale => {
 export const defaultSettings: AppSettings = {
   appMemoryVersion,
   onboardingCompleted: false,
+  userNoticeAcceptedVersion: 0,
   locale: getDefaultLocale(),
   appearanceTheme: 'light',
   appearanceThemeScheduleEnabled: false,
@@ -1676,6 +1677,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
   return {
     appMemoryVersion,
     onboardingCompleted: settings.onboardingCompleted !== false,
+    userNoticeAcceptedVersion: settings.userNoticeAcceptedVersion === currentUserNoticeVersion ? currentUserNoticeVersion : 0,
     locale: normalizeLocale(settings.locale),
     appearanceTheme: normalizeAppearanceTheme(settings.appearanceTheme),
     appearanceThemeScheduleEnabled: settings.appearanceThemeScheduleEnabled === true,
