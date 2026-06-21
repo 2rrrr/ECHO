@@ -1184,6 +1184,143 @@ describe('AppLayout standalone routes', () => {
     });
   });
 
+  it('adds host-controlled plugin panel routes from enabled plugins', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      sidebarRouteOrder: ['home', 'songs', 'osu-downloader'],
+      sidebarHiddenRouteIds: [],
+    });
+    const listPlugins = vi.fn().mockResolvedValue({
+      plugins: [
+        {
+          id: 'osu.downloader',
+          name: 'osu!downloader',
+          directory: 'D:\\Echo\\plugins\\osu.downloader',
+          enabled: true,
+          disabledByHost: false,
+          status: 'running',
+          contributes: {
+            panels: [
+              {
+                id: 'main',
+                title: 'osu downloader',
+                hostPage: 'osu-downloader',
+                placement: 'main',
+              },
+            ],
+          },
+        },
+      ],
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+      plugins: {
+        list: listPlugins,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithHome} />
+      </AppProviders>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    await waitFor(() => expect(listPlugins).toHaveBeenCalled());
+    expect(await within(sidebar).findByRole('button', { name: 'osu downloader' })).toBeTruthy();
+  });
+
+  it('keeps the osu downloader sidebar route for already-installed legacy packages without panel metadata', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      sidebarRouteOrder: ['home', 'songs', 'osu-downloader'],
+      sidebarHiddenRouteIds: [],
+    });
+    const listPlugins = vi.fn().mockResolvedValue({
+      plugins: [
+        {
+          id: 'osu.downloader',
+          name: 'osu!downloader',
+          directory: 'D:\\Echo\\plugins\\osu.downloader',
+          enabled: true,
+          disabledByHost: false,
+          status: 'running',
+          contributes: {
+            panels: [],
+          },
+        },
+      ],
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+      plugins: {
+        list: listPlugins,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithHome} />
+      </AppProviders>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    await waitFor(() => expect(listPlugins).toHaveBeenCalled());
+    expect(await within(sidebar).findByRole('button', { name: 'osu downloader' })).toBeTruthy();
+  });
+
+  it('does not expose generic plugin html panels in the sidebar before the host supports them', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      sidebarRouteOrder: ['home', 'songs'],
+      sidebarHiddenRouteIds: [],
+    });
+    const listPlugins = vi.fn().mockResolvedValue({
+      plugins: [
+        {
+          id: 'echo.playback-panel',
+          name: 'Playback Panel',
+          directory: 'D:\\Echo\\plugins\\echo.playback-panel',
+          enabled: true,
+          disabledByHost: false,
+          status: 'running',
+          contributes: {
+            panels: [
+              {
+                id: 'main',
+                title: '播放状态',
+                path: 'panel.html',
+                placement: 'main',
+              },
+            ],
+          },
+        },
+      ],
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+      plugins: {
+        list: listPlugins,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithHome} />
+      </AppProviders>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    await waitFor(() => expect(listPlugins).toHaveBeenCalled());
+    expect(within(sidebar).queryByRole('button', { name: '播放状态' })).toBeNull();
+  });
+
   it('hides a sidebar route from the route context menu', async () => {
     window.localStorage.clear();
     const getSettings = vi.fn().mockResolvedValue({

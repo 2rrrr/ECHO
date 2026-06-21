@@ -101,6 +101,25 @@ describe('plugin manifest validation', () => {
     expect(manifest.contributes?.themePresets?.[0]?.preview).toBeUndefined();
   });
 
+  it('accepts host-controlled plugin panel contributions', () => {
+    const manifest = normalizePluginManifest({
+      id: 'osu.downloader',
+      name: 'osu!downloader',
+      version: '1.0.0',
+      apiVersion: 2,
+      contributes: {
+        panels: [{ id: 'Main', title: 'osu downloader', hostPage: 'osu-downloader', placement: 'main' }],
+      },
+    }, 'osu.downloader');
+
+    expect(manifest.contributes?.panels?.[0]).toEqual({
+      id: 'main',
+      title: 'osu downloader',
+      hostPage: 'osu-downloader',
+      placement: 'main',
+    });
+  });
+
   it('rejects paths outside the plugin folder and unsupported entry types', () => {
     expect(() =>
       normalizePluginManifest({

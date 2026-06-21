@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Download, FileAudio, FolderOpen, Link2, Search, Settings2, Square, Wrench, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, FileAudio, FolderOpen, Link2, Search, Settings2, Square, Wrench, X, XCircle } from 'lucide-react';
 import type {
   CreateDownloadUrlJobOptions,
   DownloadJob,
@@ -674,6 +674,9 @@ export const DownloadsPage = ({ variant = 'all' }: DownloadsPageProps): JSX.Elem
               </div>
             ) : null}
           </div>
+          <button className="downloads-toast-close" type="button" aria-label={t('notice.action.closeNotice')} title={t('notice.action.closeNotice')} onClick={() => setNotice(null)}>
+            <X size={14} />
+          </button>
         </div>
       ) : null}
       <header className="downloads-header">

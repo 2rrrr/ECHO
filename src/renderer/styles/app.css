@@ -2327,6 +2327,23 @@
   gap: 18px;
 }
 
+.plugin-route-panel {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.plugin-route-panel iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--theme-panel-bg);
+  box-shadow: var(--shadow-panel);
+}
+
 .metric-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -17145,15 +17162,15 @@ html[data-theme="dark"] .history-play-count {
 }
 
 .downloads-toast {
-  position: absolute;
-  z-index: 24;
-  top: 0;
-  left: 0;
+  position: fixed;
+  z-index: 42;
+  top: 52px;
+  left: 18px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) 24px;
   align-items: start;
   gap: 9px;
-  width: min(430px, calc(100% - 24px));
+  width: min(430px, calc(100vw - 36px));
   min-height: 54px;
   padding: 10px 12px;
   color: var(--echo-heading-text);
@@ -17161,7 +17178,29 @@ html[data-theme="dark"] .history-play-count {
   border-radius: 8px;
   background: #fff8fb;
   box-shadow: 0 18px 46px rgba(82, 43, 66, 0.2);
-  pointer-events: none;
+  backdrop-filter: blur(18px) saturate(1.12);
+  pointer-events: auto;
+  transform-origin: 0 0;
+  animation: downloads-toast-enter 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes downloads-toast-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-10px, -14px, 0) scale(0.965);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .downloads-toast {
+    animation: none;
+  }
 }
 
 .downloads-toast > span {
@@ -17231,6 +17270,25 @@ html[data-theme="dark"] .history-play-count {
 
 .downloads-toast-progress .download-progress-track {
   height: 5px;
+}
+
+.downloads-toast-close {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  color: var(--color-muted);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.downloads-toast-close:hover {
+  color: var(--echo-heading-text);
+  border-color: var(--theme-button-border);
+  background: var(--theme-control-bg);
 }
 
 .downloads-toast[data-tone="error"] {
@@ -22819,6 +22877,12 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 
   .chrome-notice {
     max-width: 100%;
+  }
+
+  .downloads-toast {
+    top: 48px;
+    left: 12px;
+    width: calc(100vw - 24px);
   }
 
   .player-download-notice {

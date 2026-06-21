@@ -11,7 +11,14 @@
     "permissions": [],
     "contributes": {
       "commands": [],
-      "panels": [],
+      "panels": [
+        {
+          "id": "main",
+          "title": "osu downloader",
+          "hostPage": "osu-downloader",
+          "placement": "main"
+        }
+      ],
       "trackContextMenus": [],
       "metadataProviders": [],
       "sourceProviders": [],

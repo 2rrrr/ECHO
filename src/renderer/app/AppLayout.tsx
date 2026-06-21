@@ -869,25 +869,18 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       .catch(() => setConnectDonatorUnlocked(false));
   }, []);
 
-  const refreshOsuDownloaderPluginEnabled = useCallback((): void => {
+  const refreshPluginPanelRoutes = useCallback((): void => {
     const listPlugins = window.echo?.plugins?.list;
     if (!listPlugins) {
-      setOsuDownloaderPluginEnabled(false);
+      setPluginPanelRoutes([]);
       return;
     }
 
     void listPlugins()
       .then((result) => {
-        setOsuDownloaderPluginEnabled(
-          result.plugins.some((plugin) =>
-            plugin.id === osuDownloaderPluginId &&
-            plugin.enabled === true &&
-            plugin.disabledByHost !== true &&
-            plugin.status !== 'error',
-          ),
-        );
+        setPluginPanelRoutes(createPluginPanelRoutes(result.plugins));
       })
-      .catch(() => setOsuDownloaderPluginEnabled(false));
+      .catch(() => setPluginPanelRoutes([]));
   }, []);
 
   const startWindowFullscreenTransition = useCallback((nextFullscreen: boolean): void => {
@@ -918,15 +911,14 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, []);
   const navigableRoutes = useMemo(
     () =>
-      routes.filter((route) =>
-        (route.id !== 'downloads' || downloadsFeatureUnlocked) &&
-        (route.id !== 'osu-downloader' || osuDownloaderPluginEnabled),
+      availableRoutes.filter((route) =>
+        route.id !== 'downloads' || downloadsFeatureUnlocked,
       ),
-    [downloadsFeatureUnlocked, osuDownloaderPluginEnabled, routes],
+    [availableRoutes, downloadsFeatureUnlocked],
   );
   const activeRoute = useMemo(
-    () => navigableRoutes.find((route) => route.id === activeRouteId) ?? navigableRoutes[0] ?? routes[0],
-    [activeRouteId, navigableRoutes, routes],
+    () => navigableRoutes.find((route) => route.id === activeRouteId) ?? navigableRoutes[0] ?? availableRoutes[0],
+    [activeRouteId, availableRoutes, navigableRoutes],
   );
   const [mountedPersistentRouteIds, setMountedPersistentRouteIds] = useState<AppRouteId[]>(() =>
     persistentRouteIds.has(activeRouteId) ? [activeRouteId] : [],
@@ -1383,15 +1375,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   useEffect(() => {
     refreshConnectFeatureUnlock();
-    refreshOsuDownloaderPluginEnabled();
+    refreshPluginPanelRoutes();
     const handlePluginsChanged = (): void => {
       refreshConnectFeatureUnlock();
-      refreshOsuDownloaderPluginEnabled();
+      refreshPluginPanelRoutes();
       window.dispatchEvent(new Event('settings:changed'));
     };
     window.addEventListener('plugins:changed', handlePluginsChanged);
     return () => window.removeEventListener('plugins:changed', handlePluginsChanged);
-  }, [refreshConnectFeatureUnlock, refreshOsuDownloaderPluginEnabled]);
+  }, [refreshConnectFeatureUnlock, refreshPluginPanelRoutes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1670,10 +1662,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [activeRouteId, downloadsFeatureUnlocked, navigateRoute]);
 
   useEffect(() => {
-    if (!osuDownloaderPluginEnabled && activeRouteId === 'osu-downloader') {
-      navigateRoute('songs', 'osu-downloader-disabled');
+    if (!navigableRoutes.some((route) => route.id === activeRouteId) && activeRoute?.id && activeRoute.id !== activeRouteId) {
+      navigateRoute(activeRoute.id, 'route-unavailable');
     }
-  }, [activeRouteId, navigateRoute, osuDownloaderPluginEnabled]);
+  }, [activeRoute, activeRouteId, navigateRoute, navigableRoutes]);
 
   useEffect(() => {
     if (isTemporarilyBlockedRouteId(activeRouteId)) {
@@ -2371,7 +2363,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   useEffect(() => {
     const handleNavigateRoute = (event: Event): void => {
       const detail = event instanceof CustomEvent ? event.detail : null;
-      if (typeof detail !== 'string' || !routes.some((route) => route.id === detail)) {
+      if (typeof detail !== 'string' || !availableRoutes.some((route) => route.id === detail)) {
         return;
       }
 
@@ -2482,7 +2474,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
       window.removeEventListener(artistDetailNavigationEvent, handleNavigateArtistDetail);
     };
-  }, [activeLyricsViewMode, activeRouteId, navigateRoute, navigableRoutes, routes, setLyricsViewMode]);
+  }, [activeLyricsViewMode, activeRouteId, availableRoutes, navigateRoute, navigableRoutes, routes, setLyricsViewMode]);
 
   useEffect(() => {
     const handleOpenAudioSettings = (): void => setIsAudioDrawerOpen(true);

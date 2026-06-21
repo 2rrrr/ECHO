@@ -2209,6 +2209,7 @@ export class PluginService {
     const runtimeLyricsProviderCount = record.manifest ? this.runtimes.get(record.manifest.id)?.lyricsProviders.size ?? 0 : 0;
     const manifestCoverProviderCount = record.manifest?.contributes?.coverProviders?.length ?? 0;
     const runtimeCoverProviderCount = record.manifest ? this.runtimes.get(record.manifest.id)?.coverProviders.size ?? 0 : 0;
+    const panelCount = (record.manifest?.panel ? 1 : 0) + (record.manifest?.contributes?.panels?.length ?? 0);
     return {
       requestedPermissionCount: requestedPermissions.length,
       trustedPermissionCount: record.trustedPermissions.length,
@@ -2217,7 +2218,7 @@ export class PluginService {
       reservedPermissions: requestedPermissions.filter((permission) => pluginPermissionDescriptors[permission]?.availability === 'reserved'),
       limitedPermissions: requestedPermissions.filter((permission) => pluginPermissionDescriptors[permission]?.availability === 'limited'),
       hasEntry: Boolean(record.manifest?.entry),
-      hasPanel: Boolean(record.manifest?.panel),
+      hasPanel: panelCount > 0,
       sandboxedPanel: Boolean(record.manifest?.panel),
       commandCount: commands.filter((command, index, list) => list.findIndex((item) => item.id === command.id) === index).length,
       metadataProviderCount: Math.max(manifestProviderCount, runtimeProviderCount),
