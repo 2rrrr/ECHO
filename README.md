@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./logo.png" alt="ECHO NEXT" width="520" />
+  <img src="./build-resources/icons/logo.png" alt="ECHO NEXT" width="520" />
 </p>
 
 <h1 align="center">ECHO NEXT</h1>
@@ -256,6 +256,105 @@ npm run dev:full
 
 文档改动通常只需要检查内容和格式；播放、数据库、扫描、音频宿主、SMTC、打包等改动再按对应范围做 focused check。
 
+### Nix / Flake 开发与构建
+
+项目提供 Nix flake，包含开发环境、构建 derivation 和 nixpkgs overlay：
+
+| 命令 | 用途 |
+| --- | --- |
+| `nix develop` | 进入开发 shell（Node 22 + CMake + ALSA + GTK3 + Electron 等） |
+| `nix build` | 构建 ECHO NEXT（使用系统 Electron，产物在 `result/`） |
+| `nix run` | 直接运行构建产物 |
+| `nix flake check` | 验证 flake 各 output 正确性 |
+
+将 overlay 加入你的 nixpkgs 配置：
+
+```nix
+{
+  inputs.echo-next.url = "github:moekotori/echo";
+
+  outputs = { self, nixpkgs, echo-next, ... }: {
+    nixosConfigurations.my-machine = nixpkgs.lib.nixosSystem {
+      modules = [
+        ({ pkgs, ... }: {
+          nixpkgs.overlays = [ echo-next.overlays.default ];
+          environment.systemPackages = [ pkgs.echo-next ];
+        })
+      ];
+    };
+  };
+}
+```
+
+或临时运行：
+
+```bash
+nix run github:moekotori/echo
+```
+
+direnv 用户可执行 `direnv allow` 自动加载开发环境。
+
+> [!IMPORTANT]
+> **`nix run` 在 Linux x86_64 上已经可以直接拉起完整桌面应用**，包含曲库 SQLite、图像缩略图、IPC、播放队列、Wayland UI；详见下文"覆盖范围"。
+
+#### 覆盖范围
+
+| 能力 | 状态 | 备注 |
+| --- | --- | --- |
+| Electron 主进程 + Renderer | ✅ | 用 nixpkgs `electron_42` |
+| `better-sqlite3` (曲库、播放历史) | ✅ | buildPhase 用 `electron.headers` 离线 rebuild |
+| `sharp` (封面缩略图) | ✅ | 仅保留 glibc 变种，删除 musl 变种避免 RPATH 错绑 |
+| Wayland / XDG 数据目录 | ✅ | 详见"数据目录"章节 |
+| Pro 功能 (Connect / AirPlay / 云同步) | ⛔ 拒绝 | 公开 stub 把 license 校验置 false，业务自动走"未解锁"分支 |
+| `native/audio-host` (JUCE HiFi/ASIO/DSD) | ⛔ 缺失 | `cmake FetchContent` 拉 JUCE 8.0.12 需联网；UI 自动回退到 HTML Audio |
+| `native-scanner` | ⛔ 缺失 | 同上，使用纯 JS scanner 兜底 |
+| Windows / macOS 平台 | ⛔ 不支持 | nixpkgs 没有 MSVC/WinRT；macOS 分支可参照 Joplin 后续添加 |
+
+#### 运行
+
+`LICENSE` 是 source-available 非 OSS 许可，`meta.license = lib.licenses.unfree`，因此必须显式允许：
+
+```bash
+# 一次性
+NIXPKGS_ALLOW_UNFREE=1 nix run --impure .#echo-next
+
+# 或在 NixOS 配置里固定允许
+nixpkgs.config.allowUnfreePredicate = pkg:
+  builtins.elem (lib.getName pkg) [ "echo-next" ];
+```
+
+#### 维护要点
+
+- **`npmDepsHash` 更新**：改完 `package-lock.json` 后，把 `package.nix` 里的 `npmDepsHash` 改回 `lib.fakeHash`，运行一次 `nix build .#echo-next`，从报错里的 `got: sha256-…` 复制回写。
+- **`npm_config_nodedir` 必须 unset**：`npmConfigHook` 会把 Node 22 source 注入 env，覆盖 `--nodedir` CLI；rebuild `better-sqlite3` 时必须 `env -u npm_config_nodedir node-gyp …`，否则会链接到 nodejs 而非 electron 的 V8 14，运行期抛 `undefined symbol: v8::HandleScope::HandleScope(v8::Isolate*)`。
+- **不要把 `--ignore-scripts` 拿掉**：`postinstall` 里的 `ensure-native-abi.mjs` 走 `@electron/rebuild` 联网下载 electron headers，sandbox 必跪；当前用 buildPhase 内显式 `node-gyp rebuild --nodedir=${electron.headers}` 取代它，更可控也更快。
+- **sharp musl 变种必须删**：`autoPatchelfHook` 会把 `sharp-linux-x64.node` 的 libvips RPATH 优先绑到 `sharp-libvips-linuxmusl-x64`，运行期 dlopen 触发 `ERR_DLOPEN_FAILED: libc.musl-x86_64.so.1`。buildPhase 里 `rm -rf node_modules/@img/sharp-linuxmusl-x64{,-libvips}` 这一行不可省。
+- **公开仓自带 stub**：`src/main/plugins/{MachineIdentity,EchoProLicensePlugin}.ts` 是公开 stub（详见 `.gitignore` 的 `!` 白名单两行），`nix build` 与 `npm run typecheck` 无需私有 overlay 即可通过。要启用 Pro 真实能力请用 `npm run pro:pull` 拉 ECHOPrivate 兄弟仓，私有文件以同名覆盖 stub。
+
+#### 已知运行时降级日志（非 Bug）
+
+`nix run` 启动后会看到以下日志，**全部预期**：
+
+- `[DiscordPresence] RPC initialization failed { error: 'Could not connect' }` — Discord IPC socket 不可达，未运行 Discord 即如此。
+- `wayland_wp_color_manager.cc … Unable to set image transfer function` — 运行环境不支持 `wp_color_manager` 协议，Chromium 自身的 warning，不影响渲染。
+- `Error occurred in handler for 'connect:*': Error: echo_pro_required` — Pro stub 触发的"未解锁"分支，对应 Connect / AirPlay 等付费功能；公开版预期行为。
+
+### 数据目录（XDG Base Directory）
+
+Linux 上 ECHO NEXT 遵循 [XDG Base Directory 规范](https://specifications.freedesktop.org/basedir-spec/) 管理用户数据。
+路径按以下顺序确定：先读取对应环境变量，若未设置则回退到硬编码默认值。
+
+| 目录 | 环境变量 | 默认值 | 内容 |
+| --- | --- | --- | --- |
+| 配置 | `$XDG_CONFIG_HOME` | `~/.config` | `echo-settings.json`、`accounts.json`、EQ 预设等 |
+| 数据 | `$XDG_DATA_HOME` | `~/.local/share` | 曲库 SQLite、播放记录、插件、壁纸、下载任务 |
+| 缓存 | `$XDG_CACHE_HOME` | `~/.cache` | SMTC 封面缓存等 |
+
+实际目录为 `${对应目录}/echo-next`，例如默认配置为 `~/.config/echo-next`。
+
+首次启动时会自动将旧 `~/.config/ECHO NEXT` 中的数据迁移到以上布局。
+Windows / macOS 继续使用 Electron 默认的 `userData` 路径，不受影响。
+
 ## 架构概览
 
 ```text
@@ -442,11 +541,12 @@ Stop-Ask-Questions-The-Stupid-Ways
 | [ECHO_NEXT_NETWORK_METADATA.md](./docs/ECHO_NEXT_NETWORK_METADATA.md) | 网络元数据补全 |
 | [ECHO_NEXT_LINUX_BUILD.md](./docs/ECHO_NEXT_LINUX_BUILD.md) | Linux 构建 |
 | [ECHO_NEXT_UI_GUIDE.md](./docs/ECHO_NEXT_UI_GUIDE.md) | UI 指南 |
+| [flake.nix](./flake.nix) | Nix flake — 开发环境、构建、overlay |
 
 ## ECHO Next Pro
 
 <p align="center">
-  <img src="./lmao.jpeg" alt="ECHO Next Pro" width="720" />
+  <img src="./build-resources/icons/lmao.jpeg" alt="ECHO Next Pro" width="720" />
 </p>
 
 ECHO Next Pro 是给长期支持 ECHO NEXT 的用户准备的进阶权益入口。通过爱发电支持项目后，可以获得更多实验性与扩展能力；所有为项目做出贡献的 GitHub 用户也将免费获得此权益。

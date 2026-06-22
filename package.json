@@ -111,7 +111,7 @@
     "executableName": "ECHO NEXT",
     "npmRebuild": false,
     "afterPack": "scripts/after-pack-integrity.mjs",
-    "icon": "software.ico",
+    "icon": "build-resources/icons/software.ico",
     "directories": {
       "output": "dist"
     },
@@ -119,8 +119,8 @@
       "out/main/**",
       "out/preload/**",
       "out/renderer/**",
-      "software.ico",
-      "software.png",
+      "build-resources/icons/software.ico",
+      "build-resources/icons/software.png",
       "package.json"
     ],
     "asarUnpack": [
@@ -132,7 +132,7 @@
       "node_modules/taglib-wasm/dist/*.wasm"
     ],
     "win": {
-      "icon": "software.ico",
+      "icon": "build-resources/icons/software.ico",
       "extraResources": [
         {
           "from": "electron-app/build/echo-audio-host.exe",
@@ -232,7 +232,7 @@
       ]
     },
     "linux": {
-      "icon": "software.png",
+      "icon": "build-resources/icons/software.png",
       "extraResources": [
         {
           "from": "electron-app/build/echo-audio-host",
@@ -274,8 +274,8 @@
       "createDesktopShortcut": false,
       "shortcutName": "ECHO",
       "runAfterFinish": true,
-      "installerIcon": "software.ico",
-      "uninstallerIcon": "software.ico"
+      "installerIcon": "build-resources/icons/software.ico",
+      "uninstallerIcon": "build-resources/icons/software.ico"
     },
     "portable": {
       "artifactName": "ECHO-NEXT-Portable-${version}.${ext}"

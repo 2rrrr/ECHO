@@ -389,7 +389,7 @@ node scripts/build-linux.mjs
 Linux 配置在 `package.json` 的 `build.linux`：
 
 ```text
-build.linux.icon = software.png
+build.linux.icon = build-resources/icons/software.png
 build.linux.target = AppImage x64 + deb x64
 build.linux.category = AudioVideo
 ```

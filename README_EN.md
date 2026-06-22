@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./logo.png" alt="ECHO NEXT" width="520" />
+  <img src="./build-resources/icons/logo.png" alt="ECHO NEXT" width="520" />
 </p>
 
 <h1 align="center">ECHO NEXT</h1>
@@ -188,6 +188,105 @@ Common commands:
 
 Markdown-only documentation changes usually need only content review and a diff check. Playback, database, scanning, native audio host, SMTC, and packaging changes should be validated with focused checks for the touched area.
 
+### Nix / Flake Development And Builds
+
+The project provides a Nix flake with a dev shell, build derivation, and nixpkgs overlay:
+
+| Command | Purpose |
+| --- | --- |
+| `nix develop` | Enter the dev shell (Node 22 + CMake + ALSA + GTK3 + Electron + etc.) |
+| `nix build` | Build ECHO NEXT (uses system Electron, result in `result/`) |
+| `nix run` | Run the built application directly |
+| `nix flake check` | Verify all flake outputs |
+
+Using the overlay in your nixpkgs configuration:
+
+```nix
+{
+  inputs.echo-next.url = "github:moekotori/echo";
+
+  outputs = { self, nixpkgs, echo-next, ... }: {
+    nixosConfigurations.my-machine = nixpkgs.lib.nixosSystem {
+      modules = [
+        ({ pkgs, ... }: {
+          nixpkgs.overlays = [ echo-next.overlays.default ];
+          environment.systemPackages = [ pkgs.echo-next ];
+        })
+      ];
+    };
+  };
+}
+```
+
+Or run directly:
+
+```bash
+nix run github:moekotori/echo
+```
+
+direnv users can run `direnv allow` to automatically load the development environment.
+
+> [!IMPORTANT]
+> **`nix run` produces a fully functional desktop app on Linux x86_64**, including the library SQLite, image thumbnails, IPC, playback queue and Wayland UI. See "Coverage" below.
+
+#### Coverage
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Electron main + renderer | ✅ | Uses nixpkgs `electron_42` |
+| `better-sqlite3` (library, history) | ✅ | buildPhase rebuilds it offline against `electron.headers` |
+| `sharp` (cover thumbnails) | ✅ | musl variant is removed so RPATH is not mis-bound |
+| Wayland / XDG data dirs | ✅ | See the "Data Directories" section |
+| Pro features (Connect / AirPlay / cloud sync) | ⛔ refused | Public stubs force license-check to `false`; business logic auto-falls back to the "locked" branch |
+| `native/audio-host` (JUCE HiFi/ASIO/DSD) | ⛔ missing | `cmake FetchContent` pulls JUCE 8.0.12 over the network; UI falls back to HTML Audio |
+| `native-scanner` | ⛔ missing | Same reason; pure-JS scanner is used as a fallback |
+| Windows / macOS | ⛔ unsupported | nixpkgs has no MSVC/WinRT; a macOS branch can be added later following Joplin's pattern |
+
+#### Running
+
+`LICENSE` is source-available, not OSS, so `meta.license = lib.licenses.unfree` and you must explicitly allow it:
+
+```bash
+# Ad-hoc
+NIXPKGS_ALLOW_UNFREE=1 nix run --impure .#echo-next
+
+# Or pin it in your NixOS config
+nixpkgs.config.allowUnfreePredicate = pkg:
+  builtins.elem (lib.getName pkg) [ "echo-next" ];
+```
+
+#### Maintenance notes
+
+- **Updating `npmDepsHash`**: after touching `package-lock.json`, set `npmDepsHash` back to `lib.fakeHash` in `package.nix`, run `nix build .#echo-next` once, then copy the `got: sha256-…` value from the error back into the file.
+- **`npm_config_nodedir` must be unset**: `npmConfigHook` injects the Node 22 source headers into the env, which overrides any `--nodedir` CLI flag. When rebuilding `better-sqlite3` you must `env -u npm_config_nodedir node-gyp …`, otherwise it links against nodejs instead of electron's V8 14 and throws `undefined symbol: v8::HandleScope::HandleScope(v8::Isolate*)` at runtime.
+- **Do not drop `--ignore-scripts`**: `postinstall` runs `ensure-native-abi.mjs`, which invokes `@electron/rebuild` and downloads electron headers, which the sandbox forbids. The buildPhase replaces it with an explicit offline `node-gyp rebuild --nodedir=${electron.headers}`, which is also faster and more deterministic.
+- **The sharp musl variant must be deleted**: `autoPatchelfHook` would otherwise bind `sharp-linux-x64.node`'s libvips RPATH to `sharp-libvips-linuxmusl-x64`, causing `ERR_DLOPEN_FAILED: libc.musl-x86_64.so.1` at runtime. The `rm -rf node_modules/@img/sharp-linuxmusl-x64{,-libvips}` line in buildPhase is not optional.
+- **The public repo ships stubs**: `src/main/plugins/{MachineIdentity,EchoProLicensePlugin}.ts` are public stubs (see the two `!` whitelist lines in `.gitignore`); `nix build` and `npm run typecheck` succeed without the private overlay. Run `npm run pro:pull` to fetch the ECHOPrivate sibling repo when you need the real Pro features — its files override the stubs at the same paths.
+
+#### Expected runtime warnings (not bugs)
+
+After `nix run` you will see the following messages; **all expected**:
+
+- `[DiscordPresence] RPC initialization failed { error: 'Could not connect' }` — Discord IPC socket is unreachable when Discord is not running.
+- `wayland_wp_color_manager.cc … Unable to set image transfer function` — Chromium's own warning when the compositor lacks the `wp_color_manager` protocol; rendering is unaffected.
+- `Error occurred in handler for 'connect:*': Error: echo_pro_required` — Pro stubs route Connect / AirPlay calls into the "locked" branch; expected for the public build.
+
+### Data Directories (XDG Base Directory)
+
+On Linux, ECHO NEXT follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/) for user data management.
+Each path is resolved by checking the corresponding environment variable first, then falling back to the hardcoded default:
+
+| Category | Environment Variable | Default | Contents |
+| --- | --- | --- | --- |
+| Config | `$XDG_CONFIG_HOME` | `~/.config` | `echo-settings.json`, `accounts.json`, EQ presets, etc. |
+| Data | `$XDG_DATA_HOME` | `~/.local/share` | Library SQLite, playback state, plugins, wallpapers, download jobs |
+| Cache | `$XDG_CACHE_HOME` | `~/.cache` | SMTC cover cache, etc. |
+
+The actual directory is `${resolved_dir}/echo-next`. For example, the default config path is `~/.config/echo-next`.
+
+On first startup, data from the legacy `~/.config/ECHO NEXT` directory is automatically migrated to this layout.
+Windows / macOS continue to use Electron's default `userData` path and are unaffected.
+
 ## Architecture Overview
 
 ```text
@@ -235,6 +334,7 @@ Requests to bypass memberships, copyright, platform restrictions, or DRM will no
 | [ECHO_NEXT_NETWORK_METADATA.md](./docs/ECHO_NEXT_NETWORK_METADATA.md) | Network metadata enrichment |
 | [ECHO_NEXT_LINUX_BUILD.md](./docs/ECHO_NEXT_LINUX_BUILD.md) | Linux builds |
 | [ECHO_NEXT_UI_GUIDE.md](./docs/ECHO_NEXT_UI_GUIDE.md) | UI guide |
+| [flake.nix](./flake.nix) | Nix flake — dev shell, build, overlay |
 
 ## License
 

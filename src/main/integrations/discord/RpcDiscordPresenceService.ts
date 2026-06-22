@@ -8,7 +8,7 @@ import type { DiscordPresenceService, DiscordPresenceStatus, DiscordPresenceTrac
 
 export const DISCORD_CLIENT_ID = process.env.ECHO_DISCORD_CLIENT_ID || '1487118099298779206';
 export const DISCORD_APP_LOGO_IMAGE_KEY =
-  process.env.ECHO_DISCORD_APP_LOGO_IMAGE_KEY || 'https://raw.githubusercontent.com/moekotori/echo/main/software.png';
+  process.env.ECHO_DISCORD_APP_LOGO_IMAGE_KEY || 'https://raw.githubusercontent.com/moekotori/echo/main/build-resources/icons/software.png';
 
 type DiscordActivity = {
   details?: string;

@@ -15,7 +15,7 @@ import { applyMainWindowBackgroundMaterial, isMainWindowAcrylicSupportedPlatform
 import { areDeveloperToolsAllowed } from './securityPolicy';
 
 const mainOutputDir = import.meta.dirname;
-const appIconPath = join(mainOutputDir, '../../software.ico');
+const appIconPath = join(mainOutputDir, '../../build-resources/icons/software.ico');
 export const defaultMainWindowSize = {
   width: 1680,
   height: 1050,

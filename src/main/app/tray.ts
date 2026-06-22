@@ -7,7 +7,7 @@ import { getMainWindow } from './windowManager';
 import { getSleepTimerService } from '../sleepTimer/SleepTimerService';
 
 const mainOutputDir = import.meta.dirname;
-const appIconPath = join(mainOutputDir, '../../software.ico');
+const appIconPath = join(mainOutputDir, '../../build-resources/icons/software.ico');
 
 let tray: Tray | null = null;
 let quitRequested = false;

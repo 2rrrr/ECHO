@@ -18,7 +18,7 @@ import { areDeveloperToolsAllowed } from '../app/securityPolicy';
 import { getAppSettings } from '../app/appSettings';
 
 const mainOutputDir = import.meta.dirname;
-const appIconPath = join(mainOutputDir, '../../software.ico');
+const appIconPath = join(mainOutputDir, '../../build-resources/icons/software.ico');
 const maxEntries = 2500;
 const maxLineLength = 4000;
 const mainStallCheckIntervalMs = 500;
