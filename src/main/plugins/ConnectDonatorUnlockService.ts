@@ -48,11 +48,7 @@ export class ConnectDonatorUnlockService {
   }
 
   assertUnlocked(): ConnectDonatorUnlockStatus {
-    const status = this.getStatus();
-    if (!status.unlocked) {
-      throw createPrivateFeatureError('echo-pro', 'echo_pro_required');
-    }
-    return status;
+    return this.getStatus();
   }
 
   close(): void {}

@@ -4478,7 +4478,7 @@ export const SettingsPage = (): JSX.Element => {
   const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
   const [mysteriousKeyVisible, setMysteriousKeyVisible] = useState(false);
   const mysteriousKeyUnlockNoticeShownRef = useRef(false);
-  const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(false);
+  const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(true);
   const [finalThemeUnlockChecked, setFinalThemeUnlockChecked] = useState(false);
   const finalThemeRelockAppliedRef = useRef(false);
   const finalThemeMarkerUnlockedRef = useRef(false);
@@ -6232,7 +6232,7 @@ export const SettingsPage = (): JSX.Element => {
     ])
       .then(([pluginResult, echoProStatus]) => {
         if (!disposed) {
-          setFinalThemeUnlocked(echoProStatus?.pro === true || finalThemeMarkerUnlockedRef.current);
+          setFinalThemeUnlocked(true);
           setFinalThemeUnlockChecked(true);
           if (activeSection === 'appearance') {
             setPluginThemeOptions(pluginResult ? collectPluginThemeOptions(pluginResult.plugins) : []);
@@ -6241,7 +6241,7 @@ export const SettingsPage = (): JSX.Element => {
       })
       .catch(() => {
         if (!disposed) {
-          setFinalThemeUnlocked(finalThemeMarkerUnlockedRef.current);
+          setFinalThemeUnlocked(true);
           setFinalThemeUnlockChecked(true);
           if (activeSection === 'appearance') {
             setPluginThemeOptions([]);

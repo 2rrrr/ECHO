@@ -34,7 +34,7 @@ export const defaultSidebarHiddenRouteIds: SidebarRouteId[] = [
   'import-file',
 ];
 export const lockedVisibleSidebarRouteIds: SidebarRouteId[] = ['settings'];
-export const lockedHiddenSidebarRouteIds: SidebarRouteId[] = ['streaming'];
+export const lockedHiddenSidebarRouteIds: SidebarRouteId[] = [];
 
 const sidebarRouteIdSet = new Set<string>(sidebarRouteIds);
 const lockedVisibleSidebarRouteIdSet = new Set<string>(lockedVisibleSidebarRouteIds);

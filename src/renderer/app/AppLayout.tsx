@@ -391,7 +391,7 @@ const upcomingTrackNoticeLeadSeconds = 10;
 const upcomingTrackNoticeAutoHideMs = 6400;
 const chromeNoticeEnterDelayMs = 16;
 const chromeNoticeExitAnimationMs = 260;
-const temporarilyBlockedRouteIds = new Set<AppRouteId>(['streaming']);
+const temporarilyBlockedRouteIds = new Set<AppRouteId>();
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
 const readNotificationsDisabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
@@ -637,8 +637,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isFirstRunWizardClosing, setIsFirstRunWizardClosing] = useState(false);
   const firstRunWizardMountedRef = useRef(false);
   const firstRunWizardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [downloadsFeatureUnlocked, setDownloadsFeatureUnlocked] = useState(false);
-  const [connectDonatorUnlocked, setConnectDonatorUnlocked] = useState(false);
+  const [downloadsFeatureUnlocked, setDownloadsFeatureUnlocked] = useState(true);
+  const [connectDonatorUnlocked, setConnectDonatorUnlocked] = useState(true);
   const [pluginPanelRoutes, setPluginPanelRoutes] = useState<AppRoute[]>([]);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
@@ -836,10 +836,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     void getEchoProAccountStatus()
       .then((status) => {
-        const unlocked = status.pro === true;
+        const unlocked = true;
         setConnectDonatorUnlocked(unlocked);
       })
-      .catch(() => setConnectDonatorUnlocked(false));
+      .catch(() => setConnectDonatorUnlocked(true));
   }, []);
 
   const refreshPluginPanelRoutes = useCallback((): void => {
@@ -1238,7 +1238,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }
 
       if (Object.prototype.hasOwnProperty.call(settings, 'downloadsFeatureUnlocked')) {
-        setDownloadsFeatureUnlocked(settings.downloadsFeatureUnlocked === true);
+        setDownloadsFeatureUnlocked(true);
       }
 
       if (Object.prototype.hasOwnProperty.call(settings, 'featureCommentsHidden')) {
@@ -1662,9 +1662,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [activeRouteId, getRouteSwitchPlaybackDetails]);
 
   useEffect(() => {
-    if (!downloadsFeatureUnlocked && activeRouteId === 'downloads') {
-      navigateRoute('songs', 'downloads-locked');
-    }
   }, [activeRouteId, downloadsFeatureUnlocked, navigateRoute]);
 
   useEffect(() => {

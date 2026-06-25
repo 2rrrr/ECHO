@@ -629,7 +629,7 @@ export const defaultSettings: AppSettings = {
 
 let cachedSettingsSource: Partial<AppSettings> | null = null;
 let cachedSettings: AppSettings | null = null;
-let finalThemeUnlockAvailable = false;
+let finalThemeUnlockAvailable = true;
 
 export type NormalizeSettingsOptions = {
   finalThemeUnlocked?: boolean;
@@ -1666,8 +1666,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
   );
   const replayGainTargetLufs = Number(settings.replayGainTargetLufs);
   const replayGainPreampDb = Number(settings.replayGainPreampDb);
-  const proThemeUnlocked = (options.finalThemeUnlocked ?? finalThemeUnlockAvailable) === true
-    && settings.finalThemeUnlockVersion === finalThemeUnlockVersion;
+  const proThemeUnlocked = true;
   const appearanceCustomThemes = normalizeThemeCustomThemes(settings.appearanceCustomThemes)
     .filter((theme) => proThemeUnlocked || !proOnlyThemePresetSet.has(theme.basePreset));
   const requestedAppearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
@@ -1684,7 +1683,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
       delete appearanceThemePresetOverrides[preset];
     }
   }
-  const downloadsFeatureUnlocked = (options.downloadsFeatureUnlocked ?? settings.downloadsFeatureUnlocked) === true;
+  const downloadsFeatureUnlocked = true;
 
   return {
     appMemoryVersion,
