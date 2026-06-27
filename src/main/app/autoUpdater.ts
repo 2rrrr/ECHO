@@ -231,7 +231,7 @@ export const initializeAutoUpdater = (enabled: boolean): void => {
   isUpdaterInitialized = true;
   setAutoUpdateEnabled(enabled);
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
   configureWindowsInstallDirectory();
   if (enabled) {
     configureUpdateFeed();
@@ -313,10 +313,7 @@ export const initializeAutoUpdater = (enabled: boolean): void => {
         error: null,
       };
       emitUpdateStatus();
-      setTimeout(() => {
-        configureWindowsInstallDirectory();
-        autoUpdater.quitAndInstall();
-      }, 1000);
+      configureWindowsInstallDirectory();
     })();
   });
 
