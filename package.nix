@@ -49,7 +49,7 @@
   zlib,
   gsettings-desktop-schemas,
 
-  version ? "26.6.14",
+  version ? "26.6.23",
 }:
 
 let
