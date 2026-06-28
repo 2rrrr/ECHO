@@ -918,7 +918,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const isStandaloneRoute = activeRoute.chrome === 'standalone';
   const isLyricsRoute = activeRouteId === 'lyrics';
   const shouldRenderDragDropImportOverlay = !isStandaloneRoute && activeRouteId !== 'plugins';
-  const shouldRenderUserNoticeGate = userNoticeReviewOpen || (userNoticeSettingsLoaded && !userNoticeAccepted);
+  // Startup user-notice gate disabled: only show when manually opened for review.
+  const shouldRenderUserNoticeGate = userNoticeReviewOpen;
   const shouldRenderFirstRunWizard = !shouldRenderUserNoticeGate && (isFirstRunWizardOpen || isFirstRunWizardClosing);
   const shouldUseLyricsPlayerDrawer =
     isLyricsRoute &&
