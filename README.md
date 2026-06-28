@@ -43,6 +43,9 @@
 > [!IMPORTANT]
 > ECHO 仓库已分离，当前主仓库仅供参考。如需参与 ECHO NEXT 开发，请申请加入 [ECHO 开发者计划](https://echonext.moe/zh/developer/)，或发送申请邮件至 [nyafairy233@gmail.com](mailto:nyafairy233@gmail.com)。
 
+> [!NOTE]
+> 云服务推荐：[雨云](https://www.rainyun.com/NzY3Mzg5_) 是面向开发者和个人用户的新一代云服务提供商，提供云服务器、游戏云、物理服务器、虚拟主机、对象存储等产品，适合部署网站、服务端程序、开发测试环境或游戏服务器。
+
 <p align="center"><strong>反馈问题请保持礼貌；提问前建议先查阅 <a href="https://echonext.moe/zh/docs/">官方文档</a>、README 和相关教程。</strong></p>
 
 <p align="center">
